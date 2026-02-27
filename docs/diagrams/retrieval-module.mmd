@@ -1,0 +1,47 @@
+graph TD
+    subgraph Unified["UnifiedRetriever (unified.py)"]
+        SEARCH["search(query, limit, sources)"]
+        GET["get_paper(identifier)"]
+        FULLTEXT["get_full_text(paper)\n(placeholder)"]
+        DEDUP["Dedup Engine\n1. DOI match\n2. arXiv ID match\n3. title+year+author fallback"]
+        NORM["Normalize → Paper dataclass\nid · title · abstract · authors\nyear · venue · citation_count\npdf_url · doi · arxiv_id · source"]
+    end
+
+    subgraph S2["SemanticScholarClient (semantic_scholar.py)"]
+        S2SEARCH["search(query, limit, year_range, fields)"]
+        S2GET["get_paper(paper_id)"]
+        S2CITE["get_citations(paper_id, limit)"]
+        S2REF["get_references(paper_id, limit)"]
+        S2RETRY["Retry + Backoff\n429 rate-limit handling"]
+    end
+
+    subgraph AX["ArxivClient (arxiv.py)"]
+        AXSEARCH["search(query, limit, category)"]
+        AXGET["get_paper(arxiv_id)"]
+        AXPDF["download_pdf(arxiv_id, path)"]
+        AXRATE["Rate Limiter\n3s min between requests"]
+        AXPARSE["Atom XML Parser\nnamespace-aware"]
+    end
+
+    SEARCH --> S2SEARCH
+    SEARCH --> AXSEARCH
+    SEARCH --> DEDUP
+    DEDUP --> NORM
+    GET --> S2GET
+    GET --> AXGET
+    GET --> NORM
+    FULLTEXT --> AXPDF
+
+    S2SEARCH --> S2RETRY
+    S2GET --> S2RETRY
+    S2CITE --> S2RETRY
+    S2REF --> S2RETRY
+
+    AXSEARCH --> AXRATE
+    AXSEARCH --> AXPARSE
+    AXGET --> AXRATE
+    AXGET --> AXPARSE
+    AXPDF --> AXRATE
+
+    classDef done fill:#d4edda,stroke:#28a745,color:#000
+    class SEARCH,GET,FULLTEXT,DEDUP,NORM,S2SEARCH,S2GET,S2CITE,S2REF,S2RETRY,AXSEARCH,AXGET,AXPDF,AXRATE,AXPARSE done

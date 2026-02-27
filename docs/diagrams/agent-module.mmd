@@ -1,0 +1,33 @@
+graph TD
+    subgraph Agent["ResearchAgent (research_agent.py)"]
+        INIT["__init__\nmodel=RA_MODEL env\napi_key=OPENAI_API_KEY"]
+        RUN["run(query) / arun(query)"]
+        EXEC["AgentExecutor\nmax_iterations · handle_errors"]
+        REACT["ReAct Loop\nThink → Act → Observe → Repeat"]
+        PROMPT["System Prompt\nAcademic research instructions\nCitation requirements"]
+    end
+
+    subgraph Tools["Retrieval Tools (retrieval_tools.py)"]
+        T1["search_papers\nquery · limit · source\n→ UnifiedRetriever.search"]
+        T2["get_paper_details\nidentifier\n→ UnifiedRetriever.get_paper"]
+        T3["get_paper_citations\npaper_id · limit\n→ SemanticScholarClient.get_citations"]
+    end
+
+    subgraph LLM["Language Model"]
+        OPENAI["ChatOpenAI\nGPT-4o-mini (dev)\nGPT-4o (eval)"]
+    end
+
+    RUN --> EXEC
+    EXEC --> REACT
+    REACT --> PROMPT
+    REACT --> T1
+    REACT --> T2
+    REACT --> T3
+    REACT --> OPENAI
+    INIT --> OPENAI
+
+    classDef inprogress fill:#fff3cd,stroke:#ffc107,color:#000
+    class INIT,RUN,EXEC,REACT,PROMPT,T1,T2,T3 inprogress
+    
+    classDef done fill:#d4edda,stroke:#28a745,color:#000
+    class OPENAI done

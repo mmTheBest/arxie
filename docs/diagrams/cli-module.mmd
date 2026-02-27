@@ -1,0 +1,22 @@
+graph TD
+    subgraph CLI["CLI Module (cli.py)"]
+        MAIN["main()\nargparse entry point"]
+        SEARCH_CMD["search subcommand\n--query --limit --source"]
+        GET_CMD["get subcommand\n--id (DOI/arXiv/S2)"]
+        OUTPUT["JSON stdout output"]
+        ERR["JSON error payload\non exception"]
+    end
+
+    subgraph Backend["Retrieval Backend"]
+        UR["UnifiedRetriever"]
+    end
+
+    MAIN --> SEARCH_CMD
+    MAIN --> GET_CMD
+    SEARCH_CMD --> UR
+    GET_CMD --> UR
+    UR --> OUTPUT
+    UR --> ERR
+
+    classDef done fill:#d4edda,stroke:#28a745,color:#000
+    class MAIN,SEARCH_CMD,GET_CMD,OUTPUT,ERR,UR done
