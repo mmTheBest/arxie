@@ -1,0 +1,305 @@
+"""Unified retrieval interface combining Semantic Scholar and arXiv.
+
+This module provides:
+- Paper: a normalized paper metadata dataclass
+- UnifiedRetriever: a facade around SemanticScholarClient and ArxivClient
+
+Design goals:
+- Present a single normalized schema across sources
+- Search across multiple sources and deduplicate results
+- Provide async context manager support
+"""
+
+from __future__ import annotations
+
+import asyncio
+import re
+from dataclasses import dataclass
+from typing import Iterable, Literal
+
+import httpx
+
+from ra.retrieval.arxiv import ArxivClient, ArxivPaper
+from ra.retrieval.semantic_scholar import SemanticScholarClient
+
+Source = Literal["semantic_scholar", "arxiv", "both"]
+
+DOI_RE = re.compile(r"^(?:doi:)?(10\.\d{4,9}/\S+)$", re.IGNORECASE)
+# Examples: 1707.08567, 1707.08567v2, hep-th/9901001
+ARXIV_ID_RE = re.compile(
+    r"^(?:arxiv:)?(?P<id>(?:\d{4}\.\d{4,5})(?:v\d+)?|[a-z\-]+(?:\.[A-Z]{2})?/\d{7}(?:v\d+)?)$",
+    re.IGNORECASE,
+)
+
+
+def normalize_arxiv_id(identifier: str) -> str | None:
+    m = ARXIV_ID_RE.match(identifier.strip())
+    if not m:
+        return None
+    return m.group("id")
+
+
+def normalize_doi(doi: str | None) -> str | None:
+    if not doi:
+        return None
+    d = doi.strip()
+    m = DOI_RE.match(d)
+    if m:
+        d = m.group(1)
+    # DOIs are case-insensitive; normalize to lower
+    return d.lower() if d else None
+
+
+@dataclass
+class Paper:
+    """Normalized paper metadata across sources."""
+
+    id: str
+    title: str
+    abstract: str | None
+    authors: list[str]
+    year: int | None
+    venue: str | None
+    citation_count: int | None
+    pdf_url: str | None
+    doi: str | None
+    arxiv_id: str | None
+    source: Source
+
+    def to_citation(self, style: str = "apa") -> str:
+        """Format the paper as a consistent citation string.
+
+        Currently supports a simple APA-like format.
+        """
+        authors_str = ", ".join(self.authors[:3]) if self.authors else "Unknown"
+        if self.authors and len(self.authors) > 3:
+            authors_str += " et al."
+
+        year_str = f"({self.year})" if self.year else "(n.d.)"
+        venue_str = f" {self.venue}." if self.venue else ""
+
+        # Prefer DOI for identification; otherwise arXiv id
+        id_str = ""
+        if self.doi:
+            id_str = f" https://doi.org/{normalize_doi(self.doi) or self.doi}"
+        elif self.arxiv_id:
+            id_str = f" arXiv:{self.arxiv_id}"
+
+        return f"{authors_str} {year_str}. {self.title}.{venue_str}{id_str}".strip()
+
+
+def _paper_key(p: Paper) -> tuple[str, str] | tuple[str, str, str]:
+    """Return a stable deduplication key.
+
+    Priority:
+    1) DOI
+    2) arXiv ID
+    3) title+year+first author (fallback)
+    """
+    doi = normalize_doi(p.doi)
+    if doi:
+        return ("doi", doi)
+    ax = normalize_arxiv_id(p.arxiv_id or "")
+    if ax:
+        return ("arxiv", ax.lower())
+
+    title = " ".join((p.title or "").lower().split())
+    year = str(p.year or "")
+    first_author = (p.authors[0].lower() if p.authors else "")
+    return ("fallback", title, year + ":" + first_author)
+
+
+def _merge_papers(primary: Paper, secondary: Paper) -> Paper:
+    """Merge two papers believed to refer to the same work.
+
+    We keep the primary paper as base and fill missing fields from secondary.
+    Citation count uses the max available.
+    Source becomes 'both' when merged.
+    """
+    merged = Paper(
+        id=primary.id,
+        title=primary.title or secondary.title,
+        abstract=primary.abstract or secondary.abstract,
+        authors=primary.authors or secondary.authors,
+        year=primary.year or secondary.year,
+        venue=primary.venue or secondary.venue,
+        citation_count=max(
+            [c for c in [primary.citation_count, secondary.citation_count] if c is not None],
+            default=None,
+        ),
+        pdf_url=primary.pdf_url or secondary.pdf_url,
+        doi=primary.doi or secondary.doi,
+        arxiv_id=primary.arxiv_id or secondary.arxiv_id,
+        source="both" if primary.source != secondary.source else primary.source,
+    )
+    return merged
+
+
+class UnifiedRetriever:
+    """Unified retriever that wraps Semantic Scholar and arXiv clients."""
+
+    def __init__(
+        self,
+        semantic_scholar: SemanticScholarClient | None = None,
+        arxiv: ArxivClient | None = None,
+    ):
+        self.semantic_scholar = semantic_scholar or SemanticScholarClient()
+        self.arxiv = arxiv or ArxivClient()
+
+    async def __aenter__(self) -> "UnifiedRetriever":
+        # Clients are lazy; nothing required here.
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        await asyncio.gather(
+            self.semantic_scholar.close(),
+            self.arxiv.close(),
+            return_exceptions=True,
+        )
+
+    def _from_semantic_scholar(self, p) -> Paper:
+        authors = [a.name for a in getattr(p, "authors", [])]
+        return Paper(
+            id=getattr(p, "paper_id", ""),
+            title=getattr(p, "title", ""),
+            abstract=getattr(p, "abstract", None),
+            authors=authors,
+            year=getattr(p, "year", None),
+            venue=getattr(p, "venue", None),
+            citation_count=getattr(p, "citation_count", None),
+            pdf_url=getattr(p, "pdf_url", None),
+            doi=getattr(p, "doi", None),
+            arxiv_id=getattr(p, "arxiv_id", None),
+            source="semantic_scholar",
+        )
+
+    def _from_arxiv(self, p: ArxivPaper) -> Paper:
+        year: int | None = None
+        if getattr(p, "published", None) and str(p.published)[:4].isdigit():
+            year = int(str(p.published)[:4])
+        return Paper(
+            id=p.arxiv_id,
+            title=p.title,
+            abstract=p.abstract or None,
+            authors=p.authors,
+            year=year,
+            venue=None,
+            citation_count=None,
+            pdf_url=p.pdf_url,
+            doi=p.doi,
+            arxiv_id=p.arxiv_id,
+            source="arxiv",
+        )
+
+    async def search(
+        self,
+        query: str,
+        limit: int = 10,
+        sources: Iterable[str] = ("semantic_scholar", "arxiv"),
+    ) -> list[Paper]:
+        """Search across sources and deduplicate.
+
+        Args:
+            query: Search query.
+            limit: Approximate total number of results to return.
+            sources: Iterable of sources to use: semantic_scholar, arxiv.
+
+        Returns:
+            Deduplicated list of Paper.
+        """
+        srcs = {s.lower() for s in sources}
+        tasks = []
+
+        # Pull a bit extra per-source so we still have enough after dedup.
+        per_source = max(1, min(100, int(limit * 1.5)))
+
+        if "semantic_scholar" in srcs or "semanticscholar" in srcs or "s2" in srcs:
+            tasks.append(self.semantic_scholar.search(query=query, limit=per_source))
+        else:
+            tasks.append(asyncio.sleep(0, result=[]))
+
+        if "arxiv" in srcs:
+            tasks.append(self.arxiv.search(query=query, limit=per_source))
+        else:
+            tasks.append(asyncio.sleep(0, result=[]))
+
+        s2_results, ax_results = await asyncio.gather(*tasks)
+
+        unified: list[Paper] = []
+        unified.extend(self._from_semantic_scholar(p) for p in s2_results)
+        unified.extend(self._from_arxiv(p) for p in ax_results)
+
+        # Deduplicate, preferring Semantic Scholar as primary when conflicts exist.
+        by_key: dict[object, Paper] = {}
+        for p in unified:
+            key = _paper_key(p)
+            if key not in by_key:
+                by_key[key] = p
+                continue
+
+            existing = by_key[key]
+            # Prefer Semantic Scholar metadata as primary
+            if existing.source == "semantic_scholar" and p.source == "arxiv":
+                by_key[key] = _merge_papers(existing, p)
+            elif existing.source == "arxiv" and p.source == "semantic_scholar":
+                by_key[key] = _merge_papers(p, existing)
+            else:
+                by_key[key] = _merge_papers(existing, p)
+
+        results = list(by_key.values())
+
+        # Basic ranking: citation_count desc if available, otherwise keep insertion-ish.
+        results.sort(key=lambda x: (x.citation_count or 0), reverse=True)
+        return results[:limit]
+
+    async def get_paper(self, identifier: str) -> Paper | None:
+        """Fetch a paper by identifier.
+
+        Auto-detects DOI/arXiv id; otherwise assumes Semantic Scholar ID.
+        """
+        identifier = identifier.strip()
+
+        doi_m = DOI_RE.match(identifier)
+        if doi_m:
+            doi = doi_m.group(1)
+            s2 = await self.semantic_scholar.get_paper(f"DOI:{doi}")
+            if s2:
+                return self._from_semantic_scholar(s2)
+            # fallback: arXiv sometimes stores DOI but not searchable; no good fallback.
+            return None
+
+        arxiv_id = normalize_arxiv_id(identifier)
+        if arxiv_id:
+            # Try Semantic Scholar first (usually richer), then arXiv.
+            s2 = await self.semantic_scholar.get_paper(f"ARXIV:{arxiv_id}")
+            if s2:
+                return self._from_semantic_scholar(s2)
+            ax = await self.arxiv.get_paper(arxiv_id)
+            return self._from_arxiv(ax) if ax else None
+
+        s2 = await self.semantic_scholar.get_paper(identifier)
+        return self._from_semantic_scholar(s2) if s2 else None
+
+    async def get_full_text(self, paper: Paper) -> str:
+        """Download and return PDF text.
+
+        Placeholder for now: downloads the PDF (if available) and returns an empty
+        string. A future implementation can integrate a PDF text extraction
+        backend.
+        """
+        if not paper.pdf_url:
+            return ""
+
+        # Best-effort download; ignore failures and return empty text.
+        try:
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+                r = await client.get(paper.pdf_url)
+                r.raise_for_status()
+                _pdf_bytes = r.content  # noqa: F841
+        except Exception:
+            return ""
+
+        return ""
