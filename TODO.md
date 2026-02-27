@@ -3,15 +3,16 @@
 ## Phase 1: Foundation (Week 1)
 
 ### In Progress
-- [ ] Project scaffold and configuration
-- [ ] Semantic Scholar API client
-- [ ] arXiv API client
-- [ ] Basic retrieval interface
+(none)
 
 ### Blocked
 (none)
 
 ### Done
+- [x] Project scaffold and configuration
+- [x] Semantic Scholar API client
+- [x] arXiv API client
+- [x] Basic retrieval interface
 - [x] Project structure created
 - [x] pyproject.toml configured
 - [x] Environment setup (.env.example, .gitignore)
