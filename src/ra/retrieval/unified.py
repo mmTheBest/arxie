@@ -13,14 +13,20 @@ Design goals:
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, Literal
 
 import httpx
 
+from ra.parsing import PDFParser
 from ra.retrieval.arxiv import ArxivClient, ArxivPaper
 from ra.retrieval.semantic_scholar import SemanticScholarClient
+
+logger = logging.getLogger(__name__)
 
 Source = Literal["semantic_scholar", "arxiv", "both"]
 
@@ -284,22 +290,37 @@ class UnifiedRetriever:
         return self._from_semantic_scholar(s2) if s2 else None
 
     async def get_full_text(self, paper: Paper) -> str:
-        """Download and return PDF text.
+        """Download a paper PDF (if available) and return extracted plain text.
 
-        Placeholder for now: downloads the PDF (if available) and returns an empty
-        string. A future implementation can integrate a PDF text extraction
-        backend.
+        Returns an empty string on any download or parsing failure.
         """
         if not paper.pdf_url:
             return ""
 
-        # Best-effort download; ignore failures and return empty text.
+        tmp_path: Path | None = None
         try:
             async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
                 r = await client.get(paper.pdf_url)
                 r.raise_for_status()
-                _pdf_bytes = r.content  # noqa: F841
-        except Exception:
-            return ""
+                pdf_bytes = r.content
 
-        return ""
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                f.write(pdf_bytes)
+                tmp_path = Path(f.name)
+
+            doc = PDFParser().parse(tmp_path)
+            return (doc.text or "").strip()
+        except Exception:
+            logger.warning(
+                "Failed to download/parse PDF full text for paper_id=%s pdf_url=%s",
+                getattr(paper, "id", ""),
+                paper.pdf_url,
+                exc_info=True,
+            )
+            return ""
+        finally:
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except Exception:
+                    logger.debug("Failed to delete temp PDF file: %s", tmp_path, exc_info=True)

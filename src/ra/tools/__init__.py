@@ -7,6 +7,7 @@ LangChain StructuredTools.
 from ra.tools.retrieval_tools import (
     GetPaperCitationsArgs,
     GetPaperDetailsArgs,
+    GetPaperFullTextArgs,
     SearchPapersArgs,
     make_retrieval_tools,
 )
@@ -15,5 +16,6 @@ __all__ = [
     "make_retrieval_tools",
     "SearchPapersArgs",
     "GetPaperDetailsArgs",
+    "GetPaperFullTextArgs",
     "GetPaperCitationsArgs",
 ]

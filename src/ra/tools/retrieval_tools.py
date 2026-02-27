@@ -55,6 +55,15 @@ class GetPaperDetailsArgs(BaseModel):
     )
 
 
+class GetPaperFullTextArgs(BaseModel):
+    identifier: str = Field(
+        ...,
+        description=(
+            "Paper identifier: Semantic Scholar paperId, DOI (optionally prefixed with DOI:), or arXiv id."
+        ),
+    )
+
+
 class GetPaperCitationsArgs(BaseModel):
     paper_id: str = Field(
         ...,
@@ -88,6 +97,13 @@ def make_retrieval_tools(
         paper = await retriever.get_paper(identifier)
         payload = {"identifier": identifier, "paper": _paper_to_dict(paper) if paper else None}
         return json.dumps(payload, ensure_ascii=False)
+
+    async def get_paper_full_text(identifier: str) -> str:
+        """Fetch a paper, download its PDF (if available), and return extracted text."""
+        paper = await retriever.get_paper(identifier)
+        if not paper:
+            return ""
+        return await retriever.get_full_text(paper)
 
     async def get_paper_citations(paper_id: str, limit: int = 20) -> str:
         """Fetch papers that cite the given paper (Semantic Scholar)."""
@@ -126,6 +142,17 @@ def make_retrieval_tools(
             ),
             args_schema=GetPaperDetailsArgs,
             coroutine=get_paper_details,
+        ),
+
+        StructuredTool(
+            name="get_paper_full_text",
+            description=(
+                "Download a paper's PDF (when available) and extract its full text. "
+                "Input can be a Semantic Scholar paperId, a DOI, or an arXiv id. "
+                "Returns plain text (empty string if unavailable or extraction fails)."
+            ),
+            args_schema=GetPaperFullTextArgs,
+            coroutine=get_paper_full_text,
         ),
 
         StructuredTool(
