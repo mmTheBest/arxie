@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -123,3 +124,69 @@ async def test_tool_get_paper_full_text_calls_retriever(monkeypatch: pytest.Monk
     out = await tool.ainvoke({"identifier": "10.1234/xyz"})
     assert out == "FULLTEXT"
     assert calls == ["get_paper:10.1234/xyz", "get_full_text"]
+
+
+@pytest.mark.asyncio
+async def test_tool_search_papers_handles_internal_errors_gracefully():
+    class DummyRetriever:
+        async def search(self, query: str, limit: int, sources: tuple[str, ...]):  # noqa: ARG002
+            raise RuntimeError("search backend down")
+
+    class DummySemanticScholar:
+        async def get_citations(self, paper_id: str, limit: int):  # noqa: ARG002
+            return []
+
+    tools = make_retrieval_tools(
+        retriever=DummyRetriever(),
+        semantic_scholar=DummySemanticScholar(),
+    )
+    tool = next(t for t in tools if t.name == "search_papers")
+
+    raw = await tool.ainvoke({"query": "rag", "limit": 5, "source": "both"})
+    payload = json.loads(raw)
+
+    assert payload["error"] == "tool_execution_failed"
+    assert payload["tool"] == "search_papers"
+
+
+@pytest.mark.asyncio
+async def test_tool_get_paper_citations_handles_internal_errors_gracefully():
+    class DummyRetriever:
+        async def search(self, query: str, limit: int, sources: tuple[str, ...]):  # noqa: ARG002
+            return []
+
+    class DummySemanticScholar:
+        async def get_citations(self, paper_id: str, limit: int):  # noqa: ARG002
+            raise RuntimeError("citations backend down")
+
+    tools = make_retrieval_tools(
+        retriever=DummyRetriever(),
+        semantic_scholar=DummySemanticScholar(),
+    )
+    tool = next(t for t in tools if t.name == "get_paper_citations")
+
+    raw = await tool.ainvoke({"paper_id": "s2id", "limit": 10})
+    payload = json.loads(raw)
+
+    assert payload["error"] == "tool_execution_failed"
+    assert payload["tool"] == "get_paper_citations"
+
+
+@pytest.mark.asyncio
+async def test_tool_get_paper_full_text_handles_internal_errors_gracefully():
+    class DummyRetriever:
+        async def get_paper(self, identifier: str):  # noqa: ARG002
+            raise RuntimeError("get_paper backend down")
+
+    class DummySemanticScholar:
+        async def get_citations(self, paper_id: str, limit: int):  # noqa: ARG002
+            return []
+
+    tools = make_retrieval_tools(
+        retriever=DummyRetriever(),
+        semantic_scholar=DummySemanticScholar(),
+    )
+    tool = next(t for t in tools if t.name == "get_paper_full_text")
+
+    out = await tool.ainvoke({"identifier": "10.1234/xyz"})
+    assert out == ""

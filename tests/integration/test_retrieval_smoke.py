@@ -1,4 +1,5 @@
 import time
+import socket
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -10,6 +11,22 @@ from ra.retrieval.unified import UnifiedRetriever
 
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _skip_if_external_apis_unreachable() -> None:
+    hosts = ("api.semanticscholar.org", "export.arxiv.org")
+    unreachable: list[str] = []
+
+    for host in hosts:
+        try:
+            socket.gethostbyname(host)
+        except OSError as exc:
+            unreachable.append(f"{host} ({exc})")
+
+    if unreachable:
+        joined = ", ".join(unreachable)
+        pytest.skip(f"External retrieval APIs unreachable: {joined}")
 
 
 class APIMetrics:

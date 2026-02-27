@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 from pathlib import Path
 
 import pytest
@@ -75,9 +76,19 @@ def _skip_if_no_key() -> None:
         pytest.skip("OPENAI_API_KEY not set")
 
 
+def _skip_if_openai_unreachable() -> None:
+    try:
+        host = socket.gethostbyname("api.openai.com")
+        with socket.create_connection((host, 443), timeout=3):
+            return
+    except OSError as exc:
+        pytest.skip(f"OpenAI endpoint unreachable: {exc}")
+
+
 def test_agent_answers_factual_query() -> None:
     _load_project_dotenv()
     _skip_if_no_key()
+    _skip_if_openai_unreachable()
 
     start = _usage_snapshot()
 
@@ -96,6 +107,7 @@ def test_agent_answers_factual_query() -> None:
 def test_agent_cites_sources() -> None:
     _load_project_dotenv()
     _skip_if_no_key()
+    _skip_if_openai_unreachable()
 
     start = _usage_snapshot()
 
@@ -110,6 +122,7 @@ def test_agent_cites_sources() -> None:
 def test_agent_handles_unknown_topic() -> None:
     _load_project_dotenv()
     _skip_if_no_key()
+    _skip_if_openai_unreachable()
 
     start = _usage_snapshot()
 

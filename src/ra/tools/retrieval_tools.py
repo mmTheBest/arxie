@@ -12,6 +12,7 @@ interface stable for downstream UI / API layers.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -20,6 +21,8 @@ from langchain_core.tools import StructuredTool
 
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
+
+logger = logging.getLogger(__name__)
 
 
 def _paper_to_dict(p: Paper) -> dict:
@@ -37,6 +40,17 @@ def _paper_to_dict(p: Paper) -> dict:
         "source": p.source,
         "citation": p.to_citation(),
     }
+
+
+def _tool_error_payload(tool: str, error: Exception) -> str:
+    return json.dumps(
+        {
+            "tool": tool,
+            "error": "tool_execution_failed",
+            "message": str(error),
+        },
+        ensure_ascii=False,
+    )
 
 
 class SearchPapersArgs(BaseModel):
@@ -83,37 +97,53 @@ def make_retrieval_tools(
 
     async def search_papers(query: str, limit: int = 10, source: str = "both") -> str:
         """Search for papers across one or more sources."""
-        sources = ("semantic_scholar", "arxiv") if source == "both" else (source,)
-        papers = await retriever.search(query=query, limit=limit, sources=sources)
-        payload = {
-            "query": query,
-            "count": len(papers),
-            "results": [_paper_to_dict(p) for p in papers],
-        }
-        return json.dumps(payload, ensure_ascii=False)
+        try:
+            sources = ("semantic_scholar", "arxiv") if source == "both" else (source,)
+            papers = await retriever.search(query=query, limit=limit, sources=sources)
+            payload = {
+                "query": query,
+                "count": len(papers),
+                "results": [_paper_to_dict(p) for p in papers],
+            }
+            return json.dumps(payload, ensure_ascii=False)
+        except Exception as exc:
+            logger.exception("Tool execution failed: search_papers")
+            return _tool_error_payload("search_papers", exc)
 
     async def get_paper_details(identifier: str) -> str:
         """Fetch paper metadata for a single paper by identifier."""
-        paper = await retriever.get_paper(identifier)
-        payload = {"identifier": identifier, "paper": _paper_to_dict(paper) if paper else None}
-        return json.dumps(payload, ensure_ascii=False)
+        try:
+            paper = await retriever.get_paper(identifier)
+            payload = {"identifier": identifier, "paper": _paper_to_dict(paper) if paper else None}
+            return json.dumps(payload, ensure_ascii=False)
+        except Exception as exc:
+            logger.exception("Tool execution failed: get_paper_details")
+            return _tool_error_payload("get_paper_details", exc)
 
     async def get_paper_full_text(identifier: str) -> str:
         """Fetch a paper, download its PDF (if available), and return extracted text."""
-        paper = await retriever.get_paper(identifier)
-        if not paper:
+        try:
+            paper = await retriever.get_paper(identifier)
+            if not paper:
+                return ""
+            return await retriever.get_full_text(paper)
+        except Exception:
+            logger.exception("Tool execution failed: get_paper_full_text")
             return ""
-        return await retriever.get_full_text(paper)
 
     async def get_paper_citations(paper_id: str, limit: int = 20) -> str:
         """Fetch papers that cite the given paper (Semantic Scholar)."""
-        citing = await semantic_scholar.get_citations(paper_id=paper_id, limit=limit)
-        payload = {
-            "paper_id": paper_id,
-            "count": len(citing),
-            "results": [p.to_dict() for p in citing],
-        }
-        return json.dumps(payload, ensure_ascii=False)
+        try:
+            citing = await semantic_scholar.get_citations(paper_id=paper_id, limit=limit)
+            payload = {
+                "paper_id": paper_id,
+                "count": len(citing),
+                "results": [p.to_dict() for p in citing],
+            }
+            return json.dumps(payload, ensure_ascii=False)
+        except Exception as exc:
+            logger.exception("Tool execution failed: get_paper_citations")
+            return _tool_error_payload("get_paper_citations", exc)
 
     return [
         StructuredTool(

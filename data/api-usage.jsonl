@@ -1,0 +1,12 @@
+{"timestamp": "2026-02-27T22:15:06.729932+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1595, "status": 500}
+{"timestamp": "2026-02-27T22:15:09.079176+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1256, "status": 500}
+{"timestamp": "2026-02-27T22:15:12.787133+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1622, "status": 500}
+{"timestamp": "2026-02-27T22:15:18.323815+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1516, "status": 500}
+{"timestamp": "2026-02-27T22:15:19.748721+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1373, "status": 500}
+{"timestamp": "2026-02-27T22:15:22.348489+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1508, "status": 500}
+{"timestamp": "2026-02-27T22:15:25.741830+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1361, "status": 500}
+{"timestamp": "2026-02-27T22:15:31.173076+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1408, "status": 500}
+{"timestamp": "2026-02-27T22:15:32.575922+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1373, "status": 500}
+{"timestamp": "2026-02-27T22:15:34.882361+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1269, "status": 500}
+{"timestamp": "2026-02-27T22:15:38.405158+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1432, "status": 500}
+{"timestamp": "2026-02-27T22:15:43.973164+00:00", "endpoint": "openai.chat.completions", "method": "POST", "tokens_in": 0, "tokens_out": 0, "cost_estimate": 0.0, "response_time_ms": 1496, "status": 500}

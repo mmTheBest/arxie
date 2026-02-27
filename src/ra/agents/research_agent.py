@@ -9,13 +9,16 @@ Uses create_agent (LangChain >=1.2) with a tool-calling loop to:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import re
 import time
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from langchain.agents import create_agent
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage
@@ -26,6 +29,21 @@ from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
 from ra.utils.logging import UsageLogger
+
+try:
+    from openai import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
+except Exception:  # pragma: no cover - import availability depends on runtime package layout
+    APIConnectionError = None
+    APITimeoutError = None
+    InternalServerError = None
+    RateLimitError = None
+
+logger = logging.getLogger(__name__)
+
+_TRANSIENT_HTTP_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+_INLINE_CITATION_RE = re.compile(
+    r"\([A-Z][A-Za-z\-]+(?:\s+et\s+al\.)?(?:\s*&\s*[A-Z][A-Za-z\-]+)?,\s*(?:19|20)\d{2}\)"
+)
 
 
 _SYSTEM_PROMPT = """You are an Academic Research Assistant.
@@ -248,6 +266,11 @@ class ResearchAgent:
 
     def __init__(self, *, model: str | None = None, verbose: bool = False):
         self.model = model or os.getenv("RA_MODEL", "gpt-4o-mini")
+        self.max_api_retries = max(0, int(os.getenv("RA_AGENT_MAX_RETRIES", "3")))
+        self.retry_base_delay_seconds = max(
+            0.0, float(os.getenv("RA_AGENT_RETRY_BASE_SECONDS", "1.0"))
+        )
+        self.max_iterations = max(4, int(os.getenv("RA_AGENT_MAX_ITERATIONS", "30")))
 
         api_key = os.getenv("OPENAI_API_KEY")
         self.llm = ChatOpenAI(model=self.model, api_key=api_key, temperature=0)
@@ -272,17 +295,135 @@ class ResearchAgent:
 
     def _format_references(self, text: str) -> str:
         paper_list = list(self._callback.papers.values())
-        claims = self._citation_formatter.extract_claims(text, paper_list)
+        body = self._clean_answer_body(text)
+        claims = self._citation_formatter.extract_claims(body, paper_list)
         cited_ids = {pid for c in claims for pid in c.supporting_papers}
         cited_papers = [p for p in paper_list if p.id in cited_ids]
 
-        body = re.sub(r"(?is)\n+references\s*:?.*\Z", "", text).rstrip()
+        if not cited_papers and paper_list and _INLINE_CITATION_RE.search(body):
+            cited_papers = paper_list
 
+        answer_block = f"## Answer\n{body}"
         if not cited_papers:
-            return body + "\n\nReferences\nNone."
+            return answer_block + "\n\n## References\nNone."
 
         refs = self._citation_formatter.format_reference_list(cited_papers).strip()
-        return body + "\n\nReferences\n" + refs
+        ref_lines = [line.strip() for line in refs.splitlines() if line.strip()]
+        numbered_refs = "\n".join(f"{i}. {line}" for i, line in enumerate(ref_lines, start=1))
+        return answer_block + "\n\n## References\n" + numbered_refs
+
+    def _clean_answer_body(self, text: str) -> str:
+        body = (text or "").strip()
+        body = re.sub(r"(?is)(?:\n|^)\s*#{1,6}\s*references\s*:?.*\Z", "", body).strip()
+        body = re.sub(r"(?is)(?:\n|^)\s*references\s*:?.*\Z", "", body).strip()
+        body = re.sub(r"(?is)^\s*#{1,6}\s*answer\s*\n", "", body).strip()
+        body = re.sub(r"(?is)^\s*answer\s*:?\s*", "", body).strip()
+        return body or "I could not produce an answer for this query."
+
+    def _error_response(self) -> str:
+        return (
+            "## Answer\n"
+            "I encountered an internal error while processing your request. Please try again.\n\n"
+            "## References\nNone."
+        )
+
+    @staticmethod
+    def _status_code_from_error(exc: BaseException) -> int | None:
+        status = getattr(exc, "status_code", None)
+        if isinstance(status, int):
+            return status
+        response = getattr(exc, "response", None)
+        response_status = getattr(response, "status_code", None)
+        if isinstance(response_status, int):
+            return response_status
+        return None
+
+    def _is_transient_error(self, exc: BaseException) -> bool:
+        openai_transient_types: tuple[type[BaseException], ...] = tuple(
+            t
+            for t in (RateLimitError, APITimeoutError, APIConnectionError, InternalServerError)
+            if isinstance(t, type) and issubclass(t, BaseException)
+        )
+
+        if openai_transient_types and isinstance(exc, openai_transient_types):
+            return True
+
+        if isinstance(
+            exc,
+            (
+                TimeoutError,
+                httpx.TimeoutException,
+                httpx.ConnectError,
+                httpx.NetworkError,
+            ),
+        ):
+            return True
+
+        status = self._status_code_from_error(exc)
+        if status in _TRANSIENT_HTTP_STATUS_CODES:
+            return True
+
+        message = str(exc).lower()
+        return any(
+            token in message
+            for token in (
+                "rate limit",
+                "timeout",
+                "timed out",
+                "temporarily unavailable",
+                "connection reset",
+                "server overloaded",
+            )
+        )
+
+    def _retry_delay(self, attempt: int) -> float:
+        return self.retry_base_delay_seconds * (2**attempt)
+
+    def _invoke_with_retries(
+        self, inputs: dict[str, Any], config: dict[str, Any]
+    ) -> dict[str, Any]:
+        for attempt in range(self.max_api_retries + 1):
+            try:
+                return self.graph.invoke(inputs, config=config)
+            except Exception as exc:
+                is_final_attempt = attempt >= self.max_api_retries
+                if not self._is_transient_error(exc) or is_final_attempt:
+                    raise
+
+                delay_seconds = self._retry_delay(attempt)
+                logger.warning(
+                    "Transient agent invoke error on attempt %d/%d: %s. Retrying in %.2fs.",
+                    attempt + 1,
+                    self.max_api_retries + 1,
+                    exc,
+                    delay_seconds,
+                )
+                time.sleep(delay_seconds)
+
+        raise RuntimeError("Agent invocation exhausted retry loop unexpectedly.")
+
+    async def _ainvoke_with_retries(
+        self, inputs: dict[str, Any], config: dict[str, Any]
+    ) -> dict[str, Any]:
+        for attempt in range(self.max_api_retries + 1):
+            try:
+                return await self.graph.ainvoke(inputs, config=config)
+            except Exception as exc:
+                is_final_attempt = attempt >= self.max_api_retries
+                if not self._is_transient_error(exc) or is_final_attempt:
+                    raise
+
+                delay_seconds = self._retry_delay(attempt)
+                logger.warning(
+                    "Transient agent ainvoke error on attempt %d/%d: %s. Retrying in %.2fs.",
+                    attempt + 1,
+                    self.max_api_retries + 1,
+                    exc,
+                    delay_seconds,
+                )
+                await asyncio.sleep(delay_seconds)
+
+        raise RuntimeError("Agent async invocation exhausted retry loop unexpectedly.")
 
     def _extract_final_text(self, result: dict[str, Any]) -> str:
         """Extract the final assistant text from the graph result."""
@@ -303,15 +444,31 @@ class ResearchAgent:
     async def arun(self, query: str) -> str:
         """Async entrypoint."""
         inputs = {"messages": [HumanMessage(content=query)]}
-        config = {"callbacks": [self._callback]}
-        result = await self.graph.ainvoke(inputs, config=config)
-        output = self._extract_final_text(result)
-        return self._format_references(output)
+        self._callback.papers.clear()
+        config = {
+            "callbacks": [self._callback],
+            "recursion_limit": self.max_iterations,
+        }
+        try:
+            result = await self._ainvoke_with_retries(inputs, config=config)
+            output = self._extract_final_text(result)
+            return self._format_references(output)
+        except Exception:
+            logger.exception("ResearchAgent async run failed.")
+            return self._error_response()
 
     def run(self, query: str) -> str:
         """Run the agent loop for a single query and return the final answer."""
         inputs = {"messages": [HumanMessage(content=query)]}
-        config = {"callbacks": [self._callback]}
-        result = self.graph.invoke(inputs, config=config)
-        output = self._extract_final_text(result)
-        return self._format_references(output)
+        self._callback.papers.clear()
+        config = {
+            "callbacks": [self._callback],
+            "recursion_limit": self.max_iterations,
+        }
+        try:
+            result = self._invoke_with_retries(inputs, config=config)
+            output = self._extract_final_text(result)
+            return self._format_references(output)
+        except Exception:
+            logger.exception("ResearchAgent run failed.")
+            return self._error_response()
