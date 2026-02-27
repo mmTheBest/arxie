@@ -1,14 +1,10 @@
 """LangChain-based research agent.
 
-This is an initial skeleton for an Academic Research Assistant that uses a
-ReAct-style loop (tool use + reasoning) to:
+Uses create_agent (LangChain >=1.2) with a tool-calling loop to:
 - search for papers
 - fetch paper details
 - chase citations
 - synthesize an answer with clear references
-
-The tool implementations are intentionally minimal and will evolve as the system
-adds PDF parsing, caching, and more robust citation formatting.
 """
 
 from __future__ import annotations
@@ -20,9 +16,9 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from langchain.agents import AgentExecutor, create_react_agent
+from langchain.agents import create_agent
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 from ra.citation import CitationFormatter
@@ -32,7 +28,7 @@ from ra.tools.retrieval_tools import make_retrieval_tools
 from ra.utils.logging import UsageLogger
 
 
-_REACT_PROMPT_TEMPLATE = """You are an Academic Research Assistant.
+_SYSTEM_PROMPT = """You are an Academic Research Assistant.
 
 You have access to tools for academic literature retrieval.
 
@@ -49,22 +45,7 @@ Tool-use rules:
 
 Uncertainty rules:
 - If you cannot find relevant papers, say so explicitly rather than guessing.
-- If evidence is weak or mixed, say so explicitly.
-
-You MUST follow this format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action (a JSON object)
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final: the final answer to the original question, with inline citations and a References section
-
-Question: {input}
-{agent_scratchpad}
-"""
+- If evidence is weak or mixed, say so explicitly."""
 
 
 # -----------------
@@ -79,21 +60,13 @@ class _ToolRun:
 
 
 def _estimate_openai_cost(model: str, tokens_in: int, tokens_out: int) -> float:
-    """Best-effort cost estimation in USD.
-
-    We intentionally keep this small and approximate; missing models default to 0.
-    Prices are per 1K tokens.
-    """
-
-    # https://openai.com/pricing (approx; keep in sync as needed)
+    """Best-effort cost estimation in USD."""
     prices_per_1k: dict[str, tuple[float, float]] = {
-        # model: (input_per_1k, output_per_1k)
         "gpt-4o-mini": (0.00015, 0.0006),
         "gpt-4o": (0.005, 0.015),
         "gpt-4.1-mini": (0.0003, 0.0012),
         "gpt-4.1": (0.01, 0.03),
     }
-
     inp, out = prices_per_1k.get(model, (0.0, 0.0))
     return (tokens_in / 1000.0) * inp + (tokens_out / 1000.0) * out
 
@@ -107,8 +80,6 @@ def _safe_int(v: Any) -> int:
 
 def _extract_token_usage(llm_result: Any) -> tuple[int, int]:
     """Extract (tokens_in, tokens_out) from LangChain LLM result objects."""
-
-    # Common path: llm_output.token_usage
     try:
         llm_output = getattr(llm_result, "llm_output", None) or {}
         tu = llm_output.get("token_usage") if isinstance(llm_output, dict) else None
@@ -120,7 +91,6 @@ def _extract_token_usage(llm_result: Any) -> tuple[int, int]:
     except Exception:
         pass
 
-    # Newer path: message.usage_metadata
     try:
         generations = getattr(llm_result, "generations", None)
         if generations:
@@ -128,7 +98,6 @@ def _extract_token_usage(llm_result: Any) -> tuple[int, int]:
             msg = getattr(gen0, "message", None)
             usage_md = getattr(msg, "usage_metadata", None) or {}
             if isinstance(usage_md, dict):
-                # LangChain uses input_tokens/output_tokens keys
                 return (
                     _safe_int(usage_md.get("input_tokens") or usage_md.get("prompt_tokens")),
                     _safe_int(
@@ -180,20 +149,16 @@ class ResearchAgentCallback(BaseCallbackHandler):
 
         self.papers: dict[str, Paper] = {}
 
-    # ---- LLM ----
-
     def on_llm_start(
         self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any
-    ) -> None:  # noqa: ARG002
+    ) -> None:
         self._llm_start = time.time()
 
-    def on_llm_end(self, response: Any, **kwargs: Any) -> None:  # noqa: ARG002
+    def on_llm_end(self, response: Any, **kwargs: Any) -> None:
         start = self._llm_start or time.time()
         elapsed_ms = int((time.time() - start) * 1000)
         tokens_in, tokens_out = _extract_token_usage(response)
         cost = _estimate_openai_cost(self.model, tokens_in=tokens_in, tokens_out=tokens_out)
-
-        # This is a pragmatic label; OpenAI SDK endpoint name can vary.
         self.usage_logger.log_api_call(
             endpoint="openai.chat.completions",
             method="POST",
@@ -204,7 +169,7 @@ class ResearchAgentCallback(BaseCallbackHandler):
             status=200,
         )
 
-    def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:  # noqa: ARG002
+    def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
         start = self._llm_start or time.time()
         elapsed_ms = int((time.time() - start) * 1000)
         self.usage_logger.log_api_call(
@@ -217,21 +182,17 @@ class ResearchAgentCallback(BaseCallbackHandler):
             status=500,
         )
 
-    # ---- Tools ----
-
     def on_tool_start(
         self, serialized: dict[str, Any], input_str: str, **kwargs: Any
-    ) -> None:  # noqa: ARG002
+    ) -> None:
         name = str(serialized.get("name") or "unknown")
         self._tool_stack.append(_ToolRun(name=name, start=time.time()))
 
-    def on_tool_end(self, output: Any, **kwargs: Any) -> None:  # noqa: ARG002
+    def on_tool_end(self, output: Any, **kwargs: Any) -> None:
         run = (
             self._tool_stack.pop() if self._tool_stack else _ToolRun("unknown", time.time())
         )
         elapsed_ms = int((time.time() - run.start) * 1000)
-
-        # Log tool call as a usage entry (no tokens).
         self.usage_logger.log_api_call(
             endpoint=f"tool:{run.name}",
             method="CALL",
@@ -241,20 +202,16 @@ class ResearchAgentCallback(BaseCallbackHandler):
             response_time_ms=elapsed_ms,
             status=200,
         )
-
-        # Best-effort: collect any papers returned by retrieval tools.
         try:
             if not isinstance(output, str):
                 return
             obj = json.loads(output)
             if not isinstance(obj, dict):
                 return
-
             if isinstance(obj.get("paper"), dict):
                 p = _paper_from_dict(obj["paper"])
                 if p:
                     self.papers[p.id] = p
-
             results = obj.get("results")
             if isinstance(results, list):
                 for item in results:
@@ -265,7 +222,7 @@ class ResearchAgentCallback(BaseCallbackHandler):
         except Exception:
             return
 
-    def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:  # noqa: ARG002
+    def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
         run = (
             self._tool_stack.pop() if self._tool_stack else _ToolRun("unknown", time.time())
         )
@@ -287,13 +244,11 @@ class ResearchAgentCallback(BaseCallbackHandler):
 
 
 class ResearchAgent:
-    """Academic Research Assistant agent (LangChain + ReAct)."""
+    """Academic Research Assistant agent (LangChain >=1.2 create_agent)."""
 
     def __init__(self, *, model: str | None = None, verbose: bool = False):
         self.model = model or os.getenv("RA_MODEL", "gpt-4o-mini")
 
-        # ChatOpenAI will also read OPENAI_API_KEY from env automatically. We pass it
-        # explicitly when present to make configuration clearer.
         api_key = os.getenv("OPENAI_API_KEY")
         self.llm = ChatOpenAI(model=self.model, api_key=api_key, temperature=0)
 
@@ -308,25 +263,19 @@ class ResearchAgent:
         self._callback = ResearchAgentCallback(usage_logger=self.usage_logger, model=self.model)
         self._citation_formatter = CitationFormatter()
 
-        prompt = PromptTemplate.from_template(_REACT_PROMPT_TEMPLATE)
-        agent = create_react_agent(self.llm, self.tools, prompt)
-
-        self.executor = AgentExecutor(
-            agent=agent,
+        self.graph = create_agent(
+            model=self.llm,
             tools=self.tools,
-            verbose=verbose,
-            handle_parsing_errors=True,
-            callbacks=[self._callback],
+            system_prompt=_SYSTEM_PROMPT,
+            debug=verbose,
         )
 
     def _format_references(self, text: str) -> str:
-        # Select papers that the formatter can actually match inside the answer.
         paper_list = list(self._callback.papers.values())
         claims = self._citation_formatter.extract_claims(text, paper_list)
         cited_ids = {pid for c in claims for pid in c.supporting_papers}
         cited_papers = [p for p in paper_list if p.id in cited_ids]
 
-        # Strip any existing References section (best-effort) and append our formatted list.
         body = re.sub(r"(?is)\n+references\s*:?.*\Z", "", text).rstrip()
 
         if not cited_papers:
@@ -335,14 +284,34 @@ class ResearchAgent:
         refs = self._citation_formatter.format_reference_list(cited_papers).strip()
         return body + "\n\nReferences\n" + refs
 
+    def _extract_final_text(self, result: dict[str, Any]) -> str:
+        """Extract the final assistant text from the graph result."""
+        messages = result.get("messages", [])
+        # Walk backwards to find the last AI message without tool calls
+        for msg in reversed(messages):
+            if hasattr(msg, "type") and msg.type == "ai" and not getattr(msg, "tool_calls", None):
+                return str(msg.content)
+            # dict form
+            if isinstance(msg, dict) and msg.get("role") == "assistant" and not msg.get("tool_calls"):
+                return str(msg.get("content", ""))
+        # Fallback: last message content
+        if messages:
+            last = messages[-1]
+            return str(getattr(last, "content", "") or (last.get("content", "") if isinstance(last, dict) else ""))
+        return ""
+
     async def arun(self, query: str) -> str:
         """Async entrypoint."""
-        result = await self.executor.ainvoke({"input": query})
-        output = str(result.get("output", ""))
+        inputs = {"messages": [HumanMessage(content=query)]}
+        config = {"callbacks": [self._callback]}
+        result = await self.graph.ainvoke(inputs, config=config)
+        output = self._extract_final_text(result)
         return self._format_references(output)
 
     def run(self, query: str) -> str:
         """Run the agent loop for a single query and return the final answer."""
-        import asyncio
-
-        return asyncio.run(self.arun(query))
+        inputs = {"messages": [HumanMessage(content=query)]}
+        config = {"callbacks": [self._callback]}
+        result = self.graph.invoke(inputs, config=config)
+        output = self._extract_final_text(result)
+        return self._format_references(output)
