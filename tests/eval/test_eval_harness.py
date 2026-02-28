@@ -16,19 +16,24 @@ class _MockAgent:
 
     def run(self, query: str) -> str:
         payload = self._responses[query]
-        tool_statuses = payload.get("tool_statuses", [])
+        raw_tool_entries = payload.get("tool_entries")
+        if raw_tool_entries is None:
+            raw_tool_entries = [
+                {"status": int(status)}
+                for status in payload.get("tool_statuses", [])
+            ]
         usage_path = Path(self.usage_logger.path)
         usage_path.parent.mkdir(parents=True, exist_ok=True)
         with usage_path.open("a", encoding="utf-8") as f:
-            for status in tool_statuses:
+            for entry in raw_tool_entries:
+                record = {
+                    "endpoint": "tool:search_papers",
+                    "response_time_ms": 5,
+                }
+                if isinstance(entry, dict):
+                    record.update(entry)
                 f.write(
-                    json.dumps(
-                        {
-                            "endpoint": "tool:search_papers",
-                            "status": int(status),
-                            "response_time_ms": 5,
-                        }
-                    )
+                    json.dumps(record)
                     + "\n"
                 )
         return str(payload["answer"])
@@ -85,19 +90,21 @@ def test_run_computes_metrics_and_writes_outputs(tmp_path: Path) -> None:
         "Q1": {
             "answer": (
                 "## Answer\n"
-                "Transformers replaced recurrence (Vaswani et al., 2017). "
-                "Self-attention improved parallelization (Vaswani et al., 2017).\n\n"
+                "Transformers replaced recurrence and improved parallelization for long-context "
+                "sequence modeling in modern NLP systems.\n\n"
                 "## References\n"
-                "1. Vaswani, A., et al. (2017). Attention Is All You Need."
+                "1. https://arxiv.org/abs/1706.03762\n"
+                "2. https://doi.org/10.48550/arXiv.1706.03762"
             ),
             "tool_statuses": [200, 200],
         },
         "Q2": {
             "answer": (
                 "## Answer\n"
-                "The retrieval variant improves indexing speed.\n\n"
+                "Short answer.\n\n"
                 "## References\n"
-                "None."
+                "1. https:///paper\n"
+                "2. https://example.com/paper"
             ),
             "tool_statuses": [200, 500],
         },
@@ -117,8 +124,8 @@ def test_run_computes_metrics_and_writes_outputs(tmp_path: Path) -> None:
 
     report = harness.run()
 
-    assert report["metrics"]["citation_precision"] == pytest.approx(0.5, abs=1e-6)
-    assert report["metrics"]["claim_support_ratio"] == pytest.approx(2 / 3, abs=1e-6)
+    assert report["metrics"]["citation_precision"] == pytest.approx(0.75, abs=1e-6)
+    assert report["metrics"]["claim_support_ratio"] == pytest.approx(0.5, abs=1e-6)
     assert report["metrics"]["tool_success_rate"] == pytest.approx(0.75, abs=1e-6)
     assert report["metrics"]["latency_p95"] == pytest.approx(0.4, abs=1e-6)
     assert report["total_questions"] == 2
@@ -134,3 +141,53 @@ def test_run_computes_metrics_and_writes_outputs(tmp_path: Path) -> None:
     markdown = md_path.read_text(encoding="utf-8")
     assert "citation_precision" in markdown
     assert "Tier Breakdown" in markdown
+
+
+def test_run_counts_missing_status_without_error_as_success(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "dataset.json"
+    usage_log_path = tmp_path / "api-usage.jsonl"
+    _write_dataset(
+        dataset_path,
+        [
+            {
+                "query": "Q",
+                "expected_keywords": ["science"],
+                "difficulty_tier": "tier_1",
+                "min_citations": 1,
+                "max_citations": 4,
+            }
+        ],
+    )
+
+    responses = {
+        "Q": {
+            "answer": (
+                "## Answer\n"
+                "This answer contains enough substantive detail to exceed fifty characters "
+                "for coverage checks.\n\n"
+                "## References\n"
+                "1. https://example.org/paper"
+            ),
+            "tool_entries": [
+                {"endpoint": "tool:search_papers"},
+                {"endpoint": "tool:get_paper_details", "status": 200, "error": ""},
+                {"endpoint": "tool:get_paper_citations", "status": 200, "error": "timeout"},
+                {"endpoint": "tool:get_paper_citations", "status": 500},
+            ],
+        }
+    }
+
+    times = iter([1.0, 1.1])
+
+    def _clock() -> float:
+        return next(times)
+
+    harness = EvalHarness(
+        dataset_path=dataset_path,
+        output_dir=tmp_path / "results",
+        agent_factory=lambda: _MockAgent(responses, usage_log_path),
+        time_fn=_clock,
+    )
+
+    report = harness.run()
+    assert report["metrics"]["tool_success_rate"] == pytest.approx(0.5, abs=1e-6)

@@ -548,5 +548,555 @@
     "difficulty_tier": "tier_3",
     "min_citations": 3,
     "max_citations": 7
+  },
+  {
+    "query": "Who proposed the CRISPR-Cas9 genome editing method in Science (2012)?",
+    "expected_keywords": [
+      "Doudna",
+      "Charpentier",
+      "CRISPR-Cas9"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "In which year was the Higgs boson discovery announced by ATLAS and CMS?",
+    "expected_keywords": [
+      "2012",
+      "Higgs boson",
+      "CERN"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What does PCR stand for and who developed it?",
+    "expected_keywords": [
+      "polymerase chain reaction",
+      "Kary Mullis",
+      "amplification"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Which economist introduced the concept of comparative advantage?",
+    "expected_keywords": [
+      "David Ricardo",
+      "comparative advantage",
+      "trade"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who authored 'The Structure of Scientific Revolutions' and what key term did it popularize?",
+    "expected_keywords": [
+      "Thomas Kuhn",
+      "paradigm shift",
+      "scientific revolutions"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What is the main finding of Watson and Crick's 1953 Nature paper?",
+    "expected_keywords": [
+      "DNA",
+      "double helix",
+      "structure"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Which paper introduced PageRank and what system did it power?",
+    "expected_keywords": [
+      "PageRank",
+      "Brin",
+      "Page"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "In what year was the first draft of the Human Genome announced?",
+    "expected_keywords": [
+      "2001",
+      "Human Genome Project",
+      "draft sequence"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who introduced the K-means clustering algorithm in the Lloyd formulation?",
+    "expected_keywords": [
+      "Lloyd",
+      "k-means",
+      "clustering"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What is the central result of Bell's 1964 theorem?",
+    "expected_keywords": [
+      "Bell theorem",
+      "local hidden variables",
+      "quantum nonlocality"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Which researcher developed prospect theory with Amos Tversky?",
+    "expected_keywords": [
+      "Daniel Kahneman",
+      "prospect theory",
+      "decision making"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What was the core contribution of Shannon's 1948 information theory paper?",
+    "expected_keywords": [
+      "entropy",
+      "channel capacity",
+      "communication"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who discovered penicillin and in what year?",
+    "expected_keywords": [
+      "Alexander Fleming",
+      "1928",
+      "penicillin"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What does GDP stand for and what does it measure?",
+    "expected_keywords": [
+      "gross domestic product",
+      "economic output",
+      "national accounts"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Which scientist introduced natural selection in 'On the Origin of Species'?",
+    "expected_keywords": [
+      "Charles Darwin",
+      "natural selection",
+      "evolution"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What is the purpose of the p-value in null hypothesis significance testing?",
+    "expected_keywords": [
+      "statistical significance",
+      "null hypothesis",
+      "probability"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who introduced convolutional neural networks with LeNet-5?",
+    "expected_keywords": [
+      "LeCun",
+      "LeNet-5",
+      "convolutional neural network"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What does fMRI measure in neuroscience experiments?",
+    "expected_keywords": [
+      "BOLD",
+      "blood oxygen level",
+      "neural activity"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Which organization publishes the DSM-5 for psychiatric diagnosis?",
+    "expected_keywords": [
+      "American Psychiatric Association",
+      "DSM-5",
+      "mental disorders"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What is the main goal of the Montreal Protocol (1987)?",
+    "expected_keywords": [
+      "ozone layer",
+      "CFCs",
+      "international treaty"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Compare randomized controlled trials and observational cohort studies for causal inference in medicine.",
+    "expected_keywords": [
+      "confounding",
+      "randomization",
+      "external validity"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do RNA-seq and microarray experiments differ in transcriptomics workflows?",
+    "expected_keywords": [
+      "sequencing",
+      "dynamic range",
+      "probe-based"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare finite element and finite difference methods for solving PDEs.",
+    "expected_keywords": [
+      "mesh",
+      "discretization",
+      "boundary conditions"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do Bayesian and frequentist approaches differ in parameter estimation?",
+    "expected_keywords": [
+      "prior",
+      "posterior",
+      "confidence interval"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare CAPM and Fama-French factor models in asset pricing.",
+    "expected_keywords": [
+      "beta",
+      "factors",
+      "expected returns"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Explain differences between logistic regression and probit models for binary outcomes.",
+    "expected_keywords": [
+      "link function",
+      "latent variable",
+      "maximum likelihood"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare qualitative thematic analysis and grounded theory in social science research.",
+    "expected_keywords": [
+      "coding",
+      "theory generation",
+      "inductive"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do scoping reviews differ from systematic reviews and meta-analyses?",
+    "expected_keywords": [
+      "breadth",
+      "protocol",
+      "quantitative synthesis"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare PET and fMRI for measuring brain function.",
+    "expected_keywords": [
+      "temporal resolution",
+      "metabolic activity",
+      "spatial resolution"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How does diffraction-limit microscopy compare with super-resolution techniques like STORM?",
+    "expected_keywords": [
+      "diffraction limit",
+      "localization",
+      "nanometer resolution"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare ARIMA models with LSTM models for time-series forecasting.",
+    "expected_keywords": [
+      "stationarity",
+      "sequence modeling",
+      "data requirements"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do difference-in-differences and synthetic control methods compare for policy evaluation?",
+    "expected_keywords": [
+      "counterfactual",
+      "parallel trends",
+      "weighted donor pool"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare grounded language model evaluation by human raters versus automated metrics.",
+    "expected_keywords": [
+      "inter-rater reliability",
+      "validity",
+      "scalability"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How does Mendelian randomization differ from traditional epidemiological association studies?",
+    "expected_keywords": [
+      "genetic instruments",
+      "causality",
+      "pleiotropy"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare SIR compartmental models with agent-based models in epidemic simulation.",
+    "expected_keywords": [
+      "homogeneous mixing",
+      "heterogeneity",
+      "simulation"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do transformer-based protein language models differ from structure-based methods like AlphaFold pipelines?",
+    "expected_keywords": [
+      "sequence embeddings",
+      "structural prediction",
+      "attention"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare spatial autoregressive models and geographically weighted regression for spatial data.",
+    "expected_keywords": [
+      "spatial dependence",
+      "local coefficients",
+      "autocorrelation"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do principal component analysis and t-SNE differ for dimensionality reduction?",
+    "expected_keywords": [
+      "linear projection",
+      "nonlinear visualization",
+      "variance preservation"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare game-theoretic Nash equilibrium analysis with evolutionary stable strategy frameworks.",
+    "expected_keywords": [
+      "strategic interaction",
+      "dynamics",
+      "stability"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do ethnography and survey-based methods differ in organizational behavior research?",
+    "expected_keywords": [
+      "participant observation",
+      "self-report",
+      "depth"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Synthesize evidence across climate attribution studies: what uncertainties remain in extreme-weather event attribution?",
+    "expected_keywords": [
+      "attribution",
+      "uncertainty",
+      "extremes"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Across CRISPR off-target detection papers, what methodological gaps limit clinical translation?",
+    "expected_keywords": [
+      "off-target",
+      "specificity",
+      "safety"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "What cross-field evidence links socioeconomic inequality to health outcomes, and where are causal gaps strongest?",
+    "expected_keywords": [
+      "social determinants",
+      "causal inference",
+      "confounding"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Integrate findings from quantum error-correction literature: what bottlenecks remain for fault-tolerant quantum computing?",
+    "expected_keywords": [
+      "logical qubits",
+      "threshold theorem",
+      "overhead"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "From reproducibility audits across psychology, economics, and biomedicine, what interventions appear most effective?",
+    "expected_keywords": [
+      "preregistration",
+      "replication",
+      "statistical power"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Synthesize evidence on AI-assisted radiology studies: where do generalization failures persist?",
+    "expected_keywords": [
+      "domain shift",
+      "external validation",
+      "clinician workflow"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Across biodiversity monitoring studies, what gaps exist between remote sensing indicators and species-level outcomes?",
+    "expected_keywords": [
+      "remote sensing",
+      "biodiversity proxies",
+      "ground truth"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "What does cross-study evidence say about long-term impacts of early-childhood interventions, and what mechanisms remain contested?",
+    "expected_keywords": [
+      "longitudinal outcomes",
+      "mechanism",
+      "heterogeneity"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Integrate results from battery chemistry papers: which degradation mechanisms most constrain fast charging?",
+    "expected_keywords": [
+      "lithium plating",
+      "SEI",
+      "thermal effects"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Across misinformation intervention studies, which debiasing strategies scale and which fail across cultures?",
+    "expected_keywords": [
+      "prebunking",
+      "fact-checking",
+      "cultural context"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
   }
 ]

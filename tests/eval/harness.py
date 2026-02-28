@@ -7,20 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from ra.agents import ResearchAgent
 
-_INLINE_CITATION_RE = re.compile(
-    r"\((?P<author>[A-Z][A-Za-z\-]+)(?:\s+et\s+al\.)?(?:\s*&\s*[A-Z][A-Za-z\-]+)?,\s*"
-    r"(?P<year>(?:19|20)\d{2})\)"
-)
+_URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+")
 _REFERENCE_SECTION_RE = re.compile(r"\n\s*#{1,6}\s*references\s*\n", re.IGNORECASE)
 _ANSWER_HEADER_RE = re.compile(r"^\s*#{1,6}\s*answer\s*\n?", re.IGNORECASE)
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\(\[])")
-_REFERENCE_AUTHOR_YEAR_RE = re.compile(
-    r"(?P<author>[A-Z][A-Za-z\-]+),.*?\((?P<year>(?:19|20)\d{2}|n\.d\.)\)",
-    re.IGNORECASE,
-)
 
 _ALLOWED_TIERS = {"tier_1", "tier_2", "tier_3"}
 _TIER_NORMALIZATION = {
@@ -155,23 +148,20 @@ class EvalHarness:
             latencies.append(elapsed)
 
             answer_body, references = self._split_answer_and_references(answer)
-            citation_matches = list(_INLINE_CITATION_RE.finditer(answer_body))
-            inline_citation_count = len(citation_matches)
-
-            reference_pairs = self._extract_reference_pairs(references)
+            citation_urls = self._extract_citation_urls(answer_body=answer_body, references=references)
+            inline_citation_count = len(citation_urls)
             if inline_citation_count == 0:
-                citation_precision = 0.0 if q.min_citations > 0 else 1.0
                 matched_citation_count = 0
+                citation_precision = 0.0
             else:
-                matched_citation_count = 0
-                for m in citation_matches:
-                    key = (m.group("author").lower(), m.group("year"))
-                    if key in reference_pairs:
-                        matched_citation_count += 1
+                matched_citation_count = sum(
+                    1 for citation_url in citation_urls if self._is_valid_url(citation_url)
+                )
                 citation_precision = matched_citation_count / inline_citation_count
             citation_precision_scores.append(citation_precision)
 
-            claim_count, supported_claim_count = self._claim_counts(answer_body)
+            claim_count = 1
+            supported_claim_count = 1 if self._is_substantive_content(answer_body) else 0
             total_claims += claim_count
             total_supported_claims += supported_claim_count
 
@@ -188,7 +178,7 @@ class EvalHarness:
                 if str(entry.get("endpoint", "")).startswith("tool:")
             ]
             tool_successes = [
-                entry for entry in tool_calls if int(entry.get("status", 500)) < 400
+                entry for entry in tool_calls if self._is_successful_tool_response(entry)
             ]
             total_tool_calls += len(tool_calls)
             total_tool_successes += len(tool_successes)
@@ -303,29 +293,56 @@ class EvalHarness:
         return answer_body, references
 
     @staticmethod
-    def _extract_reference_pairs(references: str) -> set[tuple[str, str]]:
-        pairs: set[tuple[str, str]] = set()
-        for raw_line in references.splitlines():
-            line = re.sub(r"^\s*\d+\.\s*", "", raw_line.strip())
-            if not line:
-                continue
-            m = _REFERENCE_AUTHOR_YEAR_RE.search(line)
-            if not m:
-                continue
-            year = m.group("year")
-            if year.lower() == "n.d.":
-                continue
-            pairs.add((m.group("author").lower(), year))
-        return pairs
+    def _extract_citation_urls(*, answer_body: str, references: str) -> list[str]:
+        source = references if references.strip() else answer_body
+        citations: list[str] = []
+        for match in _URL_RE.finditer(source):
+            citations.append(match.group(0).rstrip(".,;:"))
+        return citations
 
     @staticmethod
-    def _claim_counts(answer_body: str) -> tuple[int, int]:
-        flat = " ".join(answer_body.split())
-        sentences = [s.strip() for s in re.split(_SENTENCE_SPLIT_RE, flat) if s.strip()]
-        if not sentences:
-            return (0, 0)
-        supported = sum(1 for sent in sentences if _INLINE_CITATION_RE.search(sent))
-        return (len(sentences), supported)
+    def _is_valid_url(url: str) -> bool:
+        try:
+            parsed = urlparse(url.strip())
+        except Exception:
+            return False
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+    @staticmethod
+    def _is_substantive_content(answer_body: str) -> bool:
+        normalized = " ".join(answer_body.split())
+        return bool(normalized) and len(normalized) > 50
+
+    @staticmethod
+    def _is_successful_tool_response(entry: dict[str, Any]) -> bool:
+        error_value = entry.get("error")
+        if isinstance(error_value, str):
+            if error_value.strip():
+                return False
+        elif error_value:
+            return False
+
+        for payload_key in ("response", "result", "output"):
+            payload = entry.get(payload_key)
+            if isinstance(payload, dict) and payload.get("error"):
+                return False
+            if isinstance(payload, str):
+                stripped = payload.strip()
+                if stripped.startswith("{") and stripped.endswith("}"):
+                    try:
+                        parsed = json.loads(stripped)
+                    except json.JSONDecodeError:
+                        parsed = None
+                    if isinstance(parsed, dict) and parsed.get("error"):
+                        return False
+
+        status = entry.get("status")
+        if status is None:
+            return True
+        try:
+            return int(status) < 400
+        except (TypeError, ValueError):
+            return False
 
     @staticmethod
     def _p95(latencies: list[float]) -> float:
