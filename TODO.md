@@ -11,8 +11,8 @@
 - [x] **Fix inline citation formatting** — Agent retrieves papers (tool_success=100%) but outputs 0 inline citations. Root cause: agent doesn't use (Author et al., Year) format in answers. Fix system prompt + verify tool output includes author/year data. Re-run eval.
 
 ## Priority 1 — Full-Text Analysis
-- [ ] **Wire PDF parser into agent tool chain** — Add `read_paper_fulltext` tool to `src/ra/tools/retrieval_tools.py`. Takes paper_id → downloads PDF via `pdf_url` → parses with `src/ra/parsing/pdf_parser.py` → returns structured sections (abstract, methods, results, discussion). Add unit tests.
-- [ ] **Integrate into agent loop** — Update system prompt to instruct agent to use `read_paper_fulltext` for detailed questions. Verify agent calls the tool when asked about methods/results.
+- [x] **Wire PDF parser into agent tool chain** — Add `read_paper_fulltext` tool to `src/ra/tools/retrieval_tools.py`. Takes paper_id → downloads PDF via `pdf_url` → parses with `src/ra/parsing/pdf_parser.py` → returns structured sections (abstract, methods, results, discussion). Add unit tests.
+- [x] **Integrate into agent loop** — Update system prompt to instruct agent to use `read_paper_fulltext` for detailed questions. Verify agent calls the tool when asked about methods/results.
 
 ## Priority 2 — Multi-Hop Reasoning
 - [ ] **Deep search mode** — Add `deep_search` parameter to `ResearchAgent`. When enabled: (1) initial search, (2) read top-3 full text, (3) follow citations from those papers, (4) synthesize across all sources. Increase `max_iterations` for deep mode.

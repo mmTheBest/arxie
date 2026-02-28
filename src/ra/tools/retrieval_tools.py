@@ -18,10 +18,12 @@ import threading
 from collections.abc import Awaitable
 from typing import Literal, TypeVar
 
+import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from langchain_core.tools import StructuredTool
 
+from ra.parsing import PDFParser, Section
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.utils.security import sanitize_identifier, sanitize_user_text
@@ -151,6 +153,22 @@ class GetPaperFullTextArgs(BaseModel):
         return sanitize_identifier(value, field_name="identifier", max_length=256)
 
 
+class ReadPaperFullTextArgs(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    paper_id: str = Field(
+        ...,
+        description=(
+            "Paper identifier: Semantic Scholar paperId, DOI (optionally prefixed with DOI:), or arXiv id."
+        ),
+    )
+
+    @field_validator("paper_id")
+    @classmethod
+    def _validate_paper_id(cls, value: str) -> str:
+        return sanitize_identifier(value, field_name="paper_id", max_length=256)
+
+
 class GetPaperCitationsArgs(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -164,6 +182,31 @@ class GetPaperCitationsArgs(BaseModel):
     @classmethod
     def _validate_paper_id(cls, value: str) -> str:
         return sanitize_identifier(value, field_name="paper_id", max_length=256)
+
+
+def _tool_named_error_payload(tool: str, error: str, message: str, **extra: object) -> str:
+    payload: dict[str, object] = {
+        "tool": tool,
+        "error": error,
+        "message": message,
+    }
+    payload.update(extra)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _find_section_content(
+    sections: list[Section],
+    *,
+    heading_aliases: tuple[str, ...],
+) -> str | None:
+    aliases = tuple(alias.lower() for alias in heading_aliases)
+    for section in sections:
+        title = (section.title or "").strip().lower()
+        if any(alias in title for alias in aliases):
+            content = (section.content or "").strip()
+            if content:
+                return content
+    return None
 
 
 def make_retrieval_tools(
@@ -219,6 +262,104 @@ def make_retrieval_tools(
 
     def get_paper_full_text_sync(identifier: str) -> str:
         return _run_coroutine_sync(get_paper_full_text(identifier=identifier))
+
+    async def read_paper_fulltext(paper_id: str) -> str:
+        """Download and parse a paper PDF into structured core sections."""
+        tool_name = "read_paper_fulltext"
+        try:
+            paper = await retriever.get_paper(paper_id)
+        except Exception as exc:
+            logger.exception("Tool execution failed: read_paper_fulltext")
+            return _tool_error_payload(tool_name, exc)
+
+        if not paper:
+            return _tool_named_error_payload(
+                tool_name,
+                "paper_not_found",
+                "No paper found for the provided identifier.",
+                paper_id=paper_id,
+            )
+
+        pdf_url = (paper.pdf_url or "").strip()
+        if not pdf_url:
+            return _tool_named_error_payload(
+                tool_name,
+                "pdf_unavailable",
+                "No PDF URL is available for this paper.",
+                paper_id=paper.id,
+            )
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                response = await client.get(pdf_url)
+                response.raise_for_status()
+        except httpx.TimeoutException:
+            return _tool_named_error_payload(
+                tool_name,
+                "download_timeout",
+                "Timed out while downloading the PDF.",
+                paper_id=paper.id,
+                pdf_url=pdf_url,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("PDF download failed for %s: %s", paper.id, exc)
+            return _tool_named_error_payload(
+                tool_name,
+                "download_failed",
+                "Failed to download the PDF.",
+                paper_id=paper.id,
+                pdf_url=pdf_url,
+            )
+
+        try:
+            parser = PDFParser()
+            parsed = parser.parse_from_bytes(response.content)
+            sections = parser.extract_sections(parsed)
+        except Exception as exc:
+            logger.warning("PDF parse failed for %s: %s", paper.id, exc)
+            return _tool_named_error_payload(
+                tool_name,
+                "parse_failed",
+                "Failed to parse the PDF.",
+                paper_id=paper.id,
+                pdf_url=pdf_url,
+            )
+
+        payload = {
+            "paper_id": paper.id,
+            "title": (paper.title or "").strip() or None,
+            "abstract": _find_section_content(
+                sections,
+                heading_aliases=("abstract",),
+            )
+            or (paper.abstract.strip() if isinstance(paper.abstract, str) and paper.abstract.strip() else None),
+            "methods": _find_section_content(
+                sections,
+                heading_aliases=(
+                    "method",
+                    "methods",
+                    "methodology",
+                    "materials and methods",
+                    "experiment",
+                ),
+            ),
+            "results": _find_section_content(
+                sections,
+                heading_aliases=("results",),
+            ),
+            "discussion": _find_section_content(
+                sections,
+                heading_aliases=("discussion",),
+            ),
+            "conclusion": _find_section_content(
+                sections,
+                heading_aliases=("conclusion", "conclusions", "future work"),
+            ),
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
+    def read_paper_fulltext_sync(paper_id: str) -> str:
+        return _run_coroutine_sync(read_paper_fulltext(paper_id=paper_id))
 
     async def get_paper_citations(paper_id: str, limit: int = 20) -> str:
         """Fetch papers that cite the given paper (Semantic Scholar)."""
@@ -279,6 +420,17 @@ def make_retrieval_tools(
             args_schema=GetPaperFullTextArgs,
             func=get_paper_full_text_sync,
             coroutine=get_paper_full_text,
+        ),
+        StructuredTool(
+            name="read_paper_fulltext",
+            description=(
+                "Read and structure full text for a paper from its PDF. "
+                "Use this when the user asks for specific methodology, results, discussion details, or conclusions. "
+                "Returns JSON with title, abstract, methods, results, discussion, and conclusion sections."
+            ),
+            args_schema=ReadPaperFullTextArgs,
+            func=read_paper_fulltext_sync,
+            coroutine=read_paper_fulltext,
         ),
 
         StructuredTool(

@@ -64,6 +64,7 @@ Your goals:
 Tool-use rules:
 - You MUST call search_papers at least once before finalizing any answer.
 - Use search_papers first, then get_paper_details for promising results.
+- When a user asks about specific methods, results, experiments, discussion points, or conclusions from a paper, call read_paper_fulltext for that paper before answering.
 - Use forward citation chasing (get_paper_citations) to find follow-ups or validations when helpful.
 
 Uncertainty rules:
