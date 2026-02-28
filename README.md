@@ -28,8 +28,7 @@ Ask a research question. Get an answer backed by real papers from Semantic Schol
 
 ### Why Arxie
 
-- **GPT hallucinates citations.** Ask GPT-4o for paper references and ~30% don't exist. Arxie retrieves real papers before answering.
-- **Training data is stale.** LLMs can't cite papers from last month. Arxie searches live databases.
+- **Always up to date.** Arxie searches live databases — including papers published today. No training cutoff, no stale knowledge.
 - **Abstracts aren't enough.** Most RAG tools only read titles and abstracts. Arxie reads full papers.
 - **Trust but verify.** Every citation includes DOI/arXiv links. Click and read the source yourself.
 
