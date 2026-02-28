@@ -49,3 +49,6 @@
 ## Phase 7 — Demo & Polish
 - [ ] **Remotion demo video** — Motion graphics demo showing: (1) GPT-4o giving unverifiable answer, (2) RA giving same answer with real papers + citation graph. The "aha" moment. Build with Remotion (React).
 - [ ] **Citation graph visualization** — Simple React component (or mermaid/d3) that renders paper relationships as a directed graph. For the demo and potential web UI.
+
+## Critical: Citation Formatting
+- [ ] **Fix inline citation formatting** — Agent retrieves papers successfully (tool_success=100%) but outputs 0 inline citations. The system prompt instructs (Author et al., Year) format but the agent ignores it. Debug: check if retrieved papers are included in agent context, verify the system prompt is being passed to create_agent, test with a stronger prompt that explicitly requires citations. Re-run eval after fix.
