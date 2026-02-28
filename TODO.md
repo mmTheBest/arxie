@@ -24,7 +24,7 @@
 - [x] Deployment config (Dockerfile, docker-compose)
 - [x] API documentation (OpenAPI/Swagger)
 - [x] Performance optimization (async batching, connection pooling)
-- [ ] README with setup instructions
+- [x] README with setup instructions
 
 ## Rules
 - Commit message: update on "YYYY-MM-DD"
