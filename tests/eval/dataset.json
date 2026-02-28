@@ -1,0 +1,552 @@
+[
+  {
+    "query": "Who introduced the Transformer architecture in 'Attention Is All You Need' (2017)?",
+    "expected_keywords": [
+      "Vaswani",
+      "Transformer",
+      "2017"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What objective is optimized during BERT pretraining?",
+    "expected_keywords": [
+      "masked language modeling",
+      "next sentence prediction",
+      "BERT"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "In which year was 'Deep Residual Learning for Image Recognition' published?",
+    "expected_keywords": [
+      "2015",
+      "ResNet",
+      "He"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who are the primary authors of the original GAN paper (2014)?",
+    "expected_keywords": [
+      "Goodfellow",
+      "GAN",
+      "2014"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What benchmark did AlexNet famously win in 2012?",
+    "expected_keywords": [
+      "ImageNet",
+      "ILSVRC",
+      "AlexNet"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What problem does the paper 'Adam: A Method for Stochastic Optimization' address?",
+    "expected_keywords": [
+      "optimization",
+      "adaptive learning rate",
+      "Adam"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who proposed the U-Net architecture and for what domain?",
+    "expected_keywords": [
+      "Ronneberger",
+      "biomedical image segmentation",
+      "U-Net"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What does the acronym YOLO stand for in the 2016 paper?",
+    "expected_keywords": [
+      "You Only Look Once",
+      "object detection",
+      "YOLO"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Which paper introduced Batch Normalization and what was its core benefit?",
+    "expected_keywords": [
+      "Batch Normalization",
+      "internal covariate shift",
+      "faster training"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What is the main contribution of the Word2Vec papers by Mikolov et al.?",
+    "expected_keywords": [
+      "word embeddings",
+      "skip-gram",
+      "CBOW"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "In what year did the original LSTM paper appear?",
+    "expected_keywords": [
+      "1997",
+      "LSTM",
+      "Hochreiter"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who introduced Dropout and why was it effective?",
+    "expected_keywords": [
+      "Srivastava",
+      "regularization",
+      "overfitting"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What dataset was introduced with the MNIST paper?",
+    "expected_keywords": [
+      "MNIST",
+      "handwritten digits",
+      "LeCun"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What is the central idea in 'Distilling the Knowledge in a Neural Network'?",
+    "expected_keywords": [
+      "knowledge distillation",
+      "teacher",
+      "student"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who proposed Layer Normalization and for what setting was it motivated?",
+    "expected_keywords": [
+      "Layer Normalization",
+      "Ba",
+      "recurrent neural networks"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What was the key idea of the original seq2seq paper by Sutskever et al.?",
+    "expected_keywords": [
+      "encoder-decoder",
+      "sequence to sequence",
+      "LSTM"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What does 'Neural Machine Translation by Jointly Learning to Align and Translate' introduce?",
+    "expected_keywords": [
+      "attention mechanism",
+      "Bahdanau",
+      "neural machine translation"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Who authored 'Playing Atari with Deep Reinforcement Learning'?",
+    "expected_keywords": [
+      "Mnih",
+      "DQN",
+      "Atari"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What contribution did 'A Survey of Active Learning' (Settles, 2009) make?",
+    "expected_keywords": [
+      "active learning",
+      "survey",
+      "query strategies"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "What is the purpose of the BLEU metric introduced by Papineni et al. (2002)?",
+    "expected_keywords": [
+      "BLEU",
+      "machine translation",
+      "evaluation metric"
+    ],
+    "difficulty_tier": "tier_1",
+    "min_citations": 1,
+    "max_citations": 3
+  },
+  {
+    "query": "Compare BERT and RoBERTa pretraining strategies and explain why RoBERTa improved performance.",
+    "expected_keywords": [
+      "dynamic masking",
+      "next sentence prediction removed",
+      "larger batches"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How does Transformer self-attention differ from RNN-based sequence modeling in computational tradeoffs?",
+    "expected_keywords": [
+      "parallelization",
+      "path length",
+      "quadratic complexity"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Explain the difference between variational autoencoders and GANs in training objectives and output quality.",
+    "expected_keywords": [
+      "ELBO",
+      "adversarial loss",
+      "mode collapse"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare ResNet skip connections with DenseNet connectivity; when is each advantageous?",
+    "expected_keywords": [
+      "residual connection",
+      "feature reuse",
+      "parameter efficiency"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How does Batch Normalization differ from Layer Normalization for training stability?",
+    "expected_keywords": [
+      "batch statistics",
+      "sequence models",
+      "normalization axis"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Explain how Adam differs from SGD with momentum and when Adam can generalize worse.",
+    "expected_keywords": [
+      "adaptive learning rates",
+      "momentum",
+      "generalization gap"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare GPT-style causal language modeling with BERT masked language modeling.",
+    "expected_keywords": [
+      "autoregressive",
+      "bidirectional",
+      "pretraining objective"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do graph neural networks (GCN) differ from graph attention networks (GAT)?",
+    "expected_keywords": [
+      "message passing",
+      "attention coefficients",
+      "graph structure"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Explain retrieval-augmented generation (RAG) versus pure parametric LLMs for factual QA.",
+    "expected_keywords": [
+      "external knowledge",
+      "hallucination reduction",
+      "retrieval latency"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare PPO and DQN for reinforcement learning: assumptions, stability, and action spaces.",
+    "expected_keywords": [
+      "policy gradient",
+      "value-based",
+      "continuous actions"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How does contrastive learning in SimCLR differ from supervised classification training?",
+    "expected_keywords": [
+      "data augmentation",
+      "positive pairs",
+      "projection head"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Explain the differences between BLEU, ROUGE, and BERTScore for text evaluation.",
+    "expected_keywords": [
+      "n-gram overlap",
+      "recall-oriented",
+      "semantic similarity"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare CRF-based sequence labeling with Transformer token classification.",
+    "expected_keywords": [
+      "structured decoding",
+      "label dependencies",
+      "contextual embeddings"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How do sparse attention variants like Longformer differ from full attention Transformers?",
+    "expected_keywords": [
+      "local attention",
+      "linear scaling",
+      "long context"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Explain why LoRA fine-tuning is more parameter-efficient than full-model fine-tuning.",
+    "expected_keywords": [
+      "low-rank adapters",
+      "frozen weights",
+      "parameter efficiency"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare mixture-of-experts Transformers with dense Transformers.",
+    "expected_keywords": [
+      "routing",
+      "conditional computation",
+      "inference complexity"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "How does Monte Carlo dropout approximate Bayesian uncertainty estimation?",
+    "expected_keywords": [
+      "stochastic forward passes",
+      "epistemic uncertainty",
+      "approximate inference"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare BM25 and dense vector retrieval for scientific search.",
+    "expected_keywords": [
+      "term frequency",
+      "semantic matching",
+      "hybrid retrieval"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Explain differences between chain-of-thought prompting and tool-augmented reasoning.",
+    "expected_keywords": [
+      "intermediate reasoning",
+      "external tools",
+      "verification"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Compare k-fold cross-validation with a single train/validation/test split in ML experiments.",
+    "expected_keywords": [
+      "variance reduction",
+      "data efficiency",
+      "computational cost"
+    ],
+    "difficulty_tier": "tier_2",
+    "min_citations": 2,
+    "max_citations": 5
+  },
+  {
+    "query": "Synthesize findings from Transformer, BERT, and T5 papers: what scaling patterns and limitations emerge?",
+    "expected_keywords": [
+      "scaling",
+      "pretraining",
+      "compute"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Across GAN, diffusion, and autoregressive generation papers, what open problems remain in controllability?",
+    "expected_keywords": [
+      "controllability",
+      "mode coverage",
+      "evaluation"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "What research gaps appear when comparing robustness papers on adversarial training and out-of-distribution detection?",
+    "expected_keywords": [
+      "robustness",
+      "distribution shift",
+      "evaluation protocols"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Integrate evidence from retrieval-augmented QA papers: where do current citation-grounding methods fail?",
+    "expected_keywords": [
+      "grounding",
+      "citation quality",
+      "retrieval errors"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "From RLHF and constitutional AI literature, what unresolved alignment tradeoffs are most significant?",
+    "expected_keywords": [
+      "alignment",
+      "reward hacking",
+      "oversight"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Compare multimodal papers (CLIP, Flamingo, GPT-4V-like systems): what bottlenecks persist for reasoning?",
+    "expected_keywords": [
+      "multimodal reasoning",
+      "data quality",
+      "benchmark gaps"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Synthesize methods for efficient adaptation (adapters, LoRA, prefix tuning): what theory gaps remain?",
+    "expected_keywords": [
+      "parameter-efficient tuning",
+      "transfer",
+      "theoretical understanding"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Across graph representation learning papers, what are the main limits of message-passing architectures?",
+    "expected_keywords": [
+      "over-smoothing",
+      "expressivity",
+      "heterophily"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "What cross-paper evidence suggests weaknesses in current LLM evaluation benchmarks?",
+    "expected_keywords": [
+      "benchmark contamination",
+      "distribution mismatch",
+      "human evaluation"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  },
+  {
+    "query": "Based on reproducibility studies in ML, where should new tooling or standards focus next?",
+    "expected_keywords": [
+      "reproducibility",
+      "reporting standards",
+      "open artifacts"
+    ],
+    "difficulty_tier": "tier_3",
+    "min_citations": 3,
+    "max_citations": 7
+  }
+]

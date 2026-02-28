@@ -3,6 +3,7 @@
 Commands:
   - search --query "..." --limit 5 --source semantic|arxiv|both
   - get --id <doi|arxiv|semantic_scholar_id>
+  - eval --dataset tests/eval/dataset.json --output results/
 
 Outputs JSON to stdout.
 
@@ -43,6 +44,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_get = sub.add_parser("get", help="Get a paper by id (DOI/arXiv/Semantic Scholar)")
     p_get.add_argument("--id", required=True, dest="identifier", help="Identifier to fetch")
 
+    p_eval = sub.add_parser("eval", help="Run evaluation harness")
+    p_eval.add_argument(
+        "--dataset",
+        required=True,
+        help="Path to eval dataset JSON (e.g., tests/eval/dataset.json)",
+    )
+    p_eval.add_argument(
+        "--output",
+        required=True,
+        help="Directory to write eval results artifacts (JSON + markdown)",
+    )
+
     return parser
 
 
@@ -65,6 +78,18 @@ async def _cmd_get(identifier: str) -> dict[str, Any] | None:
         return _paper_to_jsonable(p) if p else None
 
 
+def _cmd_eval(dataset: str, output: str) -> dict[str, Any]:
+    from tests.eval.harness import EvalHarness
+
+    harness = EvalHarness(dataset_path=dataset, output_dir=output)
+    report = harness.run()
+    return {
+        "total_questions": report["total_questions"],
+        "metrics": report["metrics"],
+        "artifacts": report["artifacts"],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -74,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
             payload = asyncio.run(_cmd_search(args.query, args.limit, args.source))
         elif args.command == "get":
             payload = asyncio.run(_cmd_get(args.identifier))
+        elif args.command == "eval":
+            payload = _cmd_eval(args.dataset, args.output)
         else:
             parser.error(f"Unknown command: {args.command}")
             return 2
