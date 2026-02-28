@@ -31,3 +31,9 @@
 - Run unit tests before committing: .venv/bin/python -m pytest tests/ -q --ignore=tests/integration
 - Push to origin after every commit
 - Source ~/.zshrc before any command needing OPENAI_API_KEY
+
+## Post-Completion
+- [ ] **Remotion demo video** — Motion graphics demo showing: query → agent tool calls → formatted answer with citations → metrics. Build with Remotion (React). Only after all phases complete and baseline eval passes.
+
+## Critical Bug Fix
+- [ ] **Fix StructuredTool sync invocation error** — Tools throw `NotImplementedError: StructuredTool does not support sync invocation`. The tools in `src/ra/tools/retrieval_tools.py` use async functions but `create_agent` calls them synchronously. Fix: either make tools sync-compatible (add sync wrappers using `asyncio.run()` or `coroutine=` param) or ensure the agent uses `ainvoke()`. Then re-run baseline eval to get real metrics.
