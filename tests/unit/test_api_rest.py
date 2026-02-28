@@ -14,6 +14,7 @@ class _StubRetriever:
         self._search_result = search_result if search_result is not None else []
         self._paper_result = paper_result
         self._error = error
+        self.close_calls = 0
 
     async def __aenter__(self):
         return self
@@ -30,6 +31,29 @@ class _StubRetriever:
         if self._error is not None:
             raise self._error
         return self._paper_result
+
+    async def search_batch(
+        self,
+        requests: list[tuple[str, int, tuple[str, ...]]],  # noqa: ARG002
+        *,
+        max_concurrency: int = 4,  # noqa: ARG002
+    ):
+        if self._error is not None:
+            raise self._error
+        return [list(self._search_result) for _ in requests]
+
+    async def get_papers_batch(
+        self,
+        identifiers: list[str],  # noqa: ARG002
+        *,
+        max_concurrency: int = 8,  # noqa: ARG002
+    ):
+        if self._error is not None:
+            raise self._error
+        return [self._paper_result for _ in identifiers]
+
+    async def close(self) -> None:
+        self.close_calls += 1
 
 
 class _StubAgent:
@@ -201,3 +225,121 @@ def test_openapi_component_schemas_include_field_descriptions():
 
     assert query_schema["description"] == "Natural-language query for paper discovery."
     assert query_schema["examples"][0] == "transformer architecture for long-context summarization"
+
+
+def test_search_batch_endpoint_returns_ordered_results():
+    p1 = Paper(
+        id="q1-paper",
+        title="Batch Paper A",
+        abstract="A",
+        authors=["Alice"],
+        year=2023,
+        venue="ConfA",
+        citation_count=11,
+        pdf_url=None,
+        doi=None,
+        arxiv_id=None,
+        source="semantic_scholar",
+    )
+    p2 = Paper(
+        id="q2-paper",
+        title="Batch Paper B",
+        abstract="B",
+        authors=["Bob"],
+        year=2024,
+        venue="ConfB",
+        citation_count=7,
+        pdf_url=None,
+        doi=None,
+        arxiv_id=None,
+        source="arxiv",
+    )
+
+    class _BatchRetriever(_StubRetriever):
+        async def search_batch(
+            self,
+            requests: list[tuple[str, int, tuple[str, ...]]],  # noqa: ARG002
+            *,
+            max_concurrency: int = 4,  # noqa: ARG002
+        ):
+            return [[p1], [p2]]
+
+    client = TestClient(_mk_app(retriever_factory=lambda: _BatchRetriever()))
+    resp = client.post(
+        "/search/batch",
+        json={
+            "requests": [
+                {"query": "query one", "limit": 3, "source": "semantic_scholar"},
+                {"query": "query two", "limit": 3, "source": "arxiv"},
+            ],
+            "max_concurrency": 2,
+        },
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["count"] == 2
+    assert payload["results"][0]["query"] == "query one"
+    assert payload["results"][0]["results"][0]["id"] == "q1-paper"
+    assert payload["results"][1]["query"] == "query two"
+    assert payload["results"][1]["results"][0]["id"] == "q2-paper"
+
+
+def test_retrieve_batch_endpoint_returns_missing_papers_as_null():
+    paper = Paper(
+        id="p-1",
+        title="Retrieved Paper",
+        abstract=None,
+        authors=["Alice"],
+        year=2020,
+        venue=None,
+        citation_count=3,
+        pdf_url=None,
+        doi="10.1234/paper",
+        arxiv_id=None,
+        source="semantic_scholar",
+    )
+
+    class _BatchRetriever(_StubRetriever):
+        async def get_papers_batch(
+            self,
+            identifiers: list[str],  # noqa: ARG002
+            *,
+            max_concurrency: int = 8,  # noqa: ARG002
+        ):
+            return [paper, None]
+
+    client = TestClient(_mk_app(retriever_factory=lambda: _BatchRetriever()))
+    resp = client.post(
+        "/retrieve/batch",
+        json={
+            "requests": [
+                {"identifier": "10.1234/paper"},
+                {"identifier": "missing-id"},
+            ],
+            "max_concurrency": 4,
+        },
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["count"] == 2
+    assert payload["found"] == 1
+    assert payload["results"][0]["paper"]["id"] == "p-1"
+    assert payload["results"][1]["paper"] is None
+
+
+def test_app_reuses_single_retriever_instance_across_requests():
+    instances: list[_StubRetriever] = []
+
+    def _factory() -> _StubRetriever:
+        retriever = _StubRetriever(search_result=[], paper_result=None)
+        instances.append(retriever)
+        return retriever
+
+    with TestClient(_mk_app(retriever_factory=_factory)) as client:
+        _ = client.post("/search", json={"query": "test", "limit": 5, "source": "both"})
+        _ = client.post("/retrieve", json={"identifier": "10.1000/xyz123"})
+
+    assert len(instances) == 1
+    assert instances[0].close_calls == 1

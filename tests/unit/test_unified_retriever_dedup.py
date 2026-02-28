@@ -220,3 +220,59 @@ async def test_unified_retriever_uses_cache_layer_and_caches_fresh_results():
     ids = {paper.id for paper in results}
     assert ids == {"cached-1", "s2-1"}
     assert "s2-1" in cache.cached_ids
+
+
+@pytest.mark.asyncio
+async def test_unified_retriever_search_batch_preserves_request_order(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    r = UnifiedRetriever(
+        semantic_scholar=DummySemanticScholarClient([]),
+        arxiv=DummyArxivClient([]),
+    )
+
+    async def _fake_search(query: str, limit: int = 10, sources=("semantic_scholar", "arxiv")):  # noqa: ARG001
+        return [
+            r._from_cached(  # noqa: SLF001
+                {
+                    "id": f"id-{query}",
+                    "title": f"title-{query}",
+                    "authors": [],
+                    "source": "semantic_scholar",
+                }
+            )
+        ]
+
+    monkeypatch.setattr(r, "search", _fake_search)
+
+    jobs = [
+        ("query-a", 5, ("semantic_scholar",)),
+        ("query-b", 5, ("arxiv",)),
+    ]
+    results = await r.search_batch(jobs, max_concurrency=2)
+    assert [[paper.id for paper in batch] for batch in results] == [["id-query-a"], ["id-query-b"]]
+
+
+@pytest.mark.asyncio
+async def test_unified_retriever_get_papers_batch_preserves_request_order(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    r = UnifiedRetriever(
+        semantic_scholar=DummySemanticScholarClient([]),
+        arxiv=DummyArxivClient([]),
+    )
+
+    async def _fake_get_paper(identifier: str):
+        return r._from_cached(  # noqa: SLF001
+            {
+                "id": f"id-{identifier}",
+                "title": f"title-{identifier}",
+                "authors": [],
+                "source": "semantic_scholar",
+            }
+        )
+
+    monkeypatch.setattr(r, "get_paper", _fake_get_paper)
+
+    papers = await r.get_papers_batch(["a", "b"], max_concurrency=2)
+    assert [paper.id if paper else None for paper in papers] == ["id-a", "id-b"]

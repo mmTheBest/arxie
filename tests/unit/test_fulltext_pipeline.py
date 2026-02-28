@@ -282,3 +282,54 @@ async def test_tool_get_paper_full_text_handles_internal_errors_gracefully():
 
     out = await tool.ainvoke({"identifier": "10.1234/xyz"})
     assert out == ""
+
+
+@pytest.mark.asyncio
+async def test_unified_get_full_text_reuses_pooled_http_client(monkeypatch: pytest.MonkeyPatch):
+    init_calls = 0
+
+    class FakeResponse:
+        def __init__(self, content: bytes) -> None:
+            self.content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:  # noqa: ANN001,ARG002
+            nonlocal init_calls
+            init_calls += 1
+            self.is_closed = False
+
+        async def get(self, url: str):  # noqa: ARG002
+            return FakeResponse(b"%PDF-1.7 dummy")
+
+        async def aclose(self) -> None:
+            self.is_closed = True
+
+    class FakePDFParser:
+        def parse(self, pdf_path: Path) -> ParsedDocument:
+            assert pdf_path.exists()
+            return ParsedDocument(text="EXTRACTED TEXT", pages=["p1"], metadata={})
+
+    monkeypatch.setattr("ra.retrieval.unified.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr("ra.retrieval.unified.PDFParser", lambda: FakePDFParser())
+
+    r = UnifiedRetriever(semantic_scholar=None, arxiv=None)
+    paper = Paper(
+        id="p1",
+        title="t",
+        abstract=None,
+        authors=[],
+        year=None,
+        venue=None,
+        citation_count=None,
+        pdf_url="https://example.com/paper.pdf",
+        doi=None,
+        arxiv_id=None,
+        source="arxiv",
+    )
+
+    assert await r.get_full_text(paper) == "EXTRACTED TEXT"
+    assert await r.get_full_text(paper) == "EXTRACTED TEXT"
+    assert init_calls == 1

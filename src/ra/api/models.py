@@ -79,6 +79,42 @@ class AnswerRequest(BaseModel):
     )
 
 
+class SearchBatchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    requests: list[SearchRequest] = Field(
+        ...,
+        min_length=1,
+        max_length=25,
+        description="Batch of search requests to execute asynchronously.",
+    )
+    max_concurrency: int = Field(
+        4,
+        ge=1,
+        le=32,
+        description="Maximum number of in-flight searches processed in parallel.",
+        examples=[4],
+    )
+
+
+class RetrieveBatchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    requests: list[RetrieveRequest] = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="Batch of paper identifier lookups to execute asynchronously.",
+    )
+    max_concurrency: int = Field(
+        8,
+        ge=1,
+        le=32,
+        description="Maximum number of in-flight retrieve calls processed in parallel.",
+        examples=[8],
+    )
+
+
 class PaperResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -161,6 +197,20 @@ class SearchResponse(BaseModel):
     results: list[PaperResponse] = Field(..., description="Search result papers.")
 
 
+class SearchBatchItemResponse(BaseModel):
+    query: str = Field(..., description="Original query for this batch item.")
+    count: int = Field(..., description="Number of papers returned for this query.")
+    results: list[PaperResponse] = Field(..., description="Search results for this query.")
+
+
+class SearchBatchResponse(BaseModel):
+    count: int = Field(..., description="Total number of queries in the batch.")
+    results: list[SearchBatchItemResponse] = Field(
+        ...,
+        description="Ordered results for each query in the request batch.",
+    )
+
+
 class RetrieveResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -173,6 +223,23 @@ class RetrieveResponse(BaseModel):
 
     identifier: str = Field(..., description="Identifier requested by the client.")
     paper: PaperResponse = Field(..., description="Resolved paper metadata.")
+
+
+class RetrieveBatchItemResponse(BaseModel):
+    identifier: str = Field(..., description="Identifier requested by the client.")
+    paper: PaperResponse | None = Field(
+        None,
+        description="Resolved paper metadata or null when not found.",
+    )
+
+
+class RetrieveBatchResponse(BaseModel):
+    count: int = Field(..., description="Total number of identifiers in the batch.")
+    found: int = Field(..., description="Number of identifiers that resolved to a paper.")
+    results: list[RetrieveBatchItemResponse] = Field(
+        ...,
+        description="Ordered retrieval results for each identifier.",
+    )
 
 
 class AnswerResponse(BaseModel):

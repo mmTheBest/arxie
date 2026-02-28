@@ -124,6 +124,9 @@ class SemanticScholarClient:
         timeout: float = 30.0,
         max_retries: int = 3,
         max_backoff_seconds: float = 8.0,
+        max_connections: int = 100,
+        max_keepalive_connections: int = 20,
+        keepalive_expiry: float = 30.0,
         rate_limiter: TokenBucketRateLimiter | None = None,
     ):
         """Initialize client.
@@ -142,9 +145,20 @@ class SemanticScholarClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.max_backoff_seconds = max_backoff_seconds
+        self.max_connections = max(1, int(max_connections))
+        self.max_keepalive_connections = max(
+            1,
+            min(int(max_keepalive_connections), self.max_connections),
+        )
+        self.keepalive_expiry = max(1.0, float(keepalive_expiry))
         self._rate_limiter = rate_limiter or TokenBucketRateLimiter(
             rate_per_second=5.0,
             burst=5,
+        )
+        self._limits = httpx.Limits(
+            max_connections=self.max_connections,
+            max_keepalive_connections=self.max_keepalive_connections,
+            keepalive_expiry=self.keepalive_expiry,
         )
         self._client: httpx.AsyncClient | None = None
 
@@ -162,6 +176,7 @@ class SemanticScholarClient:
                 base_url=BASE_URL,
                 headers=headers,
                 timeout=self.timeout,
+                limits=self._limits,
             )
         return self._client
 
@@ -348,6 +363,57 @@ class SemanticScholarClient:
         papers = [Paper.from_api(r.get("citedPaper", {})) for r in data.get("data", [])]
 
         return papers
+
+    async def search_batch(
+        self,
+        queries: list[str],
+        *,
+        limit: int = 10,
+        max_concurrency: int = 4,
+    ) -> list[list[Paper]]:
+        """Run multiple Semantic Scholar searches concurrently."""
+        if not queries:
+            return []
+        try:
+            max_concurrency = int(max_concurrency)
+        except (TypeError, ValueError):
+            raise ValueError("max_concurrency must be an integer.") from None
+        max_concurrency = max(1, min(max_concurrency, 32))
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        results: list[list[Paper] | None] = [None] * len(queries)
+
+        async def _run(index: int, query: str) -> None:
+            async with semaphore:
+                results[index] = await self.search(query=query, limit=limit)
+
+        await asyncio.gather(*(_run(i, q) for i, q in enumerate(queries)))
+        return [batch if batch is not None else [] for batch in results]
+
+    async def get_papers_batch(
+        self,
+        paper_ids: list[str],
+        *,
+        max_concurrency: int = 8,
+    ) -> list[Paper | None]:
+        """Fetch multiple papers concurrently by Semantic Scholar-compatible identifiers."""
+        if not paper_ids:
+            return []
+        try:
+            max_concurrency = int(max_concurrency)
+        except (TypeError, ValueError):
+            raise ValueError("max_concurrency must be an integer.") from None
+        max_concurrency = max(1, min(max_concurrency, 32))
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        results: list[Paper | None] = [None] * len(paper_ids)
+
+        async def _run(index: int, paper_id: str) -> None:
+            async with semaphore:
+                results[index] = await self.get_paper(paper_id=paper_id)
+
+        await asyncio.gather(*(_run(i, pid) for i, pid in enumerate(paper_ids)))
+        return results
 
 
 # Convenience function for synchronous usage

@@ -201,3 +201,81 @@ async def test_download_pdf_retries_request_errors_with_exponential_backoff(
     assert out.read_bytes() == b"%PDF-1.7 data"
     assert fake_http.calls == 4
     assert sleep_calls == [1, 2, 4]
+
+
+@pytest.mark.asyncio
+async def test_get_client_configures_connection_pool_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class _FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:  # noqa: ANN003
+            captured_kwargs.update(kwargs)
+            self.is_closed = False
+
+        async def aclose(self) -> None:
+            self.is_closed = True
+
+    monkeypatch.setattr("ra.retrieval.arxiv.httpx.AsyncClient", _FakeAsyncClient)
+
+    client = ArxivClient(
+        max_connections=31,
+        max_keepalive_connections=9,
+        keepalive_expiry=44.0,
+    )
+    _ = await client._get_client()
+
+    limits = captured_kwargs["limits"]
+    assert isinstance(limits, httpx.Limits)
+    assert limits.max_connections == 31
+    assert limits.max_keepalive_connections == 9
+    assert limits.keepalive_expiry == 44.0
+
+
+@pytest.mark.asyncio
+async def test_search_batch_returns_ordered_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ArxivClient(max_retries=1)
+
+    async def _fake_search(query: str, limit: int = 10, category: str | None = None):  # noqa: ARG001
+        return [
+            client._parse_feed(
+                f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/{query}.00001</id>
+    <title>{query}</title>
+    <summary>abstract</summary>
+  </entry>
+</feed>
+"""
+            )[0]
+        ]
+
+    monkeypatch.setattr(client, "search", _fake_search)
+
+    results = await client.search_batch(["q1", "q2"], max_concurrency=2)
+    assert [batch[0].title for batch in results] == ["q1", "q2"]
+
+
+@pytest.mark.asyncio
+async def test_get_papers_batch_returns_ordered_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ArxivClient(max_retries=1)
+
+    async def _fake_get_paper(arxiv_id: str):
+        return client._parse_feed(
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/{arxiv_id}</id>
+    <title>{arxiv_id}</title>
+    <summary>abstract</summary>
+  </entry>
+</feed>
+"""
+        )[0]
+
+    monkeypatch.setattr(client, "get_paper", _fake_get_paper)
+
+    results = await client.get_papers_batch(["2101.00001", "2101.00002"], max_concurrency=2)
+    assert [paper.arxiv_id if paper else None for paper in results] == ["2101.00001", "2101.00002"]

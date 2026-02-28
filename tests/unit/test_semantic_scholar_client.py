@@ -202,3 +202,95 @@ async def test_search_rejects_control_characters_in_query() -> None:
     client = SemanticScholarClient(max_retries=1)
     with pytest.raises(ValueError, match="query"):
         await client.search("transformer\x00models", limit=5)
+
+
+@pytest.mark.asyncio
+async def test_get_client_configures_connection_pool_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class _FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:  # noqa: ANN003
+            captured_kwargs.update(kwargs)
+            self.is_closed = False
+
+        async def aclose(self) -> None:
+            self.is_closed = True
+
+    monkeypatch.setattr("ra.retrieval.semantic_scholar.httpx.AsyncClient", _FakeAsyncClient)
+
+    client = SemanticScholarClient(
+        max_connections=77,
+        max_keepalive_connections=13,
+        keepalive_expiry=55.0,
+    )
+    _ = await client._get_client()
+
+    limits = captured_kwargs["limits"]
+    assert isinstance(limits, httpx.Limits)
+    assert limits.max_connections == 77
+    assert limits.max_keepalive_connections == 13
+    assert limits.keepalive_expiry == 55.0
+
+
+@pytest.mark.asyncio
+async def test_search_batch_returns_ordered_results() -> None:
+    client = SemanticScholarClient(max_retries=1)
+
+    async def _fake_search(query: str, limit: int = 10, **kwargs):  # noqa: ANN001, ARG001
+        return [
+            Paper(
+                paper_id=f"id-{query}",
+                title=f"title-{query}",
+                abstract=None,
+                year=None,
+                authors=[],
+                venue=None,
+                citation_count=0,
+                is_open_access=False,
+                pdf_url=None,
+                doi=None,
+                arxiv_id=None,
+                external_ids={},
+            )
+        ]
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(client, "search", _fake_search)
+    try:
+        results = await client.search_batch(["q1", "q2"], max_concurrency=2)
+    finally:
+        monkeypatch.undo()
+
+    assert [batch[0].paper_id for batch in results] == ["id-q1", "id-q2"]
+
+
+@pytest.mark.asyncio
+async def test_get_papers_batch_returns_ordered_results() -> None:
+    client = SemanticScholarClient(max_retries=1)
+
+    async def _fake_get_paper(paper_id: str):  # noqa: ANN001
+        return Paper(
+            paper_id=paper_id,
+            title=f"title-{paper_id}",
+            abstract=None,
+            year=None,
+            authors=[],
+            venue=None,
+            citation_count=0,
+            is_open_access=False,
+            pdf_url=None,
+            doi=None,
+            arxiv_id=None,
+            external_ids={},
+        )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(client, "get_paper", _fake_get_paper)
+    try:
+        results = await client.get_papers_batch(["a", "b"], max_concurrency=2)
+    finally:
+        monkeypatch.undo()
+
+    assert [paper.paper_id if paper else None for paper in results] == ["a", "b"]

@@ -154,12 +154,29 @@ class UnifiedRetriever:
         cache: ChromaCache | None = None,
         full_text_max_retries: int = 3,
         full_text_max_backoff_seconds: float = 8.0,
+        full_text_timeout: float = 60.0,
+        full_text_max_connections: int = 40,
+        full_text_max_keepalive_connections: int = 10,
+        full_text_keepalive_expiry: float = 30.0,
     ):
         self.semantic_scholar = semantic_scholar or SemanticScholarClient()
         self.arxiv = arxiv or ArxivClient()
         self.cache = cache
         self.full_text_max_retries = full_text_max_retries
         self.full_text_max_backoff_seconds = full_text_max_backoff_seconds
+        self.full_text_timeout = full_text_timeout
+        self.full_text_max_connections = max(1, int(full_text_max_connections))
+        self.full_text_max_keepalive_connections = max(
+            1,
+            min(int(full_text_max_keepalive_connections), self.full_text_max_connections),
+        )
+        self.full_text_keepalive_expiry = max(1.0, float(full_text_keepalive_expiry))
+        self._full_text_limits = httpx.Limits(
+            max_connections=self.full_text_max_connections,
+            max_keepalive_connections=self.full_text_max_keepalive_connections,
+            keepalive_expiry=self.full_text_keepalive_expiry,
+        )
+        self._full_text_client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> "UnifiedRetriever":
         # Clients are lazy; nothing required here.
@@ -172,8 +189,27 @@ class UnifiedRetriever:
         await asyncio.gather(
             self.semantic_scholar.close(),
             self.arxiv.close(),
+            self._close_full_text_client(),
             return_exceptions=True,
         )
+
+    async def _get_full_text_client(self) -> httpx.AsyncClient:
+        is_closed = bool(getattr(self._full_text_client, "is_closed", False))
+        if self._full_text_client is None or is_closed:
+            self._full_text_client = httpx.AsyncClient(
+                timeout=self.full_text_timeout,
+                follow_redirects=True,
+                limits=self._full_text_limits,
+            )
+        return self._full_text_client
+
+    async def _close_full_text_client(self) -> None:
+        is_closed = bool(getattr(self._full_text_client, "is_closed", False))
+        if self._full_text_client and not is_closed:
+            close = getattr(self._full_text_client, "aclose", None)
+            if close is not None:
+                await close()
+        self._full_text_client = None
 
     def _from_semantic_scholar(self, p) -> Paper:
         authors = [a.name for a in getattr(p, "authors", [])]
@@ -350,6 +386,57 @@ class UnifiedRetriever:
         results.sort(key=lambda x: (x.citation_count or 0), reverse=True)
         return results[:limit]
 
+    async def search_batch(
+        self,
+        requests: list[tuple[str, int, Iterable[str]]],
+        *,
+        max_concurrency: int = 4,
+    ) -> list[list[Paper]]:
+        """Run multiple unified searches concurrently with bounded parallelism."""
+        if not requests:
+            return []
+        try:
+            max_concurrency = int(max_concurrency)
+        except (TypeError, ValueError):
+            raise ValueError("max_concurrency must be an integer.") from None
+        max_concurrency = max(1, min(max_concurrency, 32))
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        results: list[list[Paper] | None] = [None] * len(requests)
+
+        async def _run(index: int, job: tuple[str, int, Iterable[str]]) -> None:
+            query, limit, sources = job
+            async with semaphore:
+                results[index] = await self.search(query=query, limit=limit, sources=sources)
+
+        await asyncio.gather(*(_run(i, job) for i, job in enumerate(requests)))
+        return [batch if batch is not None else [] for batch in results]
+
+    async def get_papers_batch(
+        self,
+        identifiers: list[str],
+        *,
+        max_concurrency: int = 8,
+    ) -> list[Paper | None]:
+        """Fetch multiple papers concurrently by identifier with bounded parallelism."""
+        if not identifiers:
+            return []
+        try:
+            max_concurrency = int(max_concurrency)
+        except (TypeError, ValueError):
+            raise ValueError("max_concurrency must be an integer.") from None
+        max_concurrency = max(1, min(max_concurrency, 32))
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        results: list[Paper | None] = [None] * len(identifiers)
+
+        async def _run(index: int, identifier: str) -> None:
+            async with semaphore:
+                results[index] = await self.get_paper(identifier=identifier)
+
+        await asyncio.gather(*(_run(i, ident) for i, ident in enumerate(identifiers)))
+        return results
+
     async def get_paper(self, identifier: str) -> Paper | None:
         """Fetch a paper by identifier.
 
@@ -400,10 +487,10 @@ class UnifiedRetriever:
         for attempt in range(self.full_text_max_retries):
             tmp_path: Path | None = None
             try:
-                async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-                    r = await client.get(pdf_url)
-                    r.raise_for_status()
-                    pdf_bytes = r.content
+                client = await self._get_full_text_client()
+                r = await client.get(pdf_url)
+                r.raise_for_status()
+                pdf_bytes = r.content
 
                 with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
                     f.write(pdf_bytes)

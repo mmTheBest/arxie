@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
@@ -17,8 +20,14 @@ from ra.api.models import (
     ErrorResponse,
     HealthResponse,
     PaperResponse,
+    RetrieveBatchItemResponse,
+    RetrieveBatchRequest,
+    RetrieveBatchResponse,
     RetrieveRequest,
     RetrieveResponse,
+    SearchBatchItemResponse,
+    SearchBatchRequest,
+    SearchBatchResponse,
     SearchRequest,
     SearchResponse,
 )
@@ -84,6 +93,40 @@ ANSWER_REQUEST_EXAMPLES = {
     }
 }
 
+SEARCH_BATCH_REQUEST_EXAMPLES = {
+    "multi_query_search": {
+        "summary": "Execute multiple searches in one request",
+        "value": {
+            "requests": [
+                {
+                    "query": "retrieval augmented generation benchmark survey",
+                    "limit": 5,
+                    "source": "semantic_scholar",
+                },
+                {
+                    "query": "long-context transformer memory mechanisms",
+                    "limit": 5,
+                    "source": "both",
+                },
+            ],
+            "max_concurrency": 4,
+        },
+    }
+}
+
+RETRIEVE_BATCH_REQUEST_EXAMPLES = {
+    "multi_identifier_lookup": {
+        "summary": "Resolve multiple paper identifiers",
+        "value": {
+            "requests": [
+                {"identifier": "10.5555/3295222.3295349"},
+                {"identifier": "1706.03762"},
+            ],
+            "max_concurrency": 8,
+        },
+    }
+}
+
 
 def _error_response_doc(
     *,
@@ -131,6 +174,66 @@ def _sources_for_request(source: str) -> tuple[str, ...]:
     return (source,)
 
 
+async def _close_resource(resource: Any) -> None:
+    close = getattr(resource, "close", None)
+    if close is None:
+        return
+    result = close()
+    if inspect.isawaitable(result):
+        await result
+
+
+def _get_or_create_shared_retriever(app: FastAPI) -> Any:
+    retriever = getattr(app.state, "retriever", None)
+    if retriever is None:
+        retriever = app.state.retriever_factory()
+        app.state.retriever = retriever
+    return retriever
+
+
+async def _run_search_batch(
+    retriever: Any,
+    jobs: list[tuple[str, int, tuple[str, ...]]],
+    *,
+    max_concurrency: int,
+) -> list[list[Any]]:
+    search_batch = getattr(retriever, "search_batch", None)
+    if callable(search_batch):
+        return await search_batch(jobs, max_concurrency=max_concurrency)
+
+    semaphore = asyncio.Semaphore(max_concurrency)
+    results: list[list[Any] | None] = [None] * len(jobs)
+
+    async def _run(index: int, job: tuple[str, int, tuple[str, ...]]) -> None:
+        query, limit, sources = job
+        async with semaphore:
+            results[index] = await retriever.search(query=query, limit=limit, sources=sources)
+
+    await asyncio.gather(*(_run(i, job) for i, job in enumerate(jobs)))
+    return [batch if batch is not None else [] for batch in results]
+
+
+async def _run_retrieve_batch(
+    retriever: Any,
+    identifiers: list[str],
+    *,
+    max_concurrency: int,
+) -> list[Any]:
+    get_papers_batch = getattr(retriever, "get_papers_batch", None)
+    if callable(get_papers_batch):
+        return await get_papers_batch(identifiers, max_concurrency=max_concurrency)
+
+    semaphore = asyncio.Semaphore(max_concurrency)
+    results: list[Any] = [None] * len(identifiers)
+
+    async def _run(index: int, identifier: str) -> None:
+        async with semaphore:
+            results[index] = await retriever.get_paper(identifier)
+
+    await asyncio.gather(*(_run(i, identifier) for i, identifier in enumerate(identifiers)))
+    return results
+
+
 def create_app(
     *,
     retriever_factory: RetrieverFactory | None = None,
@@ -141,6 +244,17 @@ def create_app(
     Factories are injectable to make endpoint behavior easy to unit test.
     """
     configure_logging_from_env()
+
+    retriever_factory = retriever_factory or _default_retriever_factory
+    agent_factory = agent_factory or _default_agent_factory
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.retriever = retriever_factory()
+        try:
+            yield
+        finally:
+            await _close_resource(getattr(app.state, "retriever", None))
 
     app = FastAPI(
         title="Academic Research Assistant API",
@@ -154,9 +268,10 @@ def create_app(
         license_info={"name": "MIT", "identifier": "MIT"},
         openapi_tags=OPENAPI_TAGS,
         version="1.0.0",
+        lifespan=lifespan,
     )
-    app.state.retriever_factory = retriever_factory or _default_retriever_factory
-    app.state.agent_factory = agent_factory or _default_agent_factory
+    app.state.retriever_factory = retriever_factory
+    app.state.agent_factory = agent_factory
 
     register_exception_handlers(app)
 
@@ -200,14 +315,13 @@ def create_app(
     async def search_papers(
         payload: SearchRequest = Body(..., openapi_examples=SEARCH_REQUEST_EXAMPLES),
     ) -> SearchResponse:
-        retriever = app.state.retriever_factory()
+        retriever = _get_or_create_shared_retriever(app)
         try:
-            async with retriever as session:
-                papers = await session.search(
-                    query=payload.query,
-                    limit=payload.limit,
-                    sources=_sources_for_request(payload.source),
-                )
+            papers = await retriever.search(
+                query=payload.query,
+                limit=payload.limit,
+                sources=_sources_for_request(payload.source),
+            )
         except ValueError as exc:
             raise RAAPIError(
                 status_code=400,
@@ -223,6 +337,68 @@ def create_app(
 
         results = [PaperResponse.from_paper(paper) for paper in papers]
         return SearchResponse(query=payload.query, count=len(results), results=results)
+
+    @app.post(
+        "/search/batch",
+        response_model=SearchBatchResponse,
+        summary="Batch Search Academic Papers",
+        description=(
+            "Executes multiple paper searches asynchronously in one request. "
+            "Useful for high-throughput query fan-out from API clients."
+        ),
+        response_description="Ordered search results for each query in the batch.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid batch search request.",
+                error="invalid_input",
+                message="max_concurrency must be an integer.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+            502: _error_response_doc(
+                description="Batch search provider request failed.",
+                error="upstream_error",
+                message="Batch search backend request failed: RequestError.",
+            ),
+        },
+        tags=["pipeline"],
+    )
+    async def search_papers_batch(
+        payload: SearchBatchRequest = Body(..., openapi_examples=SEARCH_BATCH_REQUEST_EXAMPLES),
+    ) -> SearchBatchResponse:
+        retriever = _get_or_create_shared_retriever(app)
+        jobs = [
+            (request.query, request.limit, _sources_for_request(request.source))
+            for request in payload.requests
+        ]
+        try:
+            batch_results = await _run_search_batch(
+                retriever,
+                jobs,
+                max_concurrency=payload.max_concurrency,
+            )
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            raise RAAPIError(
+                status_code=502,
+                error="upstream_error",
+                message=f"Batch search backend request failed: {type(exc).__name__}.",
+            ) from exc
+
+        items = [
+            SearchBatchItemResponse(
+                query=request.query,
+                count=len(papers),
+                results=[PaperResponse.from_paper(paper) for paper in papers],
+            )
+            for request, papers in zip(payload.requests, batch_results, strict=False)
+        ]
+        return SearchBatchResponse(count=len(items), results=items)
 
     @app.post(
         "/retrieve",
@@ -257,10 +433,9 @@ def create_app(
     async def retrieve_paper(
         payload: RetrieveRequest = Body(..., openapi_examples=RETRIEVE_REQUEST_EXAMPLES),
     ) -> RetrieveResponse:
-        retriever = app.state.retriever_factory()
+        retriever = _get_or_create_shared_retriever(app)
         try:
-            async with retriever as session:
-                paper = await session.get_paper(payload.identifier)
+            paper = await retriever.get_paper(payload.identifier)
         except ValueError as exc:
             raise RAAPIError(
                 status_code=400,
@@ -285,6 +460,66 @@ def create_app(
             identifier=payload.identifier,
             paper=PaperResponse.from_paper(paper),
         )
+
+    @app.post(
+        "/retrieve/batch",
+        response_model=RetrieveBatchResponse,
+        summary="Batch Retrieve Paper Metadata",
+        description=(
+            "Fetches multiple papers by identifier asynchronously in one request. "
+            "Results preserve request order and include null papers when not found."
+        ),
+        response_description="Ordered retrieval results for each requested identifier.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid batch retrieve request.",
+                error="invalid_input",
+                message="max_concurrency must be an integer.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+            502: _error_response_doc(
+                description="Batch retrieve provider request failed.",
+                error="upstream_error",
+                message="Batch retrieve backend request failed: RequestError.",
+            ),
+        },
+        tags=["pipeline"],
+    )
+    async def retrieve_papers_batch(
+        payload: RetrieveBatchRequest = Body(..., openapi_examples=RETRIEVE_BATCH_REQUEST_EXAMPLES),
+    ) -> RetrieveBatchResponse:
+        retriever = _get_or_create_shared_retriever(app)
+        identifiers = [request.identifier for request in payload.requests]
+
+        try:
+            papers = await _run_retrieve_batch(
+                retriever,
+                identifiers,
+                max_concurrency=payload.max_concurrency,
+            )
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            raise RAAPIError(
+                status_code=502,
+                error="upstream_error",
+                message=f"Batch retrieve backend request failed: {type(exc).__name__}.",
+            ) from exc
+
+        items = [
+            RetrieveBatchItemResponse(
+                identifier=identifier,
+                paper=PaperResponse.from_paper(paper) if paper else None,
+            )
+            for identifier, paper in zip(identifiers, papers, strict=False)
+        ]
+        found = sum(1 for item in items if item.paper is not None)
+        return RetrieveBatchResponse(count=len(items), found=found, results=items)
 
     @app.post(
         "/answer",

@@ -85,12 +85,26 @@ class ArxivClient:
         max_retries: int = 3,
         max_backoff_seconds: float = 8.0,
         min_request_interval_s: float = 3.0,
+        max_connections: int = 40,
+        max_keepalive_connections: int = 10,
+        keepalive_expiry: float = 30.0,
         rate_limiter: TokenBucketRateLimiter | None = None,
     ):
         self.timeout = timeout
         self.max_retries = max_retries
         self.max_backoff_seconds = max_backoff_seconds
         self.min_request_interval_s = min_request_interval_s
+        self.max_connections = max(1, int(max_connections))
+        self.max_keepalive_connections = max(
+            1,
+            min(int(max_keepalive_connections), self.max_connections),
+        )
+        self.keepalive_expiry = max(1.0, float(keepalive_expiry))
+        self._limits = httpx.Limits(
+            max_connections=self.max_connections,
+            max_keepalive_connections=self.max_keepalive_connections,
+            keepalive_expiry=self.keepalive_expiry,
+        )
 
         self._client: httpx.AsyncClient | None = None
         if rate_limiter is not None:
@@ -114,6 +128,7 @@ class ArxivClient:
                 headers=headers,
                 timeout=self.timeout,
                 follow_redirects=True,
+                limits=self._limits,
             )
         return self._client
 
@@ -392,6 +407,58 @@ class ArxivClient:
                 raise
 
         raise RuntimeError(f"Failed after {self.max_retries} attempts")
+
+    async def search_batch(
+        self,
+        queries: list[str],
+        *,
+        limit: int = 10,
+        category: str | None = None,
+        max_concurrency: int = 3,
+    ) -> list[list[ArxivPaper]]:
+        """Run multiple arXiv searches concurrently."""
+        if not queries:
+            return []
+        try:
+            max_concurrency = int(max_concurrency)
+        except (TypeError, ValueError):
+            raise ValueError("max_concurrency must be an integer.") from None
+        max_concurrency = max(1, min(max_concurrency, 16))
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        results: list[list[ArxivPaper] | None] = [None] * len(queries)
+
+        async def _run(index: int, query: str) -> None:
+            async with semaphore:
+                results[index] = await self.search(query=query, limit=limit, category=category)
+
+        await asyncio.gather(*(_run(i, q) for i, q in enumerate(queries)))
+        return [batch if batch is not None else [] for batch in results]
+
+    async def get_papers_batch(
+        self,
+        arxiv_ids: list[str],
+        *,
+        max_concurrency: int = 6,
+    ) -> list[ArxivPaper | None]:
+        """Fetch multiple arXiv papers concurrently by id."""
+        if not arxiv_ids:
+            return []
+        try:
+            max_concurrency = int(max_concurrency)
+        except (TypeError, ValueError):
+            raise ValueError("max_concurrency must be an integer.") from None
+        max_concurrency = max(1, min(max_concurrency, 16))
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        results: list[ArxivPaper | None] = [None] * len(arxiv_ids)
+
+        async def _run(index: int, arxiv_id: str) -> None:
+            async with semaphore:
+                results[index] = await self.get_paper(arxiv_id=arxiv_id)
+
+        await asyncio.gather(*(_run(i, ax_id) for i, ax_id in enumerate(arxiv_ids)))
+        return results
 
 
 def search_arxiv(query: str, limit: int = 10, category: str | None = None) -> list[ArxivPaper]:
