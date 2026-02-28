@@ -19,18 +19,23 @@ Ask a research question. Get an answer backed by real papers from Semantic Schol
 
 ### Features
 
-- **Real Citations:** Every claim links to a real paper with a real DOI. No hallucinated references.
-- **Live Retrieval:** Searches Semantic Scholar + arXiv in real-time. Finds papers published yesterday, not just what's in training data.
-- **Full-Text Reading:** Downloads and parses PDFs (PyMuPDF + pdfplumber). Reads methods, results, and tables — not just abstracts.
-- **Citation Chasing:** Follows forward citation chains to find follow-up work, validations, and contradictions.
-- **Structured Output:** Every answer has `## Answer` with inline (Author et al., Year) citations and a formatted `## References` section.
-- **Evaluation Built-In:** 100-question dataset across 3 difficulty tiers with automated metrics (citation precision, claim support, tool success rate).
+- **Full-Text Analysis:** Downloads and reads entire papers — methods, results, tables, figures. Not just abstracts. The agent reasons over what researchers actually wrote.
+- **Multi-Hop Reasoning:** Compares methodologies across papers, follows evidence chains, and synthesizes insights from multiple sources in a single query. "Compare LoRA vs QLoRA" reads both papers and gives you a real comparison.
+- **Literature Review Generation:** Generates structured, multi-section literature reviews with thematic grouping, key findings, research gaps, and future directions. `ra lit-review "your topic"` and get a publication-ready draft.
+- **Citation Graph Exploration:** Traces how ideas evolve through citation chains over time. "Show me how attention mechanisms developed from 2015 to 2024" maps the influence flow across papers.
+- **Confidence Scoring:** Shows evidence strength per claim — how many papers support it, how many contradict it, and overall confidence level. You see the landscape, not just a summary.
+- **Interactive Research Sessions:** Multi-turn conversations with memory. Ask a question, then refine: "dig deeper into the transformer variants", "find contradicting evidence", "compare with the 2023 papers". `ra chat` for conversational research.
+- **Live Retrieval:** Searches Semantic Scholar + arXiv in real-time — including papers published today. No training cutoff.
+- **Verified Citations:** Every claim links to a real paper with a real DOI. Inline (Author et al., Year) format with a formatted References section.
 
 ### Why Arxie
 
-- **Always up to date.** Arxie searches live databases — including papers published today. No training cutoff, no stale knowledge.
-- **Abstracts aren't enough.** Most RAG tools only read titles and abstracts. Arxie reads full papers.
-- **Trust but verify.** Every citation includes DOI/arXiv links. Click and read the source yourself.
+- **Reads full papers, not just metadata.** Most RAG tools stop at titles and abstracts. Arxie downloads PDFs and reads methods, results, and discussion sections. It knows what the paper actually says.
+- **Compares papers for you.** Instead of reading 20 papers yourself, ask Arxie to compare methodologies, find contradictions, or identify which approach has the strongest evidence. Multi-hop reasoning across the literature.
+- **Generates real literature reviews.** Not bullet-point summaries — structured reviews with thematic grouping, research gaps, and future directions. The kind you'd actually put in a paper.
+- **Shows you the evidence, not just conclusions.** Confidence scoring tells you "12 papers support this, 2 contradict it" so you can judge the strength of any claim yourself.
+- **Always current.** Searches live databases including papers published today. No training data cutoff.
+- **Every citation is real.** DOI and arXiv links included. Click and read the source.
 
 ### Quick Start
 
