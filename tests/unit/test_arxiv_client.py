@@ -64,6 +64,14 @@ def test_arxiv_parse_entry_falls_back_to_canonical_pdf_url_when_missing_link():
     assert papers[0].pdf_url == "https://arxiv.org/pdf/9999.12345.pdf"
 
 
+def test_arxiv_build_search_query_rejects_invalid_inputs():
+    client = ArxivClient()
+    with pytest.raises(ValueError, match="control characters"):
+        client._build_search_query("transformer\x00", None)
+    with pytest.raises(ValueError, match="category"):
+        client._build_search_query("transformer", "cs .AI")
+
+
 class _CountingRateLimiter:
     def __init__(self) -> None:
         self.calls = 0

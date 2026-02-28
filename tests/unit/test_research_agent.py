@@ -96,3 +96,23 @@ def test_run_handles_non_transient_invoke_errors():
     assert output.startswith("## Answer\n")
     assert "internal error" in output.lower()
     assert "\n## References\nNone." in output
+
+
+def test_run_rejects_empty_query_without_invoking_graph():
+    graph = _GraphStub([{"messages": [{"role": "assistant", "content": "should not be used"}]}])
+    agent = _mk_agent(graph)
+
+    output = agent.run("   ")
+
+    assert graph.calls == 0
+    assert "non-empty query" in output.lower()
+
+
+def test_run_rejects_control_character_query_without_invoking_graph():
+    graph = _GraphStub([{"messages": [{"role": "assistant", "content": "should not be used"}]}])
+    agent = _mk_agent(graph)
+
+    output = agent.run("graph\x00query")
+
+    assert graph.calls == 0
+    assert "non-empty query" in output.lower()

@@ -15,12 +15,13 @@ import json
 import logging
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from langchain_core.tools import StructuredTool
 
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
+from ra.utils.security import sanitize_identifier, sanitize_user_text
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,8 @@ def _tool_error_payload(tool: str, error: Exception) -> str:
 
 
 class SearchPapersArgs(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     query: str = Field(..., description="Search query.")
     limit: int = Field(10, ge=1, le=50, description="Max number of results.")
     source: Literal["semantic_scholar", "arxiv", "both"] = Field(
@@ -61,15 +64,29 @@ class SearchPapersArgs(BaseModel):
         description="Which source(s) to search. 'both' searches S2 + arXiv.",
     )
 
+    @field_validator("query")
+    @classmethod
+    def _validate_query(cls, value: str) -> str:
+        return sanitize_user_text(value, field_name="query", max_length=1000)
+
 
 class GetPaperDetailsArgs(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     identifier: str = Field(
         ...,
         description="Paper identifier: Semantic Scholar paperId, DOI (optionally prefixed with DOI:), or arXiv id.",
     )
 
+    @field_validator("identifier")
+    @classmethod
+    def _validate_identifier(cls, value: str) -> str:
+        return sanitize_identifier(value, field_name="identifier", max_length=256)
+
 
 class GetPaperFullTextArgs(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     identifier: str = Field(
         ...,
         description=(
@@ -77,13 +94,25 @@ class GetPaperFullTextArgs(BaseModel):
         ),
     )
 
+    @field_validator("identifier")
+    @classmethod
+    def _validate_identifier(cls, value: str) -> str:
+        return sanitize_identifier(value, field_name="identifier", max_length=256)
+
 
 class GetPaperCitationsArgs(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     paper_id: str = Field(
         ...,
         description="Semantic Scholar paperId (preferred) or another identifier accepted by Semantic Scholar.",
     )
     limit: int = Field(20, ge=1, le=100, description="Max number of citations.")
+
+    @field_validator("paper_id")
+    @classmethod
+    def _validate_paper_id(cls, value: str) -> str:
+        return sanitize_identifier(value, field_name="paper_id", max_length=256)
 
 
 def make_retrieval_tools(

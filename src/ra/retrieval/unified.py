@@ -26,6 +26,7 @@ from ra.parsing import PDFParser
 from ra.retrieval.arxiv import ArxivClient, ArxivPaper
 from ra.retrieval.chroma_cache import ChromaCache
 from ra.retrieval.semantic_scholar import SemanticScholarClient
+from ra.utils.security import sanitize_identifier, sanitize_user_text, validate_public_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +269,13 @@ class UnifiedRetriever:
         Returns:
             Deduplicated list of Paper.
         """
+        query = sanitize_user_text(query, field_name="query", max_length=1000)
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            raise ValueError("limit must be an integer.") from None
+        limit = max(1, min(limit, 100))
+
         cached_results: list[Paper] = []
         if self.cache is not None:
             try:
@@ -283,7 +291,9 @@ class UnifiedRetriever:
             cached_results.sort(key=lambda x: (x.citation_count or 0), reverse=True)
             return cached_results[:limit]
 
-        srcs = {s.lower() for s in sources}
+        srcs = {str(s).strip().lower() for s in sources if str(s).strip()}
+        if not srcs:
+            srcs = {"semantic_scholar", "arxiv"}
         tasks = []
 
         # Pull a bit extra per-source so we still have enough after dedup.
@@ -345,7 +355,7 @@ class UnifiedRetriever:
 
         Auto-detects DOI/arXiv id; otherwise assumes Semantic Scholar ID.
         """
-        identifier = identifier.strip()
+        identifier = sanitize_identifier(identifier, field_name="identifier", max_length=256)
 
         doi_m = DOI_RE.match(identifier)
         if doi_m:
@@ -375,6 +385,14 @@ class UnifiedRetriever:
         """
         if not paper.pdf_url:
             return ""
+        try:
+            pdf_url = validate_public_http_url(paper.pdf_url, field_name="paper.pdf_url")
+        except ValueError:
+            logger.warning(
+                "Rejected unsafe full-text URL for paper_id=%s",
+                getattr(paper, "id", ""),
+            )
+            return ""
 
         def _backoff_seconds(attempt: int) -> float:
             return min(2**attempt, self.full_text_max_backoff_seconds)
@@ -383,7 +401,7 @@ class UnifiedRetriever:
             tmp_path: Path | None = None
             try:
                 async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-                    r = await client.get(paper.pdf_url)
+                    r = await client.get(pdf_url)
                     r.raise_for_status()
                     pdf_bytes = r.content
 

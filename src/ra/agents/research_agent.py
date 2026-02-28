@@ -28,8 +28,10 @@ from ra.citation import CitationFormatter
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
+from ra.utils.config import load_config
 from ra.utils.logging import UsageLogger
 from ra.utils.logging_config import configure_logging_from_env
+from ra.utils.security import sanitize_user_text
 
 try:
     from openai import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
@@ -95,6 +97,26 @@ def _safe_int(v: Any) -> int:
         return int(v)
     except Exception:
         return 0
+
+
+def _safe_env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def _extract_token_usage(llm_result: Any) -> tuple[int, int]:
@@ -267,13 +289,15 @@ class ResearchAgent:
 
     def __init__(self, *, model: str | None = None, verbose: bool = False):
         configure_logging_from_env()
+        config = load_config()
 
-        self.model = model or os.getenv("RA_MODEL", "gpt-4o-mini")
-        self.max_api_retries = max(0, int(os.getenv("RA_AGENT_MAX_RETRIES", "3")))
+        self.model = model or config.ra_model
+        self.max_api_retries = max(0, _safe_env_int("RA_AGENT_MAX_RETRIES", 3))
         self.retry_base_delay_seconds = max(
-            0.0, float(os.getenv("RA_AGENT_RETRY_BASE_SECONDS", "1.0"))
+            0.0,
+            _safe_env_float("RA_AGENT_RETRY_BASE_SECONDS", 1.0),
         )
-        self.max_iterations = max(4, int(os.getenv("RA_AGENT_MAX_ITERATIONS", "30")))
+        self.max_iterations = max(4, _safe_env_int("RA_AGENT_MAX_ITERATIONS", 30))
         logger.debug(
             "Initializing ResearchAgent",
             extra={
@@ -284,11 +308,10 @@ class ResearchAgent:
             },
         )
 
-        api_key = os.getenv("OPENAI_API_KEY")
-        self.llm = ChatOpenAI(model=self.model, api_key=api_key, temperature=0)
+        self.llm = ChatOpenAI(model=self.model, api_key=config.openai_api_key, temperature=0)
 
         self.retriever = UnifiedRetriever()
-        self.semantic_scholar = SemanticScholarClient()
+        self.semantic_scholar = SemanticScholarClient(api_key=config.semantic_scholar_api_key)
         self.tools = make_retrieval_tools(
             retriever=self.retriever,
             semantic_scholar=self.semantic_scholar,
@@ -336,6 +359,13 @@ class ResearchAgent:
         return (
             "## Answer\n"
             "I encountered an internal error while processing your request. Please try again.\n\n"
+            "## References\nNone."
+        )
+
+    def _invalid_query_response(self) -> str:
+        return (
+            "## Answer\n"
+            "Please provide a non-empty query without control characters (max 4000 characters).\n\n"
             "## References\nNone."
         )
 
@@ -455,6 +485,11 @@ class ResearchAgent:
 
     async def arun(self, query: str) -> str:
         """Async entrypoint."""
+        try:
+            query = sanitize_user_text(query, field_name="query", max_length=4000)
+        except ValueError:
+            logger.warning("Rejected invalid query input in arun.")
+            return self._invalid_query_response()
         inputs = {"messages": [HumanMessage(content=query)]}
         self._callback.papers.clear()
         config = {
@@ -471,6 +506,11 @@ class ResearchAgent:
 
     def run(self, query: str) -> str:
         """Run the agent loop for a single query and return the final answer."""
+        try:
+            query = sanitize_user_text(query, field_name="query", max_length=4000)
+        except ValueError:
+            logger.warning("Rejected invalid query input in run.")
+            return self._invalid_query_response()
         inputs = {"messages": [HumanMessage(content=query)]}
         self._callback.papers.clear()
         config = {

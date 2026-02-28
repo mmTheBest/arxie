@@ -60,6 +60,16 @@ class _FakeHttpClient:
         return _FakeResponse()
 
 
+class _EndpointCaptureHttpClient:
+    def __init__(self, payload: dict[str, object] | None = None) -> None:
+        self.payload = payload or {}
+        self.last_endpoint: str | None = None
+
+    async def request(self, method: str, endpoint: str, params=None):  # noqa: ANN001, ARG002
+        self.last_endpoint = endpoint
+        return _FakeResponseWithPayload(self.payload)
+
+
 class _StatusThenSuccessHttpClient:
     def __init__(self, status_codes: list[int], payload: dict[str, object] | None = None) -> None:
         self.status_codes = status_codes
@@ -169,3 +179,26 @@ async def test_request_retries_request_errors_with_exponential_backoff(
     assert payload == {"data": [{"paperId": "ok"}]}
     assert fake_http.calls == 4
     assert sleep_calls == [1, 2, 4]
+
+
+@pytest.mark.asyncio
+async def test_get_paper_url_encodes_identifier_path_segment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SemanticScholarClient(max_retries=1)
+    fake_http = _EndpointCaptureHttpClient(payload={"paperId": "ok"})
+
+    async def _fake_get_client():
+        return fake_http
+
+    monkeypatch.setattr(client, "_get_client", _fake_get_client)
+
+    _ = await client.get_paper("DOI:10.1000/xyz")
+    assert fake_http.last_endpoint == "/paper/DOI:10.1000%2Fxyz"
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_control_characters_in_query() -> None:
+    client = SemanticScholarClient(max_retries=1)
+    with pytest.raises(ValueError, match="query"):
+        await client.search("transformer\x00models", limit=5)

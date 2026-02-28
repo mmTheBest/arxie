@@ -21,6 +21,7 @@ from dataclasses import asdict
 from typing import Any
 
 from ra.retrieval.unified import Paper, UnifiedRetriever
+from ra.utils.security import sanitize_identifier, sanitize_user_text
 from ra.utils.logging_config import configure_logging_from_env
 
 logger = logging.getLogger(__name__)
@@ -31,13 +32,23 @@ def _paper_to_jsonable(p: Paper) -> dict[str, Any]:
     return asdict(p)
 
 
+def _limit_arg(value: str) -> int:
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("limit must be an integer.") from None
+    if limit < 1 or limit > 100:
+        raise argparse.ArgumentTypeError("limit must be between 1 and 100.")
+    return limit
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ra", description="Academic Research Assistant CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_search = sub.add_parser("search", help="Search papers")
     p_search.add_argument("--query", required=True, help="Search query")
-    p_search.add_argument("--limit", type=int, default=5, help="Max results (default: 5)")
+    p_search.add_argument("--limit", type=_limit_arg, default=5, help="Max results (1-100)")
     p_search.add_argument(
         "--source",
         choices=["semantic", "arxiv", "both"],
@@ -64,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def _cmd_search(query: str, limit: int, source: str) -> list[dict[str, Any]]:
+    query = sanitize_user_text(query, field_name="query", max_length=1000)
     if source == "semantic":
         sources = ("semantic_scholar",)
     elif source == "arxiv":
@@ -77,12 +89,15 @@ async def _cmd_search(query: str, limit: int, source: str) -> list[dict[str, Any
 
 
 async def _cmd_get(identifier: str) -> dict[str, Any] | None:
+    identifier = sanitize_identifier(identifier, field_name="identifier", max_length=256)
     async with UnifiedRetriever() as r:
         p = await r.get_paper(identifier)
         return _paper_to_jsonable(p) if p else None
 
 
 def _cmd_eval(dataset: str, output: str) -> dict[str, Any]:
+    dataset = sanitize_user_text(dataset, field_name="dataset", max_length=1024)
+    output = sanitize_user_text(output, field_name="output", max_length=1024)
     from tests.eval.harness import EvalHarness
 
     harness = EvalHarness(dataset_path=dataset, output_dir=output)

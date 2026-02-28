@@ -95,6 +95,32 @@ async def test_unified_get_full_text_no_pdf_url_returns_empty(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
+async def test_unified_get_full_text_rejects_unsafe_pdf_url(monkeypatch: pytest.MonkeyPatch):
+    class BoomAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:  # noqa: ANN001,ARG002
+            raise AssertionError("HTTP client should not be constructed for unsafe URLs")
+
+    monkeypatch.setattr("ra.retrieval.unified.httpx.AsyncClient", BoomAsyncClient)
+
+    r = UnifiedRetriever(semantic_scholar=None, arxiv=None)
+    paper = Paper(
+        id="p1",
+        title="t",
+        abstract=None,
+        authors=[],
+        year=None,
+        venue=None,
+        citation_count=None,
+        pdf_url="http://127.0.0.1/private.pdf",
+        doi=None,
+        arxiv_id=None,
+        source="arxiv",
+    )
+
+    assert await r.get_full_text(paper) == ""
+
+
+@pytest.mark.asyncio
 async def test_unified_get_full_text_retries_transient_errors_with_exponential_backoff(
     monkeypatch: pytest.MonkeyPatch,
 ):

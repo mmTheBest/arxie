@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from xml.etree import ElementTree as ET
 
 import httpx
 from ra.utils.rate_limiter import TokenBucketRateLimiter
+from ra.utils.security import sanitize_identifier, sanitize_user_text
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +260,12 @@ class ArxivClient:
         return f"https://arxiv.org/pdf/{arxiv_id}.pdf"
 
     def _build_search_query(self, query: str, category: str | None) -> str:
-        q = query.strip()
+        q = sanitize_user_text(
+            query,
+            field_name="query",
+            max_length=1000,
+            allow_empty=True,
+        )
         if not q:
             return "all:*"
 
@@ -272,7 +279,14 @@ class ArxivClient:
             base = f"all:{q}"
 
         if category:
-            base = f"({base}) AND cat:{category.strip()}"
+            sanitized_category = sanitize_user_text(
+                category,
+                field_name="category",
+                max_length=32,
+            )
+            if re.search(r"\s", sanitized_category):
+                raise ValueError("category must not contain whitespace.")
+            base = f"({base}) AND cat:{sanitized_category}"
 
         return base
 
@@ -287,7 +301,11 @@ class ArxivClient:
         Returns:
             List of matching papers.
         """
-        limit = max(1, min(int(limit), 1000))
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            raise ValueError("limit must be an integer.") from None
+        limit = max(1, min(limit, 1000))
         params = {
             "search_query": self._build_search_query(query, category),
             "start": 0,
@@ -304,9 +322,7 @@ class ArxivClient:
 
     async def get_paper(self, arxiv_id: str) -> ArxivPaper | None:
         """Get a paper by arXiv id (e.g., '2101.00001' or '2101.00001v2')."""
-        arxiv_id = arxiv_id.strip()
-        if not arxiv_id:
-            return None
+        arxiv_id = sanitize_identifier(arxiv_id, field_name="arxiv_id", max_length=64)
 
         params = {
             "id_list": arxiv_id,
@@ -327,11 +343,12 @@ class ArxivClient:
         Returns:
             Path to the downloaded file.
         """
+        arxiv_id = sanitize_identifier(arxiv_id, field_name="arxiv_id", max_length=64)
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
         # Use canonical PDF URL to avoid depending on API link presence.
-        url = f"https://arxiv.org/pdf/{arxiv_id.strip()}.pdf"
+        url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
         client = await self._get_client()
 
         for attempt in range(self.max_retries):

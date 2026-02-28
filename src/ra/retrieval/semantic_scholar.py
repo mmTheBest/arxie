@@ -4,9 +4,11 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from ra.utils.rate_limiter import TokenBucketRateLimiter
+from ra.utils.security import sanitize_identifier, sanitize_user_text
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +133,12 @@ class SemanticScholarClient:
             timeout: Request timeout in seconds.
             max_retries: Maximum retry attempts for failed requests.
         """
-        self.api_key = api_key
+        self.api_key = sanitize_user_text(
+            api_key,
+            field_name="api_key",
+            max_length=256,
+            allow_empty=True,
+        ) or None
         self.timeout = timeout
         self.max_retries = max_retries
         self.max_backoff_seconds = max_backoff_seconds
@@ -227,9 +234,16 @@ class SemanticScholarClient:
         Returns:
             List of matching papers.
         """
+        query = sanitize_user_text(query, field_name="query", max_length=1000)
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            raise ValueError("limit must be an integer.") from None
+        limit = max(1, min(limit, 100))
+
         params: dict[str, Any] = {
             "query": query,
-            "limit": min(limit, 100),
+            "limit": limit,
             "fields": ",".join(DEFAULT_PAPER_FIELDS),
         }
 
@@ -261,10 +275,12 @@ class SemanticScholarClient:
         Returns:
             Paper metadata or None if not found.
         """
+        paper_id = sanitize_identifier(paper_id, field_name="paper_id", max_length=256)
+        encoded_id = quote(paper_id, safe=":")
         params = {"fields": ",".join(DEFAULT_PAPER_FIELDS)}
 
         try:
-            data = await self._request("GET", f"/paper/{paper_id}", params)
+            data = await self._request("GET", f"/paper/{encoded_id}", params)
             return Paper.from_api(data)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -285,12 +301,19 @@ class SemanticScholarClient:
         Returns:
             List of citing papers.
         """
+        paper_id = sanitize_identifier(paper_id, field_name="paper_id", max_length=256)
+        encoded_id = quote(paper_id, safe=":")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            raise ValueError("limit must be an integer.") from None
+        limit = max(1, min(limit, 100))
         params = {
             "fields": ",".join(DEFAULT_PAPER_FIELDS),
-            "limit": min(limit, 100),
+            "limit": limit,
         }
 
-        data = await self._request("GET", f"/paper/{paper_id}/citations", params)
+        data = await self._request("GET", f"/paper/{encoded_id}/citations", params)
         papers = [Paper.from_api(c.get("citingPaper", {})) for c in data.get("data", [])]
 
         return papers
@@ -309,12 +332,19 @@ class SemanticScholarClient:
         Returns:
             List of referenced papers.
         """
+        paper_id = sanitize_identifier(paper_id, field_name="paper_id", max_length=256)
+        encoded_id = quote(paper_id, safe=":")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            raise ValueError("limit must be an integer.") from None
+        limit = max(1, min(limit, 100))
         params = {
             "fields": ",".join(DEFAULT_PAPER_FIELDS),
-            "limit": min(limit, 100),
+            "limit": limit,
         }
 
-        data = await self._request("GET", f"/paper/{paper_id}/references", params)
+        data = await self._request("GET", f"/paper/{encoded_id}/references", params)
         papers = [Paper.from_api(r.get("citedPaper", {})) for r in data.get("data", [])]
 
         return papers
