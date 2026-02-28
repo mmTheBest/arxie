@@ -15,11 +15,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from dataclasses import asdict
 from typing import Any
 
 from ra.retrieval.unified import Paper, UnifiedRetriever
+from ra.utils.logging_config import configure_logging_from_env
+
+logger = logging.getLogger(__name__)
 
 
 def _paper_to_jsonable(p: Paper) -> dict[str, Any]:
@@ -91,8 +95,17 @@ def _cmd_eval(dataset: str, output: str) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_logging_from_env()
+
     parser = build_parser()
     args = parser.parse_args(argv)
+    logger.debug(
+        "CLI command received",
+        extra={
+            "event": "cli.command.received",
+            "command": args.command,
+        },
+    )
 
     try:
         if args.command == "search":
@@ -110,8 +123,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     except KeyboardInterrupt:
+        logger.warning(
+            "CLI interrupted by user",
+            extra={"event": "cli.interrupted"},
+        )
         return 130
     except Exception as e:  # noqa: BLE001
+        logger.exception(
+            "CLI command failed",
+            extra={
+                "event": "cli.command.failed",
+                "command": args.command,
+                "error_type": type(e).__name__,
+            },
+        )
         # Keep output machine-readable.
         json.dump({"error": str(e), "type": type(e).__name__}, sys.stdout, ensure_ascii=False)
         sys.stdout.write("\n")

@@ -242,7 +242,14 @@ class SemanticScholarClient:
         data = await self._request("GET", "/paper/search", params)
         papers = [Paper.from_api(p) for p in data.get("data", [])]
 
-        logger.info(f"Search '{query}' returned {len(papers)} papers")
+        logger.info(
+            "Semantic Scholar search completed",
+            extra={
+                "event": "semantic_scholar.search.completed",
+                "query": query,
+                "result_count": len(papers),
+            },
+        )
         return papers
 
     async def get_paper(self, paper_id: str) -> Paper | None:

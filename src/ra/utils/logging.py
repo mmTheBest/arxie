@@ -10,7 +10,6 @@ This is designed to be safe, lightweight, and thread-safe.
 from __future__ import annotations
 
 import json
-import logging
 import threading
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
@@ -18,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ra.utils.config import RAConfig
+from ra.utils.logging_config import configure_logging
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,39 +150,9 @@ def get_daily_summary() -> dict[str, Any]:
 
 
 def setup_logging(config: RAConfig) -> None:
-    """Configure Python logging.
+    """Backwards-compatible wrapper around structured logging configuration."""
 
-    - Console handler always enabled
-    - File handler writes to {config.ra_log_dir}/ra.log
-
-    This function is idempotent-ish: it configures the root logger once per
-    interpreter in a way that won't duplicate handlers if called repeatedly.
-    """
-
-    level_name = (config.ra_log_level or "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
-
-    fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-    datefmt = "%Y-%m-%d %H:%M:%S"
-    formatter = logging.Formatter(fmt=fmt, datefmt=datefmt)
-
-    root = logging.getLogger()
-    root.setLevel(level)
-
-    # Prevent handler duplication.
-    if getattr(root, "_ra_logging_configured", False):
-        return
-
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(level)
-    stream_handler.setFormatter(formatter)
-    root.addHandler(stream_handler)
-
-    log_dir = Path(config.ra_log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.FileHandler(log_dir / "ra.log", encoding="utf-8")
-    file_handler.setLevel(level)
-    file_handler.setFormatter(formatter)
-    root.addHandler(file_handler)
-
-    setattr(root, "_ra_logging_configured", True)
+    configure_logging(
+        log_level=config.ra_log_level,
+        log_dir=config.ra_log_dir,
+    )

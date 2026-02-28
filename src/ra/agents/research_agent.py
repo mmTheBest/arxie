@@ -29,6 +29,7 @@ from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
 from ra.utils.logging import UsageLogger
+from ra.utils.logging_config import configure_logging_from_env
 
 try:
     from openai import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
@@ -265,12 +266,23 @@ class ResearchAgent:
     """Academic Research Assistant agent (LangChain >=1.2 create_agent)."""
 
     def __init__(self, *, model: str | None = None, verbose: bool = False):
+        configure_logging_from_env()
+
         self.model = model or os.getenv("RA_MODEL", "gpt-4o-mini")
         self.max_api_retries = max(0, int(os.getenv("RA_AGENT_MAX_RETRIES", "3")))
         self.retry_base_delay_seconds = max(
             0.0, float(os.getenv("RA_AGENT_RETRY_BASE_SECONDS", "1.0"))
         )
         self.max_iterations = max(4, int(os.getenv("RA_AGENT_MAX_ITERATIONS", "30")))
+        logger.debug(
+            "Initializing ResearchAgent",
+            extra={
+                "event": "research_agent.init",
+                "model": self.model,
+                "max_api_retries": self.max_api_retries,
+                "max_iterations": self.max_iterations,
+            },
+        )
 
         api_key = os.getenv("OPENAI_API_KEY")
         self.llm = ChatOpenAI(model=self.model, api_key=api_key, temperature=0)

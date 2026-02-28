@@ -1,5 +1,6 @@
 import time
 import socket
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -11,6 +12,7 @@ from ra.retrieval.unified import UnifiedRetriever
 
 
 pytestmark = pytest.mark.integration
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -32,8 +34,7 @@ def _skip_if_external_apis_unreachable() -> None:
 class APIMetrics:
     """Tiny metrics collector for integration tests.
 
-    We intentionally print to stdout so CI/log collectors can capture basic call
-    counts and timings.
+    Emits summary metrics through the shared logging pipeline.
     """
 
     def __init__(self) -> None:
@@ -48,8 +49,14 @@ class APIMetrics:
 
     def report(self) -> None:
         total = sum(dt for _, dt in self.calls)
-        print("\n[retrieval-smoke] API usage metrics")
-        print(f"[retrieval-smoke] calls={len(self.calls)} total_s={total:.3f}")
+        logger.info(
+            "retrieval smoke metrics summary",
+            extra={
+                "event": "retrieval_smoke.metrics.summary",
+                "calls": len(self.calls),
+                "total_seconds": round(total, 3),
+            },
+        )
         by_name: dict[str, list[float]] = {}
         for name, dt in self.calls:
             by_name.setdefault(name, []).append(dt)
@@ -57,7 +64,16 @@ class APIMetrics:
             n = len(dts)
             avg = sum(dts) / n
             mx = max(dts)
-            print(f"[retrieval-smoke] {name}: n={n} avg_s={avg:.3f} max_s={mx:.3f}")
+            logger.info(
+                "retrieval smoke metrics by operation",
+                extra={
+                    "event": "retrieval_smoke.metrics.operation",
+                    "operation": name,
+                    "count": n,
+                    "avg_seconds": round(avg, 3),
+                    "max_seconds": round(mx, 3),
+                },
+            )
 
 
 @pytest.fixture

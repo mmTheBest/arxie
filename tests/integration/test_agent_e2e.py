@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import socket
@@ -12,6 +13,7 @@ from ra.agents.research_agent import ResearchAgent
 
 
 pytestmark = pytest.mark.integration
+logger = logging.getLogger(__name__)
 
 
 _CITATION_RE = re.compile(
@@ -42,10 +44,16 @@ def _usage_snapshot() -> int:
     return sum(1 for _ in p.open("r", encoding="utf-8"))
 
 
-def _print_usage_delta(start_line: int) -> None:
+def _log_usage_delta(start_line: int) -> None:
     p = _usage_log_path()
     if not p.exists():
-        print("[usage] no api-usage.jsonl written")
+        logger.warning(
+            "Usage log file not written",
+            extra={
+                "event": "agent_e2e.usage.missing_log_file",
+                "path": str(p),
+            },
+        )
         return
 
     tokens_in = 0
@@ -66,8 +74,15 @@ def _print_usage_delta(start_line: int) -> None:
             tokens_out += int(obj.get("tokens_out", 0))
             cost += float(obj.get("cost_estimate", 0.0))
 
-    print(
-        f"[usage] calls={new_lines} tokens_in={tokens_in} tokens_out={tokens_out} cost_estimate_usd={cost:.6f}"
+    logger.info(
+        "Agent E2E usage delta",
+        extra={
+            "event": "agent_e2e.usage.delta",
+            "calls": new_lines,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_estimate_usd": round(cost, 6),
+        },
     )
 
 
@@ -97,7 +112,7 @@ def test_agent_answers_factual_query() -> None:
         "Who wrote the Attention Is All You Need paper and what year was it published?"
     )
 
-    _print_usage_delta(start)
+    _log_usage_delta(start)
 
     low = resp.lower()
     assert "vaswani" in low
@@ -114,7 +129,7 @@ def test_agent_cites_sources() -> None:
     agent = ResearchAgent(verbose=False)
     resp = agent.run("What are the main approaches to retrieval-augmented generation?")
 
-    _print_usage_delta(start)
+    _log_usage_delta(start)
 
     assert _CITATION_RE.search(resp), f"Expected at least 1 inline citation, got:\n{resp}"
 
@@ -131,7 +146,7 @@ def test_agent_handles_unknown_topic() -> None:
         "What are the key results of the flibbertigibbet quantum pineapple theorem in intergalactic databases?"
     )
 
-    _print_usage_delta(start)
+    _log_usage_delta(start)
 
     low = resp.lower()
     assert (
