@@ -1,0 +1,33 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ra-api
+    ports:
+      - "8000:8000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
+      RA_MODEL: ${RA_MODEL:-gpt-4o-mini}
+      RA_LOG_LEVEL: ${RA_LOG_LEVEL:-INFO}
+      RA_LOG_DIR: ${RA_LOG_DIR:-data/logs}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # Optional standalone Chroma service for remote vector-store workflows.
+  # Current RA runtime uses local persistent Chroma by default.
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: ra-chroma
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
+    profiles:
+      - chroma
+
+volumes:
+  chroma-data:
