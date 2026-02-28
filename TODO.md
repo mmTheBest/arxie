@@ -5,7 +5,7 @@
 - [x] 50-question dataset (tests/eval/dataset.json)
 - [x] Eval CLI command (ra eval)
 - [x] Unit tests for harness (tests/eval/test_eval_harness.py)
-- [ ] **BLOCKED: Run baseline eval (needs V2Box proxy fix for api.openai.com) with GPT-4o-mini** (source ~/.zshrc first for API key)
+- [x] **Run baseline eval with GPT-4o-mini** (completed 2026-02-28; see docs/eval-baseline.md)
       Run: source ~/.zshrc && .venv/bin/python -c "from tests.eval.harness import EvalHarness; h = EvalHarness('tests/eval/dataset.json'); h.run(output_dir='results/')"
       Or use CLI: source ~/.zshrc && .venv/bin/python -m ra.cli eval --dataset tests/eval/dataset.json --output results/
       Save results to results/ and docs/eval-baseline.md

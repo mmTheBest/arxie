@@ -1,22 +1,27 @@
-# Evaluation Summary
+# Baseline Eval: GPT-4o-mini
 
-- Generated at (UTC): `2026-02-28T04:10:18.491048+00:00`
-- Dataset: `/Users/mm/Projects/academic-research-assistant/tests/eval/dataset.json`
-- Total questions: `50`
+- Date (UTC): `2026-02-28`
+- Model: `gpt-4o-mini` (`RA_MODEL` unset; default from `src/ra/utils/config.py`)
+- Dataset: `tests/eval/dataset.json`
+- Dataset size: `100`
+- Artifacts:
+  - `results/eval_summary.md`
+  - `results/eval_results.json`
 
-## Topline Metrics
+## Metrics vs Targets
 
-| Metric | Value |
-|---|---:|
-| citation_precision | 0.000000 |
-| claim_support_ratio | 0.000000 |
-| tool_success_rate | 0.000000 |
-| latency_p95 (seconds) | 65.058724 |
+| Metric | Target | Result | Status |
+|---|---:|---:|---|
+| `citation_precision` | `>= 0.85` | `0.0000` | FAIL |
+| `claim_support_ratio` | `>= 0.80` | `1.0000` | PASS |
+| `tool_success_rate` | `>= 0.90` | `0.0000` | FAIL |
 
-## Tier Breakdown
+Additional metric:
+- `latency_p95`: `3.4758s`
 
-| Tier | Questions | Citation Precision | Claim Support | Tool Success | Latency p95 |
-|---|---:|---:|---:|---:|---:|
-| tier_1 | 20 | 0.000000 | 0.000000 | 0.000000 | 65.058724 |
-| tier_2 | 20 | 0.000000 | 0.000000 | 0.000000 | 58.303537 |
-| tier_3 | 10 | 0.000000 | 0.000000 | 0.000000 | 59.420572 |
+## Notable Patterns and Failures
+
+- Citation behavior is consistently broken: `100/100` responses had `0` inline citations, and `citation_count_ok` is `false` for all rows.
+- Tool execution is failing across the run: `89` tool calls were attempted across `86` questions, with `0` successful tool calls.
+- Runtime logs repeatedly show tool invocation failures (`NotImplementedError: StructuredTool does not support sync invocation`), and usage logs show repeated `tool:search_papers` status `500`.
+- `claim_support_ratio=1.0` appears inflated relative to retrieval/citation failure and should not be treated as sufficient quality evidence by itself.
