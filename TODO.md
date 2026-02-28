@@ -1,52 +1,33 @@
-# RA Development Task Queue
+# RA Development TODO
 
-## Phase 1: Foundation ✅
-- [x] Project scaffold and configuration
-- [x] pyproject.toml configured
-- [x] Environment setup (.env.example, .gitignore)
-- [x] Semantic Scholar API client
-- [x] arXiv API client
-- [x] Unified retrieval interface (dedup, normalize)
-- [x] CLI (ra search, ra get)
-- [x] Unit tests (arXiv parsing, S2 parsing, dedup)
-- [x] Integration smoke tests
-- [x] Git repo initialized
-- [x] Architecture diagrams (Mermaid)
+## Current: Phase 3 — Evaluation (IN PROGRESS)
+- [x] Eval harness (tests/eval/harness.py)
+- [x] 50-question dataset (tests/eval/dataset.json)
+- [x] Eval CLI command (ra eval)
+- [x] Unit tests for harness (tests/eval/test_eval_harness.py)
+- [ ] **Run baseline eval with GPT-4o-mini** (source ~/.zshrc first for API key)
+      Run: source ~/.zshrc && .venv/bin/python -c "from tests.eval.harness import EvalHarness; h = EvalHarness('tests/eval/dataset.json'); h.run(output_dir='results/')"
+      Or use CLI: source ~/.zshrc && .venv/bin/python -m ra.cli eval --dataset tests/eval/dataset.json --output results/
+      Save results to results/ and docs/eval-baseline.md
+- [ ] **Expand dataset to 100 questions** (add 50 more across all tiers)
+- [ ] **Researcher QA agent** (black-box tester in tests/eval/qa_agent.py)
 
-## Phase 2: Core Pipeline (Current Sprint)
+## Phase 4 — Hardening (QUEUED)
+- [ ] Chroma vector store caching (src/ra/retrieval/chroma_cache.py)
+- [ ] Enhanced error handling + retries for retrieval clients
+- [ ] Rate limiting improvements (token bucket)
+- [ ] Structured logging with log levels
+- [ ] Security review (API key handling, input sanitization)
 
-### Done
-- [x] LangChain ReAct agent skeleton (research_agent.py)
-- [x] Tool definitions (search_papers, get_paper_details, get_paper_citations)
+## Phase 5 — Production (QUEUED)
+- [ ] FastAPI REST layer (src/ra/api/)
+- [ ] Deployment config (Dockerfile, docker-compose)
+- [ ] API documentation (OpenAPI/Swagger)
+- [ ] Performance optimization (async batching, connection pooling)
+- [ ] README with setup instructions
 
-### In Progress
-- [ ] Citation extraction and formatting module
-- [ ] PDF parsing pipeline (PyMuPDF + pdfplumber)
-- [ ] Prompt engineering for citation accuracy
-- [ ] End-to-end agent test (run query → get cited answer)
-
-### Queued
-- [ ] Basic generation with retrieved context
-- [ ] Agent output structured formatting
-- [ ] Usage/cost logging middleware
-- [ ] Error handling in agent loop
-
-## Phase 3: Evaluation (Next Sprint)
-- [ ] Test harness implementation
-- [ ] 100-question evaluation dataset (12 seed + expand)
-- [ ] Metrics: citation precision, claim support, tool-call success
-- [ ] Baseline measurements
-- [ ] Researcher agent (black-box QA)
-
-## Phase 4: Hardening
-- [ ] Caching layer (Chroma vector store)
-- [ ] Enhanced error handling and retries
-- [ ] Rate limiting improvements
-- [ ] Logging and observability
-- [ ] Security review (API key handling, input validation)
-
-## Phase 5: Production
-- [ ] API layer (FastAPI)
-- [ ] Deployment configuration
-- [ ] Documentation (user guide, API docs)
-- [ ] Performance optimization
+## Rules
+- Commit message: update on "YYYY-MM-DD"
+- Run unit tests before committing: .venv/bin/python -m pytest tests/ -q --ignore=tests/integration
+- Push to origin after every commit
+- Source ~/.zshrc before any command needing OPENAI_API_KEY
