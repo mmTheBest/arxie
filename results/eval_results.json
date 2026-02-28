@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-28T03:22:09.999037+00:00",
+  "generated_at": "2026-02-28T04:10:18.491048+00:00",
   "dataset_path": "/Users/mm/Projects/academic-research-assistant/tests/eval/dataset.json",
   "output_dir": "/Users/mm/Projects/academic-research-assistant/results",
   "total_questions": 50,
@@ -7,7 +7,7 @@
     "citation_precision": 0.0,
     "claim_support_ratio": 0.0,
     "tool_success_rate": 0.0,
-    "latency_p95": 18.151169
+    "latency_p95": 65.058724
   },
   "by_tier": {
     "tier_1": {
@@ -15,28 +15,28 @@
       "citation_precision": 0.0,
       "claim_support_ratio": 0.0,
       "tool_success_rate": 0.0,
-      "latency_p95": 18.151169
+      "latency_p95": 65.058724
     },
     "tier_2": {
       "questions": 20,
       "citation_precision": 0.0,
       "claim_support_ratio": 0.0,
       "tool_success_rate": 0.0,
-      "latency_p95": 17.945246
+      "latency_p95": 58.303537
     },
     "tier_3": {
       "questions": 10,
       "citation_precision": 0.0,
       "claim_support_ratio": 0.0,
       "tool_success_rate": 0.0,
-      "latency_p95": 18.424729
+      "latency_p95": 59.420572
     }
   },
   "results": [
     {
       "query": "Who introduced the Transformer architecture in 'Attention Is All You Need' (2017)?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 16.212748,
+      "latency_seconds": 41.807826,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -52,7 +52,7 @@
     {
       "query": "What objective is optimized during BERT pretraining?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 9.725339,
+      "latency_seconds": 40.489842,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -68,7 +68,7 @@
     {
       "query": "In which year was 'Deep Residual Learning for Image Recognition' published?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 8.596093,
+      "latency_seconds": 63.879578,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -84,7 +84,7 @@
     {
       "query": "Who are the primary authors of the original GAN paper (2014)?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 7.968433,
+      "latency_seconds": 52.548296,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -100,7 +100,7 @@
     {
       "query": "What benchmark did AlexNet famously win in 2012?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 5.661148,
+      "latency_seconds": 58.882968,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -116,7 +116,7 @@
     {
       "query": "What problem does the paper 'Adam: A Method for Stochastic Optimization' address?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 5.62312,
+      "latency_seconds": 56.829401,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -132,7 +132,7 @@
     {
       "query": "Who proposed the U-Net architecture and for what domain?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 5.648656,
+      "latency_seconds": 48.06741,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -148,7 +148,7 @@
     {
       "query": "What does the acronym YOLO stand for in the 2016 paper?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 5.699098,
+      "latency_seconds": 39.268185,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -164,7 +164,7 @@
     {
       "query": "Which paper introduced Batch Normalization and what was its core benefit?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 5.556428,
+      "latency_seconds": 48.102673,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -180,7 +180,7 @@
     {
       "query": "What is the main contribution of the Word2Vec papers by Mikolov et al.?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 13.301211,
+      "latency_seconds": 65.058724,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -196,7 +196,7 @@
     {
       "query": "In what year did the original LSTM paper appear?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 13.837268,
+      "latency_seconds": 57.508514,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -212,7 +212,7 @@
     {
       "query": "Who introduced Dropout and why was it effective?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 5.616731,
+      "latency_seconds": 52.3673,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -228,7 +228,7 @@
     {
       "query": "What dataset was introduced with the MNIST paper?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 5.475508,
+      "latency_seconds": 69.723768,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -244,7 +244,7 @@
     {
       "query": "What is the central idea in 'Distilling the Knowledge in a Neural Network'?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 5.787169,
+      "latency_seconds": 52.900638,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -260,7 +260,7 @@
     {
       "query": "Who proposed Layer Normalization and for what setting was it motivated?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 17.519021,
+      "latency_seconds": 38.91953,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -276,7 +276,7 @@
     {
       "query": "What was the key idea of the original seq2seq paper by Sutskever et al.?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 10.431204,
+      "latency_seconds": 60.013254,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -292,7 +292,7 @@
     {
       "query": "What does 'Neural Machine Translation by Jointly Learning to Align and Translate' introduce?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 18.151169,
+      "latency_seconds": 57.301043,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -308,7 +308,7 @@
     {
       "query": "Who authored 'Playing Atari with Deep Reinforcement Learning'?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 16.940471,
+      "latency_seconds": 53.421891,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -324,7 +324,7 @@
     {
       "query": "What contribution did 'A Survey of Active Learning' (Settles, 2009) make?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 18.366913,
+      "latency_seconds": 44.704718,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -340,7 +340,7 @@
     {
       "query": "What is the purpose of the BLEU metric introduced by Papineni et al. (2002)?",
       "difficulty_tier": "tier_1",
-      "latency_seconds": 12.549399,
+      "latency_seconds": 62.013312,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -356,7 +356,7 @@
     {
       "query": "Compare BERT and RoBERTa pretraining strategies and explain why RoBERTa improved performance.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 12.94086,
+      "latency_seconds": 67.24221,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -372,7 +372,7 @@
     {
       "query": "How does Transformer self-attention differ from RNN-based sequence modeling in computational tradeoffs?",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 16.114757,
+      "latency_seconds": 58.303537,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -388,7 +388,7 @@
     {
       "query": "Explain the difference between variational autoencoders and GANs in training objectives and output quality.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 10.529613,
+      "latency_seconds": 41.739104,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -404,7 +404,7 @@
     {
       "query": "Compare ResNet skip connections with DenseNet connectivity; when is each advantageous?",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 13.190875,
+      "latency_seconds": 57.569146,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -420,7 +420,7 @@
     {
       "query": "How does Batch Normalization differ from Layer Normalization for training stability?",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 5.704682,
+      "latency_seconds": 44.542363,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -436,7 +436,7 @@
     {
       "query": "Explain how Adam differs from SGD with momentum and when Adam can generalize worse.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 12.689557,
+      "latency_seconds": 45.261594,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -452,7 +452,7 @@
     {
       "query": "Compare GPT-style causal language modeling with BERT masked language modeling.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 6.611273,
+      "latency_seconds": 49.821763,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -468,7 +468,7 @@
     {
       "query": "How do graph neural networks (GCN) differ from graph attention networks (GAT)?",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 9.900003,
+      "latency_seconds": 38.342158,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -484,7 +484,7 @@
     {
       "query": "Explain retrieval-augmented generation (RAG) versus pure parametric LLMs for factual QA.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 17.863717,
+      "latency_seconds": 37.286723,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -500,7 +500,7 @@
     {
       "query": "Compare PPO and DQN for reinforcement learning: assumptions, stability, and action spaces.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 10.103528,
+      "latency_seconds": 43.625989,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -516,7 +516,7 @@
     {
       "query": "How does contrastive learning in SimCLR differ from supervised classification training?",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 14.845977,
+      "latency_seconds": 29.539183,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -532,7 +532,7 @@
     {
       "query": "Explain the differences between BLEU, ROUGE, and BERTScore for text evaluation.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 9.982544,
+      "latency_seconds": 40.042055,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -548,7 +548,7 @@
     {
       "query": "Compare CRF-based sequence labeling with Transformer token classification.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 8.651103,
+      "latency_seconds": 45.800484,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -564,7 +564,7 @@
     {
       "query": "How do sparse attention variants like Longformer differ from full attention Transformers?",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 5.635538,
+      "latency_seconds": 35.098476,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -580,7 +580,7 @@
     {
       "query": "Explain why LoRA fine-tuning is more parameter-efficient than full-model fine-tuning.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 17.814838,
+      "latency_seconds": 39.547756,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -596,7 +596,7 @@
     {
       "query": "Compare mixture-of-experts Transformers with dense Transformers.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 15.726617,
+      "latency_seconds": 48.335279,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -612,7 +612,7 @@
     {
       "query": "How does Monte Carlo dropout approximate Bayesian uncertainty estimation?",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 18.113389,
+      "latency_seconds": 33.370251,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -628,7 +628,7 @@
     {
       "query": "Compare BM25 and dense vector retrieval for scientific search.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 15.618314,
+      "latency_seconds": 34.247053,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -644,7 +644,7 @@
     {
       "query": "Explain differences between chain-of-thought prompting and tool-augmented reasoning.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 17.945246,
+      "latency_seconds": 28.877345,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -660,7 +660,7 @@
     {
       "query": "Compare k-fold cross-validation with a single train/validation/test split in ML experiments.",
       "difficulty_tier": "tier_2",
-      "latency_seconds": 12.87408,
+      "latency_seconds": 47.626095,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -676,7 +676,7 @@
     {
       "query": "Synthesize findings from Transformer, BERT, and T5 papers: what scaling patterns and limitations emerge?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 9.202916,
+      "latency_seconds": 29.134979,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -692,7 +692,7 @@
     {
       "query": "Across GAN, diffusion, and autoregressive generation papers, what open problems remain in controllability?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 13.585595,
+      "latency_seconds": 33.398853,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -708,7 +708,7 @@
     {
       "query": "What research gaps appear when comparing robustness papers on adversarial training and out-of-distribution detection?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 17.557398,
+      "latency_seconds": 38.166933,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -724,7 +724,7 @@
     {
       "query": "Integrate evidence from retrieval-augmented QA papers: where do current citation-grounding methods fail?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 5.629372,
+      "latency_seconds": 32.464414,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -740,7 +740,7 @@
     {
       "query": "From RLHF and constitutional AI literature, what unresolved alignment tradeoffs are most significant?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 18.022986,
+      "latency_seconds": 59.420572,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -756,7 +756,7 @@
     {
       "query": "Compare multimodal papers (CLIP, Flamingo, GPT-4V-like systems): what bottlenecks persist for reasoning?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 16.287644,
+      "latency_seconds": 38.678269,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -772,7 +772,7 @@
     {
       "query": "Synthesize methods for efficient adaptation (adapters, LoRA, prefix tuning): what theory gaps remain?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 18.424729,
+      "latency_seconds": 29.374393,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -788,7 +788,7 @@
     {
       "query": "Across graph representation learning papers, what are the main limits of message-passing architectures?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 17.467875,
+      "latency_seconds": 40.76627,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -804,7 +804,7 @@
     {
       "query": "What cross-paper evidence suggests weaknesses in current LLM evaluation benchmarks?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 17.240384,
+      "latency_seconds": 35.243779,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
@@ -820,7 +820,7 @@
     {
       "query": "Based on reproducibility studies in ML, where should new tooling or standards focus next?",
       "difficulty_tier": "tier_3",
-      "latency_seconds": 5.485101,
+      "latency_seconds": 36.039893,
       "inline_citations": 0,
       "matched_citations": 0,
       "citation_precision": 0.0,
