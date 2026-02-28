@@ -148,3 +148,56 @@ def test_validation_errors_use_structured_payload():
     assert payload["error"] == "validation_error"
     assert isinstance(payload["details"], list)
     assert payload["details"]
+
+
+def test_openapi_metadata_and_tags_are_documented():
+    client = TestClient(_mk_app())
+
+    resp = client.get("/openapi.json")
+
+    assert resp.status_code == 200
+    schema = resp.json()
+
+    assert schema["info"]["contact"]["name"] == "Academic Research Assistant Maintainers"
+    assert schema["info"]["license"]["name"] == "MIT"
+
+    tags = {tag["name"]: tag for tag in schema["tags"]}
+    assert "pipeline" in tags
+    assert "research workflow endpoints" in tags["pipeline"]["description"].lower()
+    assert "system" in tags
+    assert "service health" in tags["system"]["description"].lower()
+
+
+def test_openapi_search_endpoint_documents_examples_and_errors():
+    client = TestClient(_mk_app())
+
+    resp = client.get("/openapi.json")
+
+    assert resp.status_code == 200
+    schema = resp.json()
+    operation = schema["paths"]["/search"]["post"]
+
+    assert operation["summary"] == "Search Academic Papers"
+    assert "semantic scholar" in operation["description"].lower()
+
+    request_examples = operation["requestBody"]["content"]["application/json"]["examples"]
+    assert "cross_source_discovery" in request_examples
+    assert request_examples["cross_source_discovery"]["value"]["source"] == "both"
+
+    bad_request = operation["responses"]["400"]
+    assert bad_request["description"] == "Invalid search request."
+    assert bad_request["content"]["application/json"]["example"]["error"] == "invalid_input"
+
+
+def test_openapi_component_schemas_include_field_descriptions():
+    client = TestClient(_mk_app())
+
+    resp = client.get("/openapi.json")
+
+    assert resp.status_code == 200
+    schema = resp.json()
+    search_request_schema = schema["components"]["schemas"]["SearchRequest"]
+    query_schema = search_request_schema["properties"]["query"]
+
+    assert query_schema["description"] == "Natural-language query for paper discovery."
+    assert query_schema["examples"][0] == "transformer architecture for long-context summarization"

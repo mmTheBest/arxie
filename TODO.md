@@ -22,7 +22,7 @@
 ## Phase 5 — Production (QUEUED)
 - [x] FastAPI REST layer (src/ra/api/)
 - [x] Deployment config (Dockerfile, docker-compose)
-- [ ] API documentation (OpenAPI/Swagger)
+- [x] API documentation (OpenAPI/Swagger)
 - [ ] Performance optimization (async batching, connection pooling)
 - [ ] README with setup instructions
 
