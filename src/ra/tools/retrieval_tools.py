@@ -11,9 +11,12 @@ interface stable for downstream UI / API layers.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from typing import Literal
+import threading
+from collections.abc import Awaitable
+from typing import Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -24,6 +27,54 @@ from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
+
+
+class _BackgroundEventLoop:
+    """Run sync tool calls on a single dedicated asyncio loop."""
+
+    def __init__(self) -> None:
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._ready = threading.Event()
+        self._lock = threading.Lock()
+
+    def _bootstrap_loop(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._loop = loop
+        self._ready.set()
+        loop.run_forever()
+
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        with self._lock:
+            if self._loop and self._loop.is_running():
+                return self._loop
+
+            self._ready.clear()
+            self._thread = threading.Thread(
+                target=self._bootstrap_loop,
+                name="ra-retrieval-tools-loop",
+                daemon=True,
+            )
+            self._thread.start()
+            started = self._ready.wait(timeout=5)
+            if not started or self._loop is None:
+                raise RuntimeError("Failed to initialize background event loop for tools.")
+            return self._loop
+
+    def run(self, coro: Awaitable[_T]) -> _T:
+        loop = self._ensure_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result()
+
+
+_SYNC_LOOP = _BackgroundEventLoop()
+
+
+def _run_coroutine_sync(coro: Awaitable[_T]) -> _T:
+    """Run an async coroutine from sync tool invocations."""
+    return _SYNC_LOOP.run(coro)
 
 
 def _paper_to_dict(p: Paper) -> dict:
@@ -139,6 +190,9 @@ def make_retrieval_tools(
             logger.exception("Tool execution failed: search_papers")
             return _tool_error_payload("search_papers", exc)
 
+    def search_papers_sync(query: str, limit: int = 10, source: str = "both") -> str:
+        return _run_coroutine_sync(search_papers(query=query, limit=limit, source=source))
+
     async def get_paper_details(identifier: str) -> str:
         """Fetch paper metadata for a single paper by identifier."""
         try:
@@ -148,6 +202,9 @@ def make_retrieval_tools(
         except Exception as exc:
             logger.exception("Tool execution failed: get_paper_details")
             return _tool_error_payload("get_paper_details", exc)
+
+    def get_paper_details_sync(identifier: str) -> str:
+        return _run_coroutine_sync(get_paper_details(identifier=identifier))
 
     async def get_paper_full_text(identifier: str) -> str:
         """Fetch a paper, download its PDF (if available), and return extracted text."""
@@ -159,6 +216,9 @@ def make_retrieval_tools(
         except Exception:
             logger.exception("Tool execution failed: get_paper_full_text")
             return ""
+
+    def get_paper_full_text_sync(identifier: str) -> str:
+        return _run_coroutine_sync(get_paper_full_text(identifier=identifier))
 
     async def get_paper_citations(paper_id: str, limit: int = 20) -> str:
         """Fetch papers that cite the given paper (Semantic Scholar)."""
@@ -174,6 +234,9 @@ def make_retrieval_tools(
             logger.exception("Tool execution failed: get_paper_citations")
             return _tool_error_payload("get_paper_citations", exc)
 
+    def get_paper_citations_sync(paper_id: str, limit: int = 20) -> str:
+        return _run_coroutine_sync(get_paper_citations(paper_id=paper_id, limit=limit))
+
     return [
         StructuredTool(
             name="search_papers",
@@ -182,6 +245,7 @@ def make_retrieval_tools(
                 "Returns JSON with a list of normalized paper metadata and citation strings."
             ),
             args_schema=SearchPapersArgs,
+            func=search_papers_sync,
             coroutine=search_papers,
         ),
         StructuredTool(
@@ -191,6 +255,7 @@ def make_retrieval_tools(
                 "Returns JSON with normalized metadata and a formatted citation string when available."
             ),
             args_schema=GetPaperDetailsArgs,
+            func=get_paper_details_sync,
             coroutine=get_paper_details,
         ),
         StructuredTool(
@@ -200,6 +265,7 @@ def make_retrieval_tools(
                 "Returns JSON with normalized metadata and a formatted citation string when available."
             ),
             args_schema=GetPaperDetailsArgs,
+            func=get_paper_details_sync,
             coroutine=get_paper_details,
         ),
 
@@ -211,6 +277,7 @@ def make_retrieval_tools(
                 "Returns plain text (empty string if unavailable or extraction fails)."
             ),
             args_schema=GetPaperFullTextArgs,
+            func=get_paper_full_text_sync,
             coroutine=get_paper_full_text,
         ),
 
@@ -221,6 +288,7 @@ def make_retrieval_tools(
                 "Returns JSON with citing papers."
             ),
             args_schema=GetPaperCitationsArgs,
+            func=get_paper_citations_sync,
             coroutine=get_paper_citations,
         ),
     ]

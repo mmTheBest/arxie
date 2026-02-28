@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -216,6 +217,42 @@ async def test_tool_get_paper_full_text_calls_retriever(monkeypatch: pytest.Monk
     out = await tool.ainvoke({"identifier": "10.1234/xyz"})
     assert out == "FULLTEXT"
     assert calls == ["get_paper:10.1234/xyz", "get_full_text"]
+
+
+def test_tool_search_papers_supports_sync_invoke():
+    calls: list[tuple[str, int, tuple[str, ...]]] = []
+    loop_ids: list[int] = []
+
+    class DummyRetriever:
+        async def search(self, query: str, limit: int, sources: tuple[str, ...]):
+            loop_ids.append(id(asyncio.get_running_loop()))
+            calls.append((query, limit, sources))
+            return []
+
+    class DummySemanticScholar:
+        async def get_citations(self, paper_id: str, limit: int):  # noqa: ARG002
+            return []
+
+    tools = make_retrieval_tools(
+        retriever=DummyRetriever(),
+        semantic_scholar=DummySemanticScholar(),
+    )
+    tool = next(t for t in tools if t.name == "search_papers")
+
+    raw_one = tool.invoke({"query": "transformer", "limit": 5, "source": "both"})
+    raw_two = tool.invoke({"query": "bert", "limit": 5, "source": "both"})
+    payload_one = json.loads(raw_one)
+    payload_two = json.loads(raw_two)
+
+    assert payload_one["query"] == "transformer"
+    assert payload_two["query"] == "bert"
+    assert payload_one["count"] == 0
+    assert payload_two["count"] == 0
+    assert calls == [
+        ("transformer", 5, ("semantic_scholar", "arxiv")),
+        ("bert", 5, ("semantic_scholar", "arxiv")),
+    ]
+    assert len(set(loop_ids)) == 1
 
 
 @pytest.mark.asyncio
