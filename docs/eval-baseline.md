@@ -1,5 +1,3 @@
-> NOTE (2026-02-28): These baseline metrics were generated before scoring fixes in `tests/eval/harness.py` and must be re-run to produce updated values.
-
 # Evaluation Summary
 
 - Generated at (UTC): `2026-02-28T04:10:18.491048+00:00`
