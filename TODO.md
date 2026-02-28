@@ -37,3 +37,15 @@
 
 ## Critical Bug Fix
 - [ ] **Fix StructuredTool sync invocation error** — Tools throw `NotImplementedError: StructuredTool does not support sync invocation`. The tools in `src/ra/tools/retrieval_tools.py` use async functions but `create_agent` calls them synchronously. Fix: either make tools sync-compatible (add sync wrappers using `asyncio.run()` or `coroutine=` param) or ensure the agent uses `ainvoke()`. Then re-run baseline eval to get real metrics.
+
+## Phase 6 — Differentiation Features
+- [ ] **Full-text analysis in agent loop** — Wire the existing PDF parser into the agent's tool chain. Agent should be able to: download a paper's PDF, extract full text, and answer questions about methods/results/tables. Add a `read_paper_fulltext` tool that takes a paper ID, downloads PDF, parses it, and returns structured sections.
+- [ ] **Multi-hop reasoning** — Enable iterative deep dives. Agent should: (1) do initial search, (2) identify promising papers, (3) read them in depth, (4) follow citations to related work, (5) synthesize across multiple papers. Increase max_iterations, add a "deep_search" mode that chains search → details → fulltext → citations.
+- [ ] **Literature review generation** — Add a `lit_review` mode/command that produces structured multi-section output: Introduction, Thematic Grouping, Key Findings, Research Gaps, Future Directions. Should group papers by theme, not just list them. Add CLI: `ra lit-review "topic"` and API endpoint.
+- [ ] **Citation graph exploration** — Add a `trace_influence` tool that maps how an idea evolved over time through citation chains. Output: chronological list of papers showing influence flow. Add CLI: `ra trace "paper or concept"`. Visualize as a simple text-based timeline or JSON structure for frontend rendering.
+- [ ] **Confidence scoring** — For each claim in the answer, show evidence strength: number of supporting papers, contradicting papers, and overall confidence (high/medium/low). Add to the structured output format after each major claim.
+- [ ] **Interactive refinement (conversational mode)** — Add a `ra chat` CLI mode and `/chat` API endpoint that maintains conversation state. User can ask follow-ups: "dig deeper into X", "compare paper A vs B", "find more recent work on Y". Use LangChain memory or message history.
+
+## Phase 7 — Demo & Polish
+- [ ] **Remotion demo video** — Motion graphics demo showing: (1) GPT-4o giving unverifiable answer, (2) RA giving same answer with real papers + citation graph. The "aha" moment. Build with Remotion (React).
+- [ ] **Citation graph visualization** — Simple React component (or mermaid/d3) that renders paper relationships as a directed graph. For the demo and potential web UI.
