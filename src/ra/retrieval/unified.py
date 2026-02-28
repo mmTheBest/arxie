@@ -30,6 +30,7 @@ from ra.retrieval.semantic_scholar import SemanticScholarClient
 logger = logging.getLogger(__name__)
 
 Source = Literal["semantic_scholar", "arxiv", "both"]
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 DOI_RE = re.compile(r"^(?:doi:)?(10\.\d{4,9}/\S+)$", re.IGNORECASE)
 # Examples: 1707.08567, 1707.08567v2, hep-th/9901001
@@ -150,10 +151,14 @@ class UnifiedRetriever:
         semantic_scholar: SemanticScholarClient | None = None,
         arxiv: ArxivClient | None = None,
         cache: ChromaCache | None = None,
+        full_text_max_retries: int = 3,
+        full_text_max_backoff_seconds: float = 8.0,
     ):
         self.semantic_scholar = semantic_scholar or SemanticScholarClient()
         self.arxiv = arxiv or ArxivClient()
         self.cache = cache
+        self.full_text_max_retries = full_text_max_retries
+        self.full_text_max_backoff_seconds = full_text_max_backoff_seconds
 
     async def __aenter__(self) -> "UnifiedRetriever":
         # Clients are lazy; nothing required here.
@@ -371,30 +376,77 @@ class UnifiedRetriever:
         if not paper.pdf_url:
             return ""
 
-        tmp_path: Path | None = None
-        try:
-            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-                r = await client.get(paper.pdf_url)
-                r.raise_for_status()
-                pdf_bytes = r.content
+        def _backoff_seconds(attempt: int) -> float:
+            return min(2**attempt, self.full_text_max_backoff_seconds)
 
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-                f.write(pdf_bytes)
-                tmp_path = Path(f.name)
+        for attempt in range(self.full_text_max_retries):
+            tmp_path: Path | None = None
+            try:
+                async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+                    r = await client.get(paper.pdf_url)
+                    r.raise_for_status()
+                    pdf_bytes = r.content
 
-            doc = PDFParser().parse(tmp_path)
-            return (doc.text or "").strip()
-        except Exception:
-            logger.warning(
-                "Failed to download/parse PDF full text for paper_id=%s pdf_url=%s",
-                getattr(paper, "id", ""),
-                paper.pdf_url,
-                exc_info=True,
-            )
-            return ""
-        finally:
-            if tmp_path is not None:
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except Exception:
-                    logger.debug("Failed to delete temp PDF file: %s", tmp_path, exc_info=True)
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                    f.write(pdf_bytes)
+                    tmp_path = Path(f.name)
+
+                doc = PDFParser().parse(tmp_path)
+                return (doc.text or "").strip()
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                if status in RETRYABLE_STATUS_CODES and attempt < self.full_text_max_retries - 1:
+                    backoff = _backoff_seconds(attempt)
+                    logger.warning(
+                        "Full-text download HTTP %s; retrying in %ss (attempt %s/%s) for paper_id=%s",
+                        status,
+                        backoff,
+                        attempt + 1,
+                        self.full_text_max_retries,
+                        getattr(paper, "id", ""),
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+                logger.warning(
+                    "Failed to download full text for paper_id=%s pdf_url=%s",
+                    getattr(paper, "id", ""),
+                    paper.pdf_url,
+                    exc_info=True,
+                )
+                return ""
+            except httpx.RequestError:
+                if attempt < self.full_text_max_retries - 1:
+                    backoff = _backoff_seconds(attempt)
+                    logger.warning(
+                        "Full-text download request error; retrying in %ss (attempt %s/%s) for paper_id=%s",
+                        backoff,
+                        attempt + 1,
+                        self.full_text_max_retries,
+                        getattr(paper, "id", ""),
+                        exc_info=True,
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+                logger.warning(
+                    "Failed to download full text for paper_id=%s pdf_url=%s",
+                    getattr(paper, "id", ""),
+                    paper.pdf_url,
+                    exc_info=True,
+                )
+                return ""
+            except Exception:
+                logger.warning(
+                    "Failed to parse PDF full text for paper_id=%s pdf_url=%s",
+                    getattr(paper, "id", ""),
+                    paper.pdf_url,
+                    exc_info=True,
+                )
+                return ""
+            finally:
+                if tmp_path is not None:
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except Exception:
+                        logger.debug("Failed to delete temp PDF file: %s", tmp_path, exc_info=True)
+
+        return ""

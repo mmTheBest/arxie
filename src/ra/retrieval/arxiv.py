@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://export.arxiv.org"
 QUERY_ENDPOINT = "/api/query"
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 # Atom + arXiv namespaces
 NS = {
@@ -80,11 +81,13 @@ class ArxivClient:
         self,
         timeout: float = 30.0,
         max_retries: int = 3,
+        max_backoff_seconds: float = 8.0,
         min_request_interval_s: float = 3.0,
         rate_limiter: TokenBucketRateLimiter | None = None,
     ):
         self.timeout = timeout
         self.max_retries = max_retries
+        self.max_backoff_seconds = max_backoff_seconds
         self.min_request_interval_s = min_request_interval_s
 
         self._client: httpx.AsyncClient | None = None
@@ -93,6 +96,10 @@ class ArxivClient:
         else:
             rate = 1.0 / min_request_interval_s if min_request_interval_s > 0 else 1000.0
             self._rate_limiter = TokenBucketRateLimiter(rate_per_second=rate, burst=1)
+
+    def _backoff_seconds(self, attempt: int) -> float:
+        """Return exponential backoff delay for a zero-based attempt index."""
+        return min(2**attempt, self.max_backoff_seconds)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -130,8 +137,8 @@ class ArxivClient:
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
                 # arXiv may return 503 during maintenance; retry with backoff.
-                if status in {429, 500, 502, 503, 504} and attempt < self.max_retries - 1:
-                    backoff = 2 ** attempt
+                if status in RETRYABLE_STATUS_CODES and attempt < self.max_retries - 1:
+                    backoff = self._backoff_seconds(attempt)
                     logger.warning(
                         "arXiv request failed (%s), retrying in %ss (attempt %s/%s)",
                         status,
@@ -145,13 +152,15 @@ class ArxivClient:
                 raise
             except httpx.RequestError as e:
                 if attempt < self.max_retries - 1:
+                    backoff = self._backoff_seconds(attempt)
                     logger.warning(
-                        "arXiv request error, retrying in 1s (attempt %s/%s): %s",
+                        "arXiv request error, retrying in %ss (attempt %s/%s): %s",
+                        backoff,
                         attempt + 1,
                         self.max_retries,
                         e,
                     )
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(backoff)
                     continue
                 logger.exception("arXiv request failed: %s", e)
                 raise
@@ -337,8 +346,8 @@ class ArxivClient:
                 return output
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
-                if status in {429, 500, 502, 503, 504} and attempt < self.max_retries - 1:
-                    backoff = 2 ** attempt
+                if status in RETRYABLE_STATUS_CODES and attempt < self.max_retries - 1:
+                    backoff = self._backoff_seconds(attempt)
                     logger.warning(
                         "PDF download failed (%s), retrying in %ss (attempt %s/%s)",
                         status,
@@ -352,13 +361,15 @@ class ArxivClient:
                 raise
             except httpx.RequestError as e:
                 if attempt < self.max_retries - 1:
+                    backoff = self._backoff_seconds(attempt)
                     logger.warning(
-                        "PDF download error, retrying in 1s (attempt %s/%s): %s",
+                        "PDF download error, retrying in %ss (attempt %s/%s): %s",
+                        backoff,
                         attempt + 1,
                         self.max_retries,
                         e,
                     )
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(backoff)
                     continue
                 logger.exception("Failed to download PDF: %s", e)
                 raise

@@ -1,4 +1,5 @@
 import pytest
+import httpx
 
 from ra.retrieval.semantic_scholar import Author, Paper, SemanticScholarClient
 
@@ -59,6 +60,47 @@ class _FakeHttpClient:
         return _FakeResponse()
 
 
+class _StatusThenSuccessHttpClient:
+    def __init__(self, status_codes: list[int], payload: dict[str, object] | None = None) -> None:
+        self.status_codes = status_codes
+        self.payload = payload or {"data": []}
+        self.calls = 0
+
+    async def request(self, method: str, endpoint: str, params=None):  # noqa: ANN001, ARG002
+        self.calls += 1
+        if self.status_codes:
+            status = self.status_codes.pop(0)
+            request = httpx.Request(method, f"https://api.semanticscholar.org{endpoint}")
+            response = httpx.Response(status_code=status, request=request)
+            raise httpx.HTTPStatusError("transient failure", request=request, response=response)
+        return _FakeResponseWithPayload(self.payload)
+
+
+class _RequestErrorThenSuccessHttpClient:
+    def __init__(self, failures: int, payload: dict[str, object] | None = None) -> None:
+        self.failures = failures
+        self.payload = payload or {"data": []}
+        self.calls = 0
+
+    async def request(self, method: str, endpoint: str, params=None):  # noqa: ANN001, ARG002
+        self.calls += 1
+        if self.calls <= self.failures:
+            request = httpx.Request(method, f"https://api.semanticscholar.org{endpoint}")
+            raise httpx.RequestError("network failure", request=request)
+        return _FakeResponseWithPayload(self.payload)
+
+
+class _FakeResponseWithPayload:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return self._payload
+
+
 @pytest.mark.asyncio
 async def test_request_uses_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
     limiter = _CountingRateLimiter()
@@ -71,3 +113,59 @@ async def test_request_uses_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> Non
 
     await client._request("GET", "/paper/search", params={"query": "transformer"})
     assert limiter.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_request_retries_retryable_http_status_with_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limiter = _CountingRateLimiter()
+    client = SemanticScholarClient(rate_limiter=limiter, max_retries=3)
+    fake_http = _StatusThenSuccessHttpClient(
+        status_codes=[503, 500],
+        payload={"data": [{"paperId": "ok"}]},
+    )
+    sleep_calls: list[int] = []
+
+    async def _fake_get_client():
+        return fake_http
+
+    async def _fake_sleep(delay: int) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(client, "_get_client", _fake_get_client)
+    monkeypatch.setattr("ra.retrieval.semantic_scholar.asyncio.sleep", _fake_sleep)
+
+    payload = await client._request("GET", "/paper/search", params={"query": "transformer"})
+
+    assert payload == {"data": [{"paperId": "ok"}]}
+    assert fake_http.calls == 3
+    assert sleep_calls == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_request_retries_request_errors_with_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limiter = _CountingRateLimiter()
+    client = SemanticScholarClient(rate_limiter=limiter, max_retries=4)
+    fake_http = _RequestErrorThenSuccessHttpClient(
+        failures=3,
+        payload={"data": [{"paperId": "ok"}]},
+    )
+    sleep_calls: list[int] = []
+
+    async def _fake_get_client():
+        return fake_http
+
+    async def _fake_sleep(delay: int) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(client, "_get_client", _fake_get_client)
+    monkeypatch.setattr("ra.retrieval.semantic_scholar.asyncio.sleep", _fake_sleep)
+
+    payload = await client._request("GET", "/paper/search", params={"query": "transformer"})
+
+    assert payload == {"data": [{"paperId": "ok"}]}
+    assert fake_http.calls == 4
+    assert sleep_calls == [1, 2, 4]

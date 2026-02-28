@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import httpx
 
 from ra.parsing.pdf_parser import ParsedDocument
 from ra.retrieval.unified import Paper, UnifiedRetriever
@@ -91,6 +92,71 @@ async def test_unified_get_full_text_no_pdf_url_returns_empty(monkeypatch: pytes
     )
 
     assert await r.get_full_text(paper) == ""
+
+
+@pytest.mark.asyncio
+async def test_unified_get_full_text_retries_transient_errors_with_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    attempts = 0
+    sleep_calls: list[int] = []
+
+    class FakeResponse:
+        def __init__(self, content: bytes) -> None:
+            self.content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FlakyAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:  # noqa: ANN001,ARG002
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return None
+
+        async def get(self, url: str):  # noqa: ARG002
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                request = httpx.Request("GET", url)
+                raise httpx.RequestError("network failure", request=request)
+            return FakeResponse(b"%PDF-1.7 dummy")
+
+    class FakePDFParser:
+        def parse(self, pdf_path: Path) -> ParsedDocument:
+            assert pdf_path.exists()
+            return ParsedDocument(text="EXTRACTED TEXT", pages=["p1"], metadata={})
+
+    async def _fake_sleep(delay: int) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr("ra.retrieval.unified.httpx.AsyncClient", FlakyAsyncClient)
+    monkeypatch.setattr("ra.retrieval.unified.PDFParser", lambda: FakePDFParser())
+    monkeypatch.setattr("ra.retrieval.unified.asyncio.sleep", _fake_sleep)
+
+    r = UnifiedRetriever(semantic_scholar=None, arxiv=None)
+    paper = Paper(
+        id="p1",
+        title="t",
+        abstract=None,
+        authors=[],
+        year=None,
+        venue=None,
+        citation_count=None,
+        pdf_url="https://example.com/paper.pdf",
+        doi=None,
+        arxiv_id=None,
+        source="arxiv",
+    )
+
+    text = await r.get_full_text(paper)
+    assert text == "EXTRACTED TEXT"
+    assert attempts == 3
+    assert sleep_calls == [1, 2]
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Semantic Scholar API base URL
 BASE_URL = "https://api.semanticscholar.org/graph/v1"
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 # Default fields to retrieve for papers
 DEFAULT_PAPER_FIELDS = [
@@ -120,6 +121,7 @@ class SemanticScholarClient:
         api_key: str | None = None,
         timeout: float = 30.0,
         max_retries: int = 3,
+        max_backoff_seconds: float = 8.0,
         rate_limiter: TokenBucketRateLimiter | None = None,
     ):
         """Initialize client.
@@ -132,11 +134,16 @@ class SemanticScholarClient:
         self.api_key = api_key
         self.timeout = timeout
         self.max_retries = max_retries
+        self.max_backoff_seconds = max_backoff_seconds
         self._rate_limiter = rate_limiter or TokenBucketRateLimiter(
             rate_per_second=5.0,
             burst=5,
         )
         self._client: httpx.AsyncClient | None = None
+
+    def _backoff_seconds(self, attempt: int) -> float:
+        """Return exponential backoff delay for a zero-based attempt index."""
+        return min(2**attempt, self.max_backoff_seconds)
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -173,17 +180,30 @@ class SemanticScholarClient:
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    # Rate limited - wait and retry
-                    wait_time = 2 ** attempt
-                    logger.warning(f"Rate limited, waiting {wait_time}s...")
+                status = e.response.status_code
+                if status in RETRYABLE_STATUS_CODES and attempt < self.max_retries - 1:
+                    wait_time = self._backoff_seconds(attempt)
+                    logger.warning(
+                        "Semantic Scholar HTTP %s; retrying in %ss (attempt %s/%s)",
+                        status,
+                        wait_time,
+                        attempt + 1,
+                        self.max_retries,
+                    )
                     await asyncio.sleep(wait_time)
                     continue
                 raise
             except httpx.RequestError as e:
                 if attempt < self.max_retries - 1:
-                    logger.warning(f"Request failed, retrying: {e}")
-                    await asyncio.sleep(1)
+                    wait_time = self._backoff_seconds(attempt)
+                    logger.warning(
+                        "Semantic Scholar request error; retrying in %ss (attempt %s/%s): %s",
+                        wait_time,
+                        attempt + 1,
+                        self.max_retries,
+                        e,
+                    )
+                    await asyncio.sleep(wait_time)
                     continue
                 raise
 
