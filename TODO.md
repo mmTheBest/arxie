@@ -20,7 +20,7 @@
 - [x] Security review (API key handling, input sanitization)
 
 ## Phase 5 — Production (QUEUED)
-- [ ] FastAPI REST layer (src/ra/api/)
+- [x] FastAPI REST layer (src/ra/api/)
 - [ ] Deployment config (Dockerfile, docker-compose)
 - [ ] API documentation (OpenAPI/Swagger)
 - [ ] Performance optimization (async batching, connection pooling)
