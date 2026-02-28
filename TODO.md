@@ -8,7 +8,7 @@
 - Skip any task marked BLOCKED
 
 ## Priority 0 — Critical Bug Fix (IN PROGRESS)
-- [ ] **Fix inline citation formatting** — Agent retrieves papers (tool_success=100%) but outputs 0 inline citations. Root cause: agent doesn't use (Author et al., Year) format in answers. Fix system prompt + verify tool output includes author/year data. Re-run eval.
+- [x] **Fix inline citation formatting** — Agent retrieves papers (tool_success=100%) but outputs 0 inline citations. Root cause: agent doesn't use (Author et al., Year) format in answers. Fix system prompt + verify tool output includes author/year data. Re-run eval.
 
 ## Priority 1 — Full-Text Analysis
 - [ ] **Wire PDF parser into agent tool chain** — Add `read_paper_fulltext` tool to `src/ra/tools/retrieval_tools.py`. Takes paper_id → downloads PDF via `pdf_url` → parses with `src/ra/parsing/pdf_parser.py` → returns structured sections (abstract, methods, results, discussion). Add unit tests.
