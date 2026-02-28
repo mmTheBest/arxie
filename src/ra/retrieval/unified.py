@@ -24,6 +24,7 @@ import httpx
 
 from ra.parsing import PDFParser
 from ra.retrieval.arxiv import ArxivClient, ArxivPaper
+from ra.retrieval.chroma_cache import ChromaCache
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 
 logger = logging.getLogger(__name__)
@@ -148,9 +149,11 @@ class UnifiedRetriever:
         self,
         semantic_scholar: SemanticScholarClient | None = None,
         arxiv: ArxivClient | None = None,
+        cache: ChromaCache | None = None,
     ):
         self.semantic_scholar = semantic_scholar or SemanticScholarClient()
         self.arxiv = arxiv or ArxivClient()
+        self.cache = cache
 
     async def __aenter__(self) -> "UnifiedRetriever":
         # Clients are lazy; nothing required here.
@@ -200,6 +203,50 @@ class UnifiedRetriever:
             source="arxiv",
         )
 
+    def _from_cached(self, item: dict[str, object]) -> Paper | None:
+        paper_id = str(item.get("id") or "").strip()
+        if not paper_id:
+            return None
+
+        source_value = str(item.get("source") or "semantic_scholar").lower()
+        if source_value == "arxiv":
+            source: Source = "arxiv"
+        elif source_value == "both":
+            source = "both"
+        else:
+            source = "semantic_scholar"
+
+        year_raw = item.get("year")
+        citation_raw = item.get("citation_count")
+        try:
+            year = int(year_raw) if year_raw is not None else None
+        except (TypeError, ValueError):
+            year = None
+        try:
+            citation_count = int(citation_raw) if citation_raw is not None else None
+        except (TypeError, ValueError):
+            citation_count = None
+
+        authors_raw = item.get("authors")
+        if isinstance(authors_raw, list):
+            authors = [str(a) for a in authors_raw]
+        else:
+            authors = []
+
+        return Paper(
+            id=paper_id,
+            title=str(item.get("title") or ""),
+            abstract=(str(item.get("abstract")).strip() if item.get("abstract") else None),
+            authors=authors,
+            year=year,
+            venue=(str(item.get("venue")).strip() if item.get("venue") else None),
+            citation_count=citation_count,
+            pdf_url=(str(item.get("pdf_url")).strip() if item.get("pdf_url") else None),
+            doi=(str(item.get("doi")).strip() if item.get("doi") else None),
+            arxiv_id=(str(item.get("arxiv_id")).strip() if item.get("arxiv_id") else None),
+            source=source,
+        )
+
     async def search(
         self,
         query: str,
@@ -216,11 +263,27 @@ class UnifiedRetriever:
         Returns:
             Deduplicated list of Paper.
         """
+        cached_results: list[Paper] = []
+        if self.cache is not None:
+            try:
+                for row in self.cache.search_cached(query, limit=limit):
+                    if isinstance(row, dict):
+                        cached = self._from_cached(row)
+                        if cached is not None:
+                            cached_results.append(cached)
+            except Exception:
+                logger.debug("Cache lookup failed for query=%r", query, exc_info=True)
+
+        if len(cached_results) >= limit:
+            cached_results.sort(key=lambda x: (x.citation_count or 0), reverse=True)
+            return cached_results[:limit]
+
         srcs = {s.lower() for s in sources}
         tasks = []
 
         # Pull a bit extra per-source so we still have enough after dedup.
-        per_source = max(1, min(100, int(limit * 1.5)))
+        remaining_limit = max(1, limit - len(cached_results))
+        per_source = max(1, min(100, int(remaining_limit * 1.5)))
 
         if "semantic_scholar" in srcs or "semanticscholar" in srcs or "s2" in srcs:
             tasks.append(self.semantic_scholar.search(query=query, limit=per_source))
@@ -234,9 +297,20 @@ class UnifiedRetriever:
 
         s2_results, ax_results = await asyncio.gather(*tasks)
 
+        live_results: list[Paper] = []
+        live_results.extend(self._from_semantic_scholar(p) for p in s2_results)
+        live_results.extend(self._from_arxiv(p) for p in ax_results)
+
+        if self.cache is not None:
+            for paper in live_results:
+                try:
+                    self.cache.cache_paper(paper)
+                except Exception:
+                    logger.debug("Failed to cache paper_id=%s", paper.id, exc_info=True)
+
         unified: list[Paper] = []
-        unified.extend(self._from_semantic_scholar(p) for p in s2_results)
-        unified.extend(self._from_arxiv(p) for p in ax_results)
+        unified.extend(cached_results)
+        unified.extend(live_results)
 
         # Deduplicate, preferring Semantic Scholar as primary when conflicts exist.
         by_key: dict[object, Paper] = {}

@@ -5,17 +5,17 @@
 - [x] 50-question dataset (tests/eval/dataset.json)
 - [x] Eval CLI command (ra eval)
 - [x] Unit tests for harness (tests/eval/test_eval_harness.py)
-- [ ] **Run baseline eval with GPT-4o-mini** (source ~/.zshrc first for API key)
+- [ ] **BLOCKED: Run baseline eval (needs V2Box proxy fix for api.openai.com) with GPT-4o-mini** (source ~/.zshrc first for API key)
       Run: source ~/.zshrc && .venv/bin/python -c "from tests.eval.harness import EvalHarness; h = EvalHarness('tests/eval/dataset.json'); h.run(output_dir='results/')"
       Or use CLI: source ~/.zshrc && .venv/bin/python -m ra.cli eval --dataset tests/eval/dataset.json --output results/
       Save results to results/ and docs/eval-baseline.md
-- [ ] **Expand dataset to 100 questions** (add 50 more across all tiers)
-- [ ] **Researcher QA agent** (black-box tester in tests/eval/qa_agent.py)
+- [x] **Expand dataset to 100 questions** (done — 100 questions across 3 tiers)
+- [x] **Researcher QA agent** (black-box tester in tests/eval/qa_agent.py)
 
 ## Phase 4 — Hardening (QUEUED)
-- [ ] Chroma vector store caching (src/ra/retrieval/chroma_cache.py)
+- [x] Chroma vector store caching (src/ra/retrieval/chroma_cache.py)
 - [ ] Enhanced error handling + retries for retrieval clients
-- [ ] Rate limiting improvements (token bucket)
+- [x] Rate limiting improvements (token bucket)
 - [ ] Structured logging with log levels
 - [ ] Security review (API key handling, input sanitization)
 

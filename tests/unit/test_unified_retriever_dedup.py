@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -29,6 +29,22 @@ class DummyArxivClient:
 
     async def close(self) -> None:
         return None
+
+
+@dataclass
+class DummyCache:
+    cached_results: list[dict[str, object]]
+    cached_ids: list[str] = field(default_factory=list)
+
+    def search_cached(self, query: str, limit: int = 10):  # noqa: ARG002
+        return self.cached_results[:limit]
+
+    def cache_paper(self, paper) -> bool:
+        self.cached_ids.append(str(paper.id))
+        return True
+
+    def has_paper(self, paper_id: str) -> bool:
+        return any(str(item.get("id")) == paper_id for item in self.cached_results)
 
 
 @pytest.mark.asyncio
@@ -158,3 +174,49 @@ async def test_unified_retriever_dedup_by_fallback_title_year_first_author():
     assert merged.citation_count == 10
     # Abstract filled from secondary (primary had None)
     assert merged.abstract == "newer abstract"
+
+
+@pytest.mark.asyncio
+async def test_unified_retriever_uses_cache_layer_and_caches_fresh_results():
+    s2 = S2Paper(
+        paper_id="s2-1",
+        title="Live Result",
+        abstract="fresh metadata",
+        year=2024,
+        authors=[Author(author_id="a1", name="Alice")],
+        venue="LiveConf",
+        citation_count=9,
+        is_open_access=True,
+        pdf_url=None,
+        doi=None,
+        arxiv_id=None,
+        external_ids={},
+    )
+    cache = DummyCache(
+        cached_results=[
+            {
+                "id": "cached-1",
+                "title": "Cached Result",
+                "abstract": "cached metadata",
+                "authors": ["Bob"],
+                "year": 2023,
+                "venue": "CacheConf",
+                "citation_count": 5,
+                "pdf_url": None,
+                "doi": None,
+                "arxiv_id": None,
+                "source": "semantic_scholar",
+            }
+        ]
+    )
+
+    r = UnifiedRetriever(
+        semantic_scholar=DummySemanticScholarClient([s2]),
+        arxiv=DummyArxivClient([]),
+        cache=cache,
+    )
+
+    results = await r.search("query", limit=2)
+    ids = {paper.id for paper in results}
+    assert ids == {"cached-1", "s2-1"}
+    assert "s2-1" in cache.cached_ids

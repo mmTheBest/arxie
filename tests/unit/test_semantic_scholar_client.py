@@ -1,4 +1,6 @@
-from ra.retrieval.semantic_scholar import Author, Paper
+import pytest
+
+from ra.retrieval.semantic_scholar import Author, Paper, SemanticScholarClient
 
 
 def test_author_from_api_defaults():
@@ -34,3 +36,38 @@ def test_paper_from_api_parses_external_ids_and_open_access_pdf():
     assert p.doi == "10.5555/XYZ"
     assert p.arxiv_id == "2101.00001"
     assert p.external_ids == {"DOI": "10.5555/XYZ", "ArXiv": "2101.00001"}
+
+
+class _CountingRateLimiter:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def acquire(self) -> None:
+        self.calls += 1
+
+
+class _FakeResponse:
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return {"data": []}
+
+
+class _FakeHttpClient:
+    async def request(self, method: str, endpoint: str, params=None):  # noqa: ANN001, ARG002
+        return _FakeResponse()
+
+
+@pytest.mark.asyncio
+async def test_request_uses_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    limiter = _CountingRateLimiter()
+    client = SemanticScholarClient(rate_limiter=limiter, max_retries=1)
+
+    async def _fake_get_client():
+        return _FakeHttpClient()
+
+    monkeypatch.setattr(client, "_get_client", _fake_get_client)
+
+    await client._request("GET", "/paper/search", params={"query": "transformer"})
+    assert limiter.calls == 1

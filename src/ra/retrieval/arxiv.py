@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
 import httpx
+from ra.utils.rate_limiter import TokenBucketRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -81,14 +81,18 @@ class ArxivClient:
         timeout: float = 30.0,
         max_retries: int = 3,
         min_request_interval_s: float = 3.0,
+        rate_limiter: TokenBucketRateLimiter | None = None,
     ):
         self.timeout = timeout
         self.max_retries = max_retries
         self.min_request_interval_s = min_request_interval_s
 
         self._client: httpx.AsyncClient | None = None
-        self._rate_lock = asyncio.Lock()
-        self._last_request_ts = 0.0
+        if rate_limiter is not None:
+            self._rate_limiter = rate_limiter
+        else:
+            rate = 1.0 / min_request_interval_s if min_request_interval_s > 0 else 1000.0
+            self._rate_limiter = TokenBucketRateLimiter(rate_per_second=rate, burst=1)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -110,14 +114,8 @@ class ArxivClient:
         self._client = None
 
     async def _respect_rate_limit(self) -> None:
-        """Enforce a minimum delay between requests (global per client instance)."""
-        async with self._rate_lock:
-            now = time.monotonic()
-            elapsed = now - self._last_request_ts
-            wait_s = self.min_request_interval_s - elapsed
-            if wait_s > 0:
-                await asyncio.sleep(wait_s)
-            self._last_request_ts = time.monotonic()
+        """Enforce request pacing for this client instance."""
+        await self._rate_limiter.acquire()
 
     async def _request(self, params: dict[str, Any]) -> str:
         """Call arXiv query endpoint and return raw XML text."""

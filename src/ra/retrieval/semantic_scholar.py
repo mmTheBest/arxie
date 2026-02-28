@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from ra.utils.rate_limiter import TokenBucketRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,7 @@ class SemanticScholarClient:
         api_key: str | None = None,
         timeout: float = 30.0,
         max_retries: int = 3,
+        rate_limiter: TokenBucketRateLimiter | None = None,
     ):
         """Initialize client.
 
@@ -130,6 +132,10 @@ class SemanticScholarClient:
         self.api_key = api_key
         self.timeout = timeout
         self.max_retries = max_retries
+        self._rate_limiter = rate_limiter or TokenBucketRateLimiter(
+            rate_per_second=5.0,
+            burst=5,
+        )
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -162,6 +168,7 @@ class SemanticScholarClient:
 
         for attempt in range(self.max_retries):
             try:
+                await self._rate_limiter.acquire()
                 response = await client.request(method, endpoint, params=params)
                 response.raise_for_status()
                 return response.json()

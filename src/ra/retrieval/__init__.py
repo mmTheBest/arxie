@@ -1,6 +1,7 @@
 """Retrieval backends for academic paper search."""
 
 from ra.retrieval.arxiv import ArxivClient, ArxivPaper
+from ra.retrieval.chroma_cache import ChromaCache
 from ra.retrieval.semantic_scholar import (
     Author,
     Paper as SemanticScholarPaper,
@@ -21,4 +22,6 @@ __all__ = [
     # arXiv
     "ArxivClient",
     "ArxivPaper",
+    # Cache
+    "ChromaCache",
 ]

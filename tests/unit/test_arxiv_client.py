@@ -61,3 +61,20 @@ def test_arxiv_parse_entry_falls_back_to_canonical_pdf_url_when_missing_link():
     papers = client._parse_feed(xml)
     assert len(papers) == 1
     assert papers[0].pdf_url == "https://arxiv.org/pdf/9999.12345.pdf"
+
+
+class _CountingRateLimiter:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def acquire(self) -> None:
+        self.calls += 1
+
+
+@pytest.mark.asyncio
+async def test_arxiv_respect_rate_limit_uses_rate_limiter() -> None:
+    limiter = _CountingRateLimiter()
+    client = ArxivClient(rate_limiter=limiter)
+
+    await client._respect_rate_limit()
+    assert limiter.calls == 1
