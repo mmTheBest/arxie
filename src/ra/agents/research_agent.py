@@ -59,8 +59,10 @@ Your goals:
 - Always cite papers using (Author et al., Year) format inline.
 - Every non-trivial factual claim should be backed by at least one citation.
 - Provide a References section at the end listing all cited papers.
+- Do not answer from prior knowledge alone; ground answers in retrieved paper metadata.
 
 Tool-use rules:
+- You MUST call search_papers at least once before finalizing any answer.
 - Use search_papers first, then get_paper_details for promising results.
 - Use forward citation chasing (get_paper_citations) to find follow-ups or validations when helpful.
 
@@ -153,16 +155,28 @@ def _extract_token_usage(llm_result: Any) -> tuple[int, int]:
 
 def _paper_from_dict(d: dict[str, Any]) -> Paper | None:
     try:
-        pid = str(d.get("id") or "").strip()
+        pid = str(d.get("id") or d.get("paper_id") or "").strip()
         if not pid:
             return None
+        authors: list[str] = []
+        authors_raw = d.get("authors")
+        if isinstance(authors_raw, list):
+            for author in authors_raw:
+                if isinstance(author, str):
+                    name = author.strip()
+                elif isinstance(author, dict):
+                    name = str(author.get("name") or "").strip()
+                else:
+                    name = str(author or "").strip()
+                if name:
+                    authors.append(name)
         return Paper(
             id=pid,
             title=str(d.get("title") or "").strip(),
             abstract=(
                 str(d.get("abstract")).strip() if d.get("abstract") is not None else None
             ),
-            authors=list(d.get("authors") or []),
+            authors=authors,
             year=(int(d["year"]) if d.get("year") is not None else None),
             venue=(str(d.get("venue")).strip() if d.get("venue") else None),
             citation_count=(
@@ -189,6 +203,71 @@ class ResearchAgentCallback(BaseCallbackHandler):
         self._tool_stack: list[_ToolRun] = []
 
         self.papers: dict[str, Paper] = {}
+
+    @staticmethod
+    def _iter_tool_payload_dicts(output: Any) -> list[dict[str, Any]]:
+        pending: list[Any] = [output]
+        payloads: list[dict[str, Any]] = []
+
+        while pending:
+            item = pending.pop()
+            if item is None:
+                continue
+
+            if isinstance(item, dict):
+                payloads.append(item)
+                for key in ("content", "artifact", "output", "result", "data"):
+                    if key in item:
+                        pending.append(item[key])
+                continue
+
+            if isinstance(item, list):
+                pending.extend(item)
+                continue
+
+            if isinstance(item, str):
+                text = item.strip()
+                if not text:
+                    continue
+                try:
+                    pending.append(json.loads(text))
+                except Exception:
+                    continue
+                continue
+
+            content = getattr(item, "content", None)
+            artifact = getattr(item, "artifact", None)
+            if content is not None:
+                pending.append(content)
+            if artifact is not None:
+                pending.append(artifact)
+            if content is not None or artifact is not None:
+                continue
+
+            model_dump = getattr(item, "model_dump", None)
+            if callable(model_dump):
+                try:
+                    pending.append(model_dump())
+                except Exception:
+                    continue
+
+        return payloads
+
+    def _collect_papers_from_payload(self, obj: dict[str, Any]) -> None:
+        if isinstance(obj.get("paper"), dict):
+            paper = _paper_from_dict(obj["paper"])
+            if paper:
+                self.papers[paper.id] = paper
+
+        for key in ("results", "papers"):
+            results = obj.get(key)
+            if not isinstance(results, list):
+                continue
+            for item in results:
+                if isinstance(item, dict):
+                    paper = _paper_from_dict(item)
+                    if paper:
+                        self.papers[paper.id] = paper
 
     def on_llm_start(
         self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any
@@ -244,22 +323,9 @@ class ResearchAgentCallback(BaseCallbackHandler):
             status=200,
         )
         try:
-            if not isinstance(output, str):
-                return
-            obj = json.loads(output)
-            if not isinstance(obj, dict):
-                return
-            if isinstance(obj.get("paper"), dict):
-                p = _paper_from_dict(obj["paper"])
-                if p:
-                    self.papers[p.id] = p
-            results = obj.get("results")
-            if isinstance(results, list):
-                for item in results:
-                    if isinstance(item, dict):
-                        p = _paper_from_dict(item)
-                        if p:
-                            self.papers[p.id] = p
+            payloads = self._iter_tool_payload_dicts(output)
+            for payload in payloads:
+                self._collect_papers_from_payload(payload)
         except Exception:
             return
 
@@ -331,6 +397,7 @@ class ResearchAgent:
     def _format_references(self, text: str) -> str:
         paper_list = list(self._callback.papers.values())
         body = self._clean_answer_body(text)
+        body = self._ensure_inline_citations(body, paper_list)
         claims = self._citation_formatter.extract_claims(body, paper_list)
         cited_ids = {pid for c in claims for pid in c.supporting_papers}
         cited_papers = [p for p in paper_list if p.id in cited_ids]
@@ -354,6 +421,55 @@ class ResearchAgent:
         body = re.sub(r"(?is)^\s*#{1,6}\s*answer\s*\n", "", body).strip()
         body = re.sub(r"(?is)^\s*answer\s*:?\s*", "", body).strip()
         return body or "I could not produce an answer for this query."
+
+    def _ensure_inline_citations(self, body: str, papers: list[Paper]) -> str:
+        if not papers or _INLINE_CITATION_RE.search(body):
+            return body
+
+        evidence_parts: list[str] = []
+        for paper in papers[:3]:
+            citation = self._citation_formatter.format_inline(paper)
+            title = (paper.title or "").strip().rstrip(".")
+            if title:
+                evidence_parts.append(f"{title} {citation}")
+            else:
+                evidence_parts.append(citation)
+        evidence_line = "Evidence sources: " + "; ".join(evidence_parts) + "."
+        return f"{body}\n\n{evidence_line}".strip()
+
+    def _cache_seed_papers(self, papers: list[Paper]) -> None:
+        for paper in papers:
+            self._callback.papers.setdefault(paper.id, paper)
+
+    async def _ensure_seed_papers_async(self, query: str) -> None:
+        if self._callback.papers:
+            return
+        try:
+            papers = await self.retriever.search(
+                query=query,
+                limit=5,
+                sources=("semantic_scholar", "arxiv"),
+            )
+            self._cache_seed_papers(papers)
+        except Exception:
+            logger.warning("Failed to prefetch seed papers in async flow.", exc_info=True)
+
+    def _ensure_seed_papers_sync(self, query: str) -> None:
+        if self._callback.papers:
+            return
+        try:
+            papers = asyncio.run(
+                self.retriever.search(
+                    query=query,
+                    limit=5,
+                    sources=("semantic_scholar", "arxiv"),
+                )
+            )
+            self._cache_seed_papers(papers)
+        except RuntimeError as exc:
+            logger.warning("Failed to prefetch seed papers in sync flow: %s", exc)
+        except Exception:
+            logger.warning("Failed to prefetch seed papers in sync flow.", exc_info=True)
 
     def _error_response(self) -> str:
         return (
@@ -498,6 +614,7 @@ class ResearchAgent:
         }
         try:
             result = await self._ainvoke_with_retries(inputs, config=config)
+            await self._ensure_seed_papers_async(query)
             output = self._extract_final_text(result)
             return self._format_references(output)
         except Exception:
@@ -519,6 +636,7 @@ class ResearchAgent:
         }
         try:
             result = self._invoke_with_retries(inputs, config=config)
+            self._ensure_seed_papers_sync(query)
             output = self._extract_final_text(result)
             return self._format_references(output)
         except Exception:

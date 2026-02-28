@@ -1,54 +1,54 @@
-# RA Development TODO
+# Arxie — Execution Plan
 
-## Current: Phase 3 — Evaluation (IN PROGRESS)
-- [x] Eval harness (tests/eval/harness.py)
-- [x] 50-question dataset (tests/eval/dataset.json)
-- [x] Eval CLI command (ra eval)
-- [x] Unit tests for harness (tests/eval/test_eval_harness.py)
-- [x] **Run baseline eval with GPT-4o-mini** (completed 2026-02-28; see docs/eval-baseline.md)
-      Run: source ~/.zshrc && .venv/bin/python -c "from tests.eval.harness import EvalHarness; h = EvalHarness('tests/eval/dataset.json'); h.run(output_dir='results/')"
-      Or use CLI: source ~/.zshrc && .venv/bin/python -m ra.cli eval --dataset tests/eval/dataset.json --output results/
-      Save results to results/ and docs/eval-baseline.md
-- [x] **Expand dataset to 100 questions** (done — 100 questions across 3 tiers)
-- [x] **Researcher QA agent** (black-box tester in tests/eval/qa_agent.py)
+## SOP
+- Each task: plan → test first (TDD) → implement → verify → commit → push
+- Source `~/.zshrc` before any command needing `OPENAI_API_KEY`
+- Run tests before committing: `.venv/bin/python -m pytest tests/ -q --ignore=tests/integration`
+- Commit message: `update on "YYYY-MM-DD"`
+- Skip any task marked BLOCKED
 
-## Phase 4 — Hardening (QUEUED)
-- [x] Chroma vector store caching (src/ra/retrieval/chroma_cache.py)
-- [x] Enhanced error handling + retries for retrieval clients
-- [x] Rate limiting improvements (token bucket)
-- [x] Structured logging with log levels
-- [x] Security review (API key handling, input sanitization)
+## Priority 0 — Critical Bug Fix (IN PROGRESS)
+- [ ] **Fix inline citation formatting** — Agent retrieves papers (tool_success=100%) but outputs 0 inline citations. Root cause: agent doesn't use (Author et al., Year) format in answers. Fix system prompt + verify tool output includes author/year data. Re-run eval.
 
-## Phase 5 — Production (QUEUED)
-- [x] FastAPI REST layer (src/ra/api/)
-- [x] Deployment config (Dockerfile, docker-compose)
-- [x] API documentation (OpenAPI/Swagger)
-- [x] Performance optimization (async batching, connection pooling)
-- [x] README with setup instructions
+## Priority 1 — Full-Text Analysis
+- [ ] **Wire PDF parser into agent tool chain** — Add `read_paper_fulltext` tool to `src/ra/tools/retrieval_tools.py`. Takes paper_id → downloads PDF via `pdf_url` → parses with `src/ra/parsing/pdf_parser.py` → returns structured sections (abstract, methods, results, discussion). Add unit tests.
+- [ ] **Integrate into agent loop** — Update system prompt to instruct agent to use `read_paper_fulltext` for detailed questions. Verify agent calls the tool when asked about methods/results.
 
-## Rules
-- Commit message: update on "YYYY-MM-DD"
-- Run unit tests before committing: .venv/bin/python -m pytest tests/ -q --ignore=tests/integration
-- Push to origin after every commit
-- Source ~/.zshrc before any command needing OPENAI_API_KEY
+## Priority 2 — Multi-Hop Reasoning
+- [ ] **Deep search mode** — Add `deep_search` parameter to `ResearchAgent`. When enabled: (1) initial search, (2) read top-3 full text, (3) follow citations from those papers, (4) synthesize across all sources. Increase `max_iterations` for deep mode.
+- [ ] **CLI + API** — Add `--deep` flag to `ra query` CLI. Add `deep` parameter to `/api/query` endpoint.
 
-## Post-Completion
-- [ ] **Remotion demo video** — Motion graphics demo showing: query → agent tool calls → formatted answer with citations → metrics. Build with Remotion (React). Only after all phases complete and baseline eval passes.
+## Priority 3 — Literature Review Generation
+- [ ] **Lit review agent mode** — New class or mode in `src/ra/agents/` that produces structured output: Introduction → Thematic Groups → Key Findings → Research Gaps → Future Directions. Groups papers by theme using LLM clustering.
+- [ ] **CLI + API** — Add `ra lit-review "topic"` CLI command. Add `/api/lit-review` endpoint.
+- [ ] **Tests** — Unit tests with mock agent for output structure validation.
 
-## Critical Bug Fix
-- [x] **Fix StructuredTool sync invocation error** — Tools throw `NotImplementedError: StructuredTool does not support sync invocation`. The tools in `src/ra/tools/retrieval_tools.py` use async functions but `create_agent` calls them synchronously. Fix: either make tools sync-compatible (add sync wrappers using `asyncio.run()` or `coroutine=` param) or ensure the agent uses `ainvoke()`. Then re-run baseline eval to get real metrics.
+## Priority 4 — Citation Graph Exploration
+- [ ] **Trace influence tool** — Add `trace_influence` tool to `src/ra/tools/retrieval_tools.py`. Takes a paper title/ID → follows forward citations iteratively → builds chronological influence chain. Returns JSON timeline.
+- [ ] **CLI** — Add `ra trace "paper or concept"` CLI command.
+- [ ] **Text-based visualization** — Format timeline as readable text output (Year → Paper → cited by → Paper).
 
-## Phase 6 — Differentiation Features
-- [ ] **Full-text analysis in agent loop** — Wire the existing PDF parser into the agent's tool chain. Agent should be able to: download a paper's PDF, extract full text, and answer questions about methods/results/tables. Add a `read_paper_fulltext` tool that takes a paper ID, downloads PDF, parses it, and returns structured sections.
-- [ ] **Multi-hop reasoning** — Enable iterative deep dives. Agent should: (1) do initial search, (2) identify promising papers, (3) read them in depth, (4) follow citations to related work, (5) synthesize across multiple papers. Increase max_iterations, add a "deep_search" mode that chains search → details → fulltext → citations.
-- [ ] **Literature review generation** — Add a `lit_review` mode/command that produces structured multi-section output: Introduction, Thematic Grouping, Key Findings, Research Gaps, Future Directions. Should group papers by theme, not just list them. Add CLI: `ra lit-review "topic"` and API endpoint.
-- [ ] **Citation graph exploration** — Add a `trace_influence` tool that maps how an idea evolved over time through citation chains. Output: chronological list of papers showing influence flow. Add CLI: `ra trace "paper or concept"`. Visualize as a simple text-based timeline or JSON structure for frontend rendering.
-- [ ] **Confidence scoring** — For each claim in the answer, show evidence strength: number of supporting papers, contradicting papers, and overall confidence (high/medium/low). Add to the structured output format after each major claim.
-- [ ] **Interactive refinement (conversational mode)** — Add a `ra chat` CLI mode and `/chat` API endpoint that maintains conversation state. User can ask follow-ups: "dig deeper into X", "compare paper A vs B", "find more recent work on Y". Use LangChain memory or message history.
+## Priority 5 — Confidence Scoring
+- [ ] **Evidence scoring module** — New file `src/ra/citation/confidence.py`. For each claim: count supporting papers, contradicting papers, compute confidence (high/medium/low). Uses semantic similarity between claim and paper abstracts.
+- [ ] **Wire into output** — Add confidence annotations to structured output after each major claim. Example: `[Confidence: HIGH — 8 supporting, 1 contradicting]`
+- [ ] **Tests** — Unit tests for scoring logic.
 
-## Phase 7 — Demo & Polish
-- [ ] **Remotion demo video** — Motion graphics demo showing: (1) GPT-4o giving unverifiable answer, (2) RA giving same answer with real papers + citation graph. The "aha" moment. Build with Remotion (React).
-- [ ] **Citation graph visualization** — Simple React component (or mermaid/d3) that renders paper relationships as a directed graph. For the demo and potential web UI.
+## Priority 6 — Interactive Conversational Mode
+- [ ] **Chat mode agent** — Add conversation memory to `ResearchAgent` using LangChain message history. Support follow-up queries that reference previous context.
+- [ ] **CLI** — Add `ra chat` command that runs an interactive REPL with conversation state.
+- [ ] **API** — Add `/api/chat` endpoint with session_id for stateful conversations.
+- [ ] **Tests** — Test multi-turn conversations with mock agent.
 
-## Critical: Citation Formatting
-- [ ] **Fix inline citation formatting** — Agent retrieves papers successfully (tool_success=100%) but outputs 0 inline citations. The system prompt instructs (Author et al., Year) format but the agent ignores it. Debug: check if retrieved papers are included in agent context, verify the system prompt is being passed to create_agent, test with a stronger prompt that explicitly requires citations. Re-run eval after fix.
+## Priority 7 — Demo & Visualization
+- [ ] **Remotion demo video** — Side-by-side: GPT-4o (hallucinated citations) vs Arxie (verified citations + citation graph). Build with Remotion (React).
+- [ ] **Citation graph visualization** — React/mermaid/d3 component rendering paper relationships as directed graph.
+
+## Completed
+- [x] Phase 1: Foundation (retrieval clients, CLI, tests)
+- [x] Phase 2: Core pipeline (agent, tools, citations, PDF parser)
+- [x] Phase 3: Evaluation (harness, 100-question dataset, QA agent)
+- [x] Phase 4: Hardening (cache, rate limiting, logging, security)
+- [x] Phase 5: Production (FastAPI, Docker, OpenAPI, README)
+- [x] Fix sync/async StructuredTool invocation
+- [x] Rebrand to Arxie
+- [x] PRD written (docs/PRD.md)

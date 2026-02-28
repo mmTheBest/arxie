@@ -1,17 +1,18 @@
-# Academic Research Assistant
+# Arxie — AI Research Assistant
 
 ## Stack
-- Python 3.14, LangChain 1.2.x, httpx, PyMuPDF, pdfplumber
-- Models: GPT-4o-mini (dev), GPT-4o (eval), configurable via RA_MODEL env var
-- Tests: pytest, 26 unit tests + 3 E2E integration tests
+- Python 3.14, LangChain 1.2.x, FastAPI, ChromaDB, httpx, PyMuPDF, pdfplumber
+- Tests: pytest (87+ unit tests)
+- Model: configurable via `RA_MODEL` env var (default: gpt-4o-mini)
 
 ## Architecture
 - `src/ra/agents/` — LangChain create_agent with tool-calling loop
-- `src/ra/retrieval/` — Semantic Scholar + arXiv clients, unified retriever
+- `src/ra/retrieval/` — Semantic Scholar + arXiv clients, unified retriever, Chroma cache
 - `src/ra/citation/` — APA formatting, inline citations, claim extraction
 - `src/ra/parsing/` — PDF parser (PyMuPDF + pdfplumber)
 - `src/ra/tools/` — LangChain StructuredTool wrappers for retrieval
-- `src/ra/utils/` — Config, JSONL usage logging
+- `src/ra/api/` — FastAPI REST layer
+- `src/ra/utils/` — Config, logging, rate limiting, security
 
 ## Commands
 ```bash
@@ -21,14 +22,19 @@
 # Run all tests (needs OPENAI_API_KEY)
 source ~/.zshrc && .venv/bin/python -m pytest tests/ -v
 
-# Run E2E only
-source ~/.zshrc && .venv/bin/python -m pytest tests/integration/test_agent_e2e.py -v
+# Run eval
+source ~/.zshrc && .venv/bin/python -m ra.cli eval --dataset tests/eval/dataset.json --output results/
+
+# Single query
+source ~/.zshrc && .venv/bin/python -c "from ra.agents.research_agent import ResearchAgent; print(ResearchAgent().run('your question'))"
 ```
 
-## Commit Convention
-- Use `update on "YYYY-MM-DD"` for regular commits
-- Use `fix:` / `feat:` prefixes for specific changes
+## SOP
+- TDD: write tests first, then implement
+- Run tests before every commit
+- Commit message: `update on "YYYY-MM-DD"`
+- Source `~/.zshrc` before anything needing OPENAI_API_KEY
 
-## Current Phase
-Phase 2 (Core Pipeline) — remaining: structured output formatting, error handling, E2E validation.
-Phase 3 next: evaluation harness + 100-question dataset.
+## Current Focus
+Priority 0: Fix citation formatting (agent outputs 0 inline citations)
+Then: Priorities 1-6 in TODO.md (full-text, multi-hop, lit review, citation graph, confidence, chat mode)
