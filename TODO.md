@@ -36,7 +36,7 @@
 - [ ] **Remotion demo video** — Motion graphics demo showing: query → agent tool calls → formatted answer with citations → metrics. Build with Remotion (React). Only after all phases complete and baseline eval passes.
 
 ## Critical Bug Fix
-- [ ] **Fix StructuredTool sync invocation error** — Tools throw `NotImplementedError: StructuredTool does not support sync invocation`. The tools in `src/ra/tools/retrieval_tools.py` use async functions but `create_agent` calls them synchronously. Fix: either make tools sync-compatible (add sync wrappers using `asyncio.run()` or `coroutine=` param) or ensure the agent uses `ainvoke()`. Then re-run baseline eval to get real metrics.
+- [x] **Fix StructuredTool sync invocation error** — Tools throw `NotImplementedError: StructuredTool does not support sync invocation`. The tools in `src/ra/tools/retrieval_tools.py` use async functions but `create_agent` calls them synchronously. Fix: either make tools sync-compatible (add sync wrappers using `asyncio.run()` or `coroutine=` param) or ensure the agent uses `ainvoke()`. Then re-run baseline eval to get real metrics.
 
 ## Phase 6 — Differentiation Features
 - [ ] **Full-text analysis in agent loop** — Wire the existing PDF parser into the agent's tool chain. Agent should be able to: download a paper's PDF, extract full text, and answer questions about methods/results/tables. Add a `read_paper_fulltext` tool that takes a paper ID, downloads PDF, parses it, and returns structured sections.

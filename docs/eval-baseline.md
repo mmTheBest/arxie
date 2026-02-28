@@ -1,6 +1,7 @@
 # Baseline Eval: GPT-4o-mini
 
 - Date (UTC): `2026-02-28`
+- Generated at (UTC): `2026-02-28T10:29:29.723278+00:00`
 - Model: `gpt-4o-mini` (`RA_MODEL` unset; default from `src/ra/utils/config.py`)
 - Dataset: `tests/eval/dataset.json`
 - Dataset size: `100`
@@ -14,14 +15,14 @@
 |---|---:|---:|---|
 | `citation_precision` | `>= 0.85` | `0.0000` | FAIL |
 | `claim_support_ratio` | `>= 0.80` | `1.0000` | PASS |
-| `tool_success_rate` | `>= 0.90` | `0.0000` | FAIL |
+| `tool_success_rate` | `>= 0.90` | `1.0000` | PASS |
 
 Additional metric:
-- `latency_p95`: `3.4758s`
+- `latency_p95`: `68.1868s`
 
 ## Notable Patterns and Failures
 
-- Citation behavior is consistently broken: `100/100` responses had `0` inline citations, and `citation_count_ok` is `false` for all rows.
-- Tool execution is failing across the run: `89` tool calls were attempted across `86` questions, with `0` successful tool calls.
-- Runtime logs repeatedly show tool invocation failures (`NotImplementedError: StructuredTool does not support sync invocation`), and usage logs show repeated `tool:search_papers` status `500`.
-- `claim_support_ratio=1.0` appears inflated relative to retrieval/citation failure and should not be treated as sufficient quality evidence by itself.
+- Tool invocation is now healthy after the sync/async fix: `tool_success_rate=1.0`, with successful tool runs across all tiers.
+- The prior `NotImplementedError: StructuredTool does not support sync invocation` failure mode was eliminated in this run.
+- Citation behavior remains broken: `100/100` responses still have `0` inline citations (`citation_count_ok=false` across all rows).
+- Latency is high (`p95=68.1868s`) and appears dominated by external API retries/rate limiting.
