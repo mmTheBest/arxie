@@ -6,10 +6,13 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/status-pre--release-orange" alt="Pre-release" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/tests-87%2B%20passing-brightgreen" alt="Tests" />
 </p>
+
+> **🚧 Pre-release — Active Development.** Core pipeline works. Advanced features (lit reviews, citation graphs, confidence scoring) shipping now.
 
 Ask a research question. Get an answer backed by real papers from Semantic Scholar and arXiv — with inline citations you can actually verify.
 
@@ -160,16 +163,6 @@ tests/
 ├── integration/     # API integration tests
 └── eval/            # Evaluation harness + 100-question dataset
 ```
-
-### Roadmap
-
-- [x] **Foundation:** Retrieval clients, unified search, CLI
-- [x] **Core Pipeline:** ReAct agent, citation formatting, PDF parsing
-- [x] **Evaluation:** 100-question dataset, eval harness, baseline metrics
-- [x] **Hardening:** Caching, rate limiting, logging, security
-- [x] **Production:** FastAPI, Docker, OpenAPI docs
-- [ ] **Differentiation:** Full-text analysis, multi-hop reasoning, lit reviews, citation graphs, confidence scoring, conversational mode
-- [ ] **Demo:** Remotion video — GPT-4o vs Arxie side-by-side
 
 ### License
 
