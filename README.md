@@ -6,13 +6,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-pre--release-orange" alt="Pre-release" />
+  <img src="https://img.shields.io/badge/status-v0.1.0-brightgreen" alt="v0.1.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/tests-87%2B%20passing-brightgreen" alt="Tests" />
 </p>
 
-> **🚧 Pre-release — Active Development.** Core pipeline works. Advanced features (lit reviews, citation graphs, confidence scoring) shipping now.
+> **v0.1.0** — Full-text analysis, multi-hop reasoning, literature reviews, citation graphs, confidence scoring, and conversational mode. All features shipped.
 
 Ask a research question. Get an answer backed by real papers from Semantic Scholar and arXiv — with inline citations you can actually verify.
 
