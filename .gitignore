@@ -59,3 +59,14 @@ tmp/
 node_modules/
 remotion/node_modules/
 remotion/out/
+
+# Internal dev files — not for public repo
+TODO.md
+CLAUDE.md
+DEVLOG.md
+docs/
+results/
+remotion/
+tests/eval/dataset.json
+tests/eval/qa_agent.py
+memory/
