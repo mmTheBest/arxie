@@ -268,6 +268,51 @@ def test_query_endpoint_defaults_deep_to_false():
     assert observed == [False]
 
 
+def test_chat_endpoint_routes_session_id_and_preserves_session_agent():
+    instances: list[object] = []
+
+    class _ChatAgent:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        async def arun(self, query: str, session_id: str) -> str:
+            self.calls.append((query, session_id))
+            turn = len(self.calls)
+            return f"## Answer\nTurn {turn} for {session_id}\n\n## References\nNone."
+
+    def _agent_factory(*, deep_search: bool = False) -> _ChatAgent:
+        assert deep_search is False
+        agent = _ChatAgent()
+        instances.append(agent)
+        return agent
+
+    app = _mk_app(agent_factory=_agent_factory)
+    client = TestClient(app)
+
+    first = client.post("/api/chat", json={"query": "What is RAG?", "session_id": "sess-1"})
+    second = client.post("/api/chat", json={"query": "And limitations?", "session_id": "sess-1"})
+    third = client.post("/api/chat", json={"query": "New thread", "session_id": "sess-2"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 200
+    assert first.json()["session_id"] == "sess-1"
+    assert second.json()["answer"].startswith("## Answer\nTurn 2 for sess-1")
+    assert third.json()["session_id"] == "sess-2"
+    assert len(instances) == 2
+    assert instances[0].calls == [("What is RAG?", "sess-1"), ("And limitations?", "sess-1")]
+    assert instances[1].calls == [("New thread", "sess-2")]
+
+
+def test_chat_endpoint_requires_session_id():
+    app = _mk_app(agent_factory=lambda: _StubAgent("## Answer\nok\n\n## References\nNone."))
+    client = TestClient(app)
+
+    resp = client.post("/api/chat", json={"query": "What is RAG?"})
+
+    assert resp.status_code == 422
+
+
 def test_validation_errors_use_structured_payload():
     client = TestClient(_mk_app())
 

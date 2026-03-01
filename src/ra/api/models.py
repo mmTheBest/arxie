@@ -115,6 +115,33 @@ class LitReviewRequest(BaseModel):
     )
 
 
+class ChatRequest(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "query": "How does this compare to what you said previously?",
+                "session_id": "demo-session-1",
+            }
+        },
+    )
+
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=4000,
+        description="User message for the conversational research assistant.",
+        examples=["How does this compare to what you said previously?"],
+    )
+    session_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        description="Conversation session ID used to preserve multi-turn context.",
+        examples=["demo-session-1"],
+    )
+
+
 class SearchBatchRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -312,6 +339,25 @@ class LitReviewResponse(BaseModel):
             "Structured Markdown literature review with sections: Introduction, "
             "Thematic Groups, Key Findings, Research Gaps, Future Directions."
         ),
+    )
+
+
+class ChatResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "query": "How does this compare to what you said previously?",
+                "session_id": "demo-session-1",
+                "answer": "## Answer\nCompared with the previous method...\n\n## References\n...",
+            }
+        }
+    )
+
+    query: str = Field(..., description="Original chat message.")
+    session_id: str = Field(..., description="Conversation session ID for this response.")
+    answer: str = Field(
+        ...,
+        description="Structured Markdown answer from the research agent for this chat turn.",
     )
 
 

@@ -44,6 +44,7 @@ def _mk_agent(graph: _GraphStub) -> ResearchAgent:
     agent.retry_base_delay_seconds = 0.0
     agent._callback = SimpleNamespace(papers={})
     agent._citation_formatter = CitationFormatter()
+    agent._message_histories = {}
     return agent
 
 
@@ -189,6 +190,81 @@ def test_run_backfills_seed_papers_when_tool_loop_collects_none():
     assert "(Vaswani et al., 2017)" in output
     assert "\n## References\n" in output
     assert "Vaswani, A." in output
+
+
+def test_format_references_adds_confidence_annotations_for_major_claims():
+    agent = _mk_agent(_GraphStub([]))
+    supporting = Paper(
+        id="supporting-paper",
+        title="Transformer Gains in Translation",
+        abstract="This study shows transformers improve translation quality across benchmarks.",
+        authors=["Alex Smith"],
+        year=2020,
+        venue="ACL",
+        citation_count=0,
+        pdf_url=None,
+        doi=None,
+        arxiv_id=None,
+        source="semantic_scholar",
+    )
+    contradicting = Paper(
+        id="contradicting-paper",
+        title="Negative Findings for Transformer Translation",
+        abstract="This study found transformers did not improve translation quality and performed worse.",
+        authors=["Jamie Lee"],
+        year=2021,
+        venue="EMNLP",
+        citation_count=0,
+        pdf_url=None,
+        doi=None,
+        arxiv_id=None,
+        source="semantic_scholar",
+    )
+    agent._callback.papers[supporting.id] = supporting
+    agent._callback.papers[contradicting.id] = contradicting
+
+    output = agent._format_references("Transformers improve translation quality (Smith, 2020).")
+
+    assert "[Confidence:" in output
+    assert "supporting" in output
+    assert "contradicting" in output
+
+
+def test_run_with_session_id_keeps_multi_turn_message_history():
+    graph = _GraphStub(
+        [
+            {"messages": [{"role": "assistant", "content": "First answer."}]},
+            {"messages": [{"role": "assistant", "content": "Second answer."}]},
+        ]
+    )
+    agent = _mk_agent(graph)
+
+    _ = agent.run("What is RAG?", session_id="session-1")
+    _ = agent.run("How does it fail?", session_id="session-1")
+
+    assert len(graph.inputs[0]["messages"]) == 1
+    second_turn_messages = graph.inputs[1]["messages"]
+    assert len(second_turn_messages) >= 3
+    assert "What is RAG?" in str(second_turn_messages[0].content)
+    assert "First answer." in str(second_turn_messages[1].content)
+    assert "How does it fail?" in str(second_turn_messages[-1].content)
+
+
+def test_run_with_distinct_session_ids_keeps_histories_isolated():
+    graph = _GraphStub(
+        [
+            {"messages": [{"role": "assistant", "content": "S1 answer."}]},
+            {"messages": [{"role": "assistant", "content": "S2 answer."}]},
+        ]
+    )
+    agent = _mk_agent(graph)
+
+    _ = agent.run("Session one question", session_id="session-1")
+    _ = agent.run("Session two question", session_id="session-2")
+
+    assert len(graph.inputs[0]["messages"]) == 1
+    assert len(graph.inputs[1]["messages"]) == 1
+    assert "Session two question" in str(graph.inputs[1]["messages"][0].content)
 
 
 @pytest.mark.asyncio

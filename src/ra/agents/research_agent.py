@@ -20,11 +20,16 @@ from typing import Any
 
 import httpx
 from langchain.agents import create_agent
+from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 
-from ra.citation import CitationFormatter
+from ra.citation import (
+    CitationFormatter,
+    ClaimConfidenceScorer,
+    annotate_claim_with_confidence,
+)
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
@@ -409,6 +414,8 @@ class ResearchAgent:
         self.usage_logger = UsageLogger()
         self._callback = ResearchAgentCallback(usage_logger=self.usage_logger, model=self.model)
         self._citation_formatter = CitationFormatter()
+        self._confidence_scorer = ClaimConfidenceScorer()
+        self._message_histories: dict[str, BaseChatMessageHistory] = {}
 
         self.graph = create_agent(
             model=self.llm,
@@ -422,6 +429,7 @@ class ResearchAgent:
         body = self._clean_answer_body(text)
         body = self._ensure_inline_citations(body, paper_list)
         claims = self._citation_formatter.extract_claims(body, paper_list)
+        body = self._annotate_confidence_for_claims(body, claims, paper_list)
         cited_ids = {pid for c in claims for pid in c.supporting_papers}
         cited_papers = [p for p in paper_list if p.id in cited_ids]
 
@@ -436,6 +444,34 @@ class ResearchAgent:
         ref_lines = [line.strip() for line in refs.splitlines() if line.strip()]
         numbered_refs = "\n".join(f"{i}. {line}" for i, line in enumerate(ref_lines, start=1))
         return answer_block + "\n\n## References\n" + numbered_refs
+
+    def _annotate_confidence_for_claims(
+        self,
+        body: str,
+        claims: list[Any],
+        papers: list[Paper],
+    ) -> str:
+        scorer = getattr(self, "_confidence_scorer", None)
+        if scorer is None:
+            scorer = ClaimConfidenceScorer()
+            self._confidence_scorer = scorer
+        annotated = body
+        seen_claims: set[str] = set()
+        for claim in claims:
+            claim_text = str(getattr(claim, "text", "") or "").strip()
+            if not claim_text or claim_text in seen_claims:
+                continue
+            score = scorer.score(claim_text, papers)
+            with_confidence = annotate_claim_with_confidence(claim_text, score)
+            annotated, replaced = re.subn(
+                re.escape(claim_text),
+                with_confidence,
+                annotated,
+                count=1,
+            )
+            if replaced:
+                seen_claims.add(claim_text)
+        return annotated
 
     def _clean_answer_body(self, text: str) -> str:
         body = (text or "").strip()
@@ -463,6 +499,45 @@ class ResearchAgent:
     def _cache_seed_papers(self, papers: list[Paper]) -> None:
         for paper in papers:
             self._callback.papers.setdefault(paper.id, paper)
+
+    def _get_session_history(self, session_id: str | None) -> BaseChatMessageHistory | None:
+        if session_id is None:
+            return None
+        key = str(session_id).strip()
+        if not key:
+            return None
+        histories = getattr(self, "_message_histories", None)
+        if not isinstance(histories, dict):
+            histories = {}
+            self._message_histories = histories
+        history = histories.get(key)
+        if history is None:
+            history = InMemoryChatMessageHistory()
+            histories[key] = history
+        return history
+
+    @staticmethod
+    def _build_messages_for_query(
+        prepared_query: str,
+        history: BaseChatMessageHistory | None,
+    ) -> list[Any]:
+        if history is None:
+            return [HumanMessage(content=prepared_query)]
+        prior = list(history.messages)
+        prior.append(HumanMessage(content=prepared_query))
+        return prior
+
+    @staticmethod
+    def _append_history_turn(
+        *,
+        history: BaseChatMessageHistory | None,
+        user_query: str,
+        answer: str,
+    ) -> None:
+        if history is None:
+            return
+        history.add_message(HumanMessage(content=user_query))
+        history.add_message(AIMessage(content=answer))
 
     async def _ensure_seed_papers_async(self, query: str) -> None:
         if self._callback.papers:
@@ -794,7 +869,7 @@ class ResearchAgent:
             return str(getattr(last, "content", "") or fallback)
         return ""
 
-    async def arun(self, query: str) -> str:
+    async def arun(self, query: str, *, session_id: str | None = None) -> str:
         """Async entrypoint."""
         try:
             query = sanitize_user_text(query, field_name="query", max_length=4000)
@@ -803,7 +878,8 @@ class ResearchAgent:
             return self._invalid_query_response()
         self._callback.papers.clear()
         prepared_query = await self._prepare_query_async(query)
-        inputs = {"messages": [HumanMessage(content=prepared_query)]}
+        history = self._get_session_history(session_id)
+        inputs = {"messages": self._build_messages_for_query(prepared_query, history)}
         config = {
             "callbacks": [self._callback],
             "recursion_limit": self.max_iterations,
@@ -812,12 +888,14 @@ class ResearchAgent:
             result = await self._ainvoke_with_retries(inputs, config=config)
             await self._ensure_seed_papers_async(query)
             output = self._extract_final_text(result)
-            return self._format_references(output)
+            formatted = self._format_references(output)
+            self._append_history_turn(history=history, user_query=query, answer=formatted)
+            return formatted
         except Exception:
             logger.exception("ResearchAgent async run failed.")
             return self._error_response()
 
-    def run(self, query: str) -> str:
+    def run(self, query: str, *, session_id: str | None = None) -> str:
         """Run the agent loop for a single query and return the final answer."""
         try:
             query = sanitize_user_text(query, field_name="query", max_length=4000)
@@ -826,7 +904,8 @@ class ResearchAgent:
             return self._invalid_query_response()
         self._callback.papers.clear()
         prepared_query = self._prepare_query_sync(query)
-        inputs = {"messages": [HumanMessage(content=prepared_query)]}
+        history = self._get_session_history(session_id)
+        inputs = {"messages": self._build_messages_for_query(prepared_query, history)}
         config = {
             "callbacks": [self._callback],
             "recursion_limit": self.max_iterations,
@@ -835,7 +914,9 @@ class ResearchAgent:
             result = self._invoke_with_retries(inputs, config=config)
             self._ensure_seed_papers_sync(query)
             output = self._extract_final_text(result)
-            return self._format_references(output)
+            formatted = self._format_references(output)
+            self._append_history_turn(history=history, user_query=query, answer=formatted)
+            return formatted
         except Exception:
             logger.exception("ResearchAgent run failed.")
             return self._error_response()

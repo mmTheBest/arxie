@@ -3,6 +3,8 @@
 Commands:
   - query "..." [--deep]
   - lit-review "topic" [--max-papers N]
+  - trace "paper or concept" [--max-depth N] [--citations-per-paper N] [--max-papers N]
+  - chat [--session-id ID] [--deep]
   - search --query "..." --limit 5 --source semantic|arxiv|both
   - get --id <doi|arxiv|semantic_scholar_id>
   - eval --dataset tests/eval/dataset.json --output results/
@@ -25,7 +27,9 @@ from typing import Any
 
 from ra.agents.lit_review_agent import LitReviewAgent
 from ra.agents.research_agent import ResearchAgent
+from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
+from ra.tools.retrieval_tools import make_retrieval_tools
 from ra.utils.logging_config import configure_logging_from_env
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 
@@ -54,6 +58,36 @@ def _max_papers_arg(value: str) -> int:
         raise argparse.ArgumentTypeError("max-papers must be an integer.") from None
     if max_papers < 1 or max_papers > 50:
         raise argparse.ArgumentTypeError("max-papers must be between 1 and 50.")
+    return max_papers
+
+
+def _trace_depth_arg(value: str) -> int:
+    try:
+        depth = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("max-depth must be an integer.") from None
+    if depth < 1 or depth > 8:
+        raise argparse.ArgumentTypeError("max-depth must be between 1 and 8.")
+    return depth
+
+
+def _trace_citations_per_paper_arg(value: str) -> int:
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("citations-per-paper must be an integer.") from None
+    if limit < 1 or limit > 100:
+        raise argparse.ArgumentTypeError("citations-per-paper must be between 1 and 100.")
+    return limit
+
+
+def _trace_max_papers_arg(value: str) -> int:
+    try:
+        max_papers = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("max-papers must be an integer.") from None
+    if max_papers < 1 or max_papers > 1000:
+        raise argparse.ArgumentTypeError("max-papers must be between 1 and 1000.")
     return max_papers
 
 
@@ -99,6 +133,42 @@ def build_parser() -> argparse.ArgumentParser:
         type=_max_papers_arg,
         default=20,
         help="Maximum number of papers to retrieve and synthesize (1-50).",
+    )
+
+    p_trace = sub.add_parser(
+        "trace",
+        help="Trace citation influence for a paper or concept and render timeline text.",
+    )
+    p_trace.add_argument("paper", help="Paper title, concept, or identifier to trace")
+    p_trace.add_argument(
+        "--max-depth",
+        type=_trace_depth_arg,
+        default=3,
+        help="Citation hop depth to follow (1-8).",
+    )
+    p_trace.add_argument(
+        "--citations-per-paper",
+        type=_trace_citations_per_paper_arg,
+        default=20,
+        help="Maximum citing papers fetched per node (1-100).",
+    )
+    p_trace.add_argument(
+        "--max-papers",
+        type=_trace_max_papers_arg,
+        default=200,
+        help="Hard cap for timeline node expansion (1-1000).",
+    )
+
+    p_chat = sub.add_parser("chat", help="Interactive chat mode with conversation memory")
+    p_chat.add_argument(
+        "--session-id",
+        default="default",
+        help="Conversation session identifier for preserving context.",
+    )
+    p_chat.add_argument(
+        "--deep",
+        action="store_true",
+        help="Enable deep research mode in chat responses.",
     )
 
     p_search = sub.add_parser("search", help="Search papers")
@@ -167,6 +237,115 @@ def _cmd_lit_review(topic: str, max_papers: int) -> dict[str, str]:
     return {"topic": topic, "review": review}
 
 
+def _timeline_node_sort_key(node: dict[str, Any]) -> tuple[int, str]:
+    year = node.get("year")
+    if not isinstance(year, int):
+        year = 9999
+    title = str(node.get("paper_title") or "").lower()
+    return (year, title)
+
+
+def _format_trace_timeline(payload: dict[str, Any]) -> str:
+    timeline_raw = payload.get("timeline")
+    if not isinstance(timeline_raw, list) or not timeline_raw:
+        return "No influence timeline available."
+
+    timeline: list[dict[str, Any]] = [
+        node for node in timeline_raw if isinstance(node, dict)
+    ]
+    if not timeline:
+        return "No influence timeline available."
+
+    by_id: dict[str, dict[str, Any]] = {}
+    for node in timeline:
+        paper_id = str(node.get("paper_id") or "").strip()
+        if paper_id:
+            by_id[paper_id] = node
+
+    edge_lines: list[tuple[int, str]] = []
+    for node in timeline:
+        for link in node.get("citation_links", []) or []:
+            if not isinstance(link, dict):
+                continue
+            from_id = str(link.get("from_paper_id") or "").strip()
+            to_id = str(link.get("to_paper_id") or node.get("paper_id") or "").strip()
+            src = by_id.get(from_id)
+            dst = by_id.get(to_id, node)
+            if src is None or dst is None:
+                continue
+
+            src_year = src.get("year")
+            dst_year = dst.get("year")
+            src_year_text = str(src_year) if isinstance(src_year, int) else "Unknown"
+            dst_year_text = str(dst_year) if isinstance(dst_year, int) else "Unknown"
+            src_title = str(src.get("paper_title") or "Untitled").strip()
+            dst_title = str(dst.get("paper_title") or "Untitled").strip()
+            sort_year = src_year if isinstance(src_year, int) else 9999
+            edge_lines.append(
+                (
+                    sort_year,
+                    f"{src_year_text} → {src_title} → cited by → {dst_year_text}: {dst_title}",
+                )
+            )
+
+    if edge_lines:
+        edge_lines.sort(key=lambda item: (item[0], item[1].lower()))
+        return "\n".join(line for _, line in edge_lines)
+
+    sorted_nodes = sorted(timeline, key=_timeline_node_sort_key)
+    lines: list[str] = []
+    for node in sorted_nodes:
+        year = node.get("year")
+        year_text = str(year) if isinstance(year, int) else "Unknown"
+        title = str(node.get("paper_title") or "Untitled").strip()
+        lines.append(f"{year_text} → {title}")
+    return "\n".join(lines)
+
+
+async def _cmd_trace(
+    paper: str,
+    max_depth: int,
+    citations_per_paper: int,
+    max_papers: int,
+) -> dict[str, Any]:
+    paper = sanitize_user_text(paper, field_name="paper", max_length=1000)
+    semantic_scholar = SemanticScholarClient()
+    try:
+        async with UnifiedRetriever() as retriever:
+            tools = make_retrieval_tools(
+                retriever=retriever,
+                semantic_scholar=semantic_scholar,
+            )
+            trace_tool = next((tool for tool in tools if tool.name == "trace_influence"), None)
+            if trace_tool is None:
+                raise RuntimeError("trace_influence tool is unavailable.")
+            raw = await trace_tool.ainvoke(
+                {
+                    "paper": paper,
+                    "max_depth": max_depth,
+                    "citations_per_paper": citations_per_paper,
+                    "max_papers": max_papers,
+                }
+            )
+    finally:
+        await semantic_scholar.close()
+
+    parsed = raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = {"raw": raw}
+    if not isinstance(parsed, dict):
+        parsed = {"raw": parsed}
+
+    return {
+        "paper": paper,
+        "timeline": _format_trace_timeline(parsed),
+        "trace": parsed,
+    }
+
+
 def _cmd_eval(dataset: str, output: str) -> dict[str, Any]:
     dataset = sanitize_user_text(dataset, field_name="dataset", max_length=1024)
     output = sanitize_user_text(output, field_name="output", max_length=1024)
@@ -179,6 +358,27 @@ def _cmd_eval(dataset: str, output: str) -> dict[str, Any]:
         "metrics": report["metrics"],
         "artifacts": report["artifacts"],
     }
+
+
+def _cmd_chat(session_id: str, deep: bool) -> int:
+    session_id = sanitize_user_text(session_id, field_name="session_id", max_length=128)
+    agent = ResearchAgent(deep_search=deep)
+    print(f"Chat session: {session_id}. Type /exit to quit.")
+    while True:
+        try:
+            user_query = input("you> ").strip()
+        except EOFError:
+            break
+
+        if not user_query:
+            continue
+        if user_query.lower() in {"/exit", "exit", "quit"}:
+            break
+
+        answer = agent.run(user_query, session_id=session_id)
+        print(answer)
+
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -199,6 +399,17 @@ def main(argv: list[str] | None = None) -> int:
             payload = _cmd_query(args.query, args.deep)
         elif args.command == "lit-review":
             payload = _cmd_lit_review(args.topic, args.max_papers)
+        elif args.command == "trace":
+            payload = asyncio.run(
+                _cmd_trace(
+                    args.paper,
+                    args.max_depth,
+                    args.citations_per_paper,
+                    args.max_papers,
+                )
+            )
+        elif args.command == "chat":
+            return _cmd_chat(args.session_id, args.deep)
         elif args.command == "search":
             payload = asyncio.run(_cmd_search(args.query, args.limit, args.source))
         elif args.command == "get":

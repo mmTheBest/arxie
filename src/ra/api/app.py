@@ -18,6 +18,8 @@ from ra.api.errors import RAAPIError, register_exception_handlers
 from ra.api.models import (
     AnswerRequest,
     AnswerResponse,
+    ChatRequest,
+    ChatResponse,
     ErrorResponse,
     HealthResponse,
     LitReviewRequest,
@@ -101,6 +103,16 @@ ANSWER_REQUEST_EXAMPLES = {
         "value": {
             "query": "Compare LoRA and QLoRA training trade-offs with supporting evidence.",
             "deep": True,
+        },
+    }
+}
+
+CHAT_REQUEST_EXAMPLES = {
+    "follow_up_turn": {
+        "summary": "Stateful chat follow-up",
+        "value": {
+            "query": "Can you compare this with the previous approach?",
+            "session_id": "session-1",
         },
     }
 }
@@ -309,9 +321,14 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.retriever = retriever_factory()
+        app.state.chat_agents = {}
         try:
             yield
         finally:
+            chat_agents = getattr(app.state, "chat_agents", {})
+            if isinstance(chat_agents, dict):
+                for agent in chat_agents.values():
+                    await _close_resource(agent)
             await _close_resource(getattr(app.state, "retriever", None))
 
     app = FastAPI(
@@ -331,6 +348,7 @@ def create_app(
     app.state.retriever_factory = retriever_factory
     app.state.agent_factory = agent_factory
     app.state.lit_review_agent_factory = lit_review_agent_factory
+    app.state.chat_agents = {}
 
     register_exception_handlers(app)
 
@@ -614,6 +632,59 @@ def create_app(
 
         return AnswerResponse(query=payload.query, answer=answer)
 
+    async def _run_agent_arun(
+        agent: Any,
+        *,
+        query: str,
+        session_id: str | None = None,
+    ) -> str:
+        if session_id and _callable_supports_kwarg(agent.arun, "session_id"):
+            return await agent.arun(query, session_id=session_id)
+        return await agent.arun(query)
+
+    async def _run_chat_pipeline(payload: ChatRequest) -> ChatResponse:
+        chat_agents: dict[str, Any] = app.state.chat_agents
+        session_id = payload.session_id
+        agent = chat_agents.get(session_id)
+        if agent is None:
+            try:
+                agent = _create_agent_from_factory(app.state.agent_factory, deep_search=False)
+            except ValueError as exc:
+                raise RAAPIError(
+                    status_code=503,
+                    error="agent_unavailable",
+                    message=str(exc),
+                ) from exc
+            except Exception as exc:
+                logger.exception("Failed to initialize chat ResearchAgent", exc_info=exc)
+                raise RAAPIError(
+                    status_code=500,
+                    error="internal_error",
+                    message="Failed to initialize chat agent.",
+                ) from exc
+            chat_agents[session_id] = agent
+
+        try:
+            answer = await _run_agent_arun(agent, query=payload.query, session_id=session_id)
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            raise RAAPIError(
+                status_code=502,
+                error="upstream_error",
+                message=f"Chat backend request failed: {type(exc).__name__}.",
+            ) from exc
+
+        return ChatResponse(
+            query=payload.query,
+            session_id=session_id,
+            answer=answer,
+        )
+
     async def _run_lit_review_pipeline(payload: LitReviewRequest) -> LitReviewResponse:
         try:
             agent = app.state.lit_review_agent_factory()
@@ -685,6 +756,41 @@ def create_app(
         payload: AnswerRequest = Body(..., openapi_examples=ANSWER_REQUEST_EXAMPLES),
     ) -> AnswerResponse:
         return await _run_query_pipeline(payload)
+
+    @app.post(
+        "/api/chat",
+        response_model=ChatResponse,
+        summary="Conversational Research Chat",
+        description=(
+            "Runs the research agent in stateful conversational mode. "
+            "Use `session_id` to continue a multi-turn conversation."
+        ),
+        response_description="Stateful chat response with the same session ID.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid chat request.",
+                error="invalid_input",
+                message="query must not be empty",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+            502: _error_response_doc(
+                description="Chat provider request failed.",
+                error="upstream_error",
+                message="Chat backend request failed: RequestError.",
+            ),
+            503: _error_response_doc(
+                description="Chat agent is unavailable.",
+                error="agent_unavailable",
+                message="OPENAI_API_KEY missing",
+            ),
+        },
+        tags=["pipeline"],
+    )
+    async def chat(
+        payload: ChatRequest = Body(..., openapi_examples=CHAT_REQUEST_EXAMPLES),
+    ) -> ChatResponse:
+        return await _run_chat_pipeline(payload)
 
     @app.post(
         "/api/lit-review",

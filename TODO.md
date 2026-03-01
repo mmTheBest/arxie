@@ -25,19 +25,19 @@
 
 ## Priority 4 — Citation Graph Exploration
 - [x] **Trace influence tool** — Add `trace_influence` tool to `src/ra/tools/retrieval_tools.py`. Takes a paper title/ID → follows forward citations iteratively → builds chronological influence chain. Returns JSON timeline.
-- [ ] **CLI** — Add `ra trace "paper or concept"` CLI command.
-- [ ] **Text-based visualization** — Format timeline as readable text output (Year → Paper → cited by → Paper).
+- [x] **CLI** — Add `ra trace "paper or concept"` CLI command.
+- [x] **Text-based visualization** — Format timeline as readable text output (Year → Paper → cited by → Paper).
 
 ## Priority 5 — Confidence Scoring
-- [ ] **Evidence scoring module** — New file `src/ra/citation/confidence.py`. For each claim: count supporting papers, contradicting papers, compute confidence (high/medium/low). Uses semantic similarity between claim and paper abstracts.
-- [ ] **Wire into output** — Add confidence annotations to structured output after each major claim. Example: `[Confidence: HIGH — 8 supporting, 1 contradicting]`
-- [ ] **Tests** — Unit tests for scoring logic.
+- [x] **Evidence scoring module** — New file `src/ra/citation/confidence.py`. For each claim: count supporting papers, contradicting papers, compute confidence (high/medium/low). Uses semantic similarity between claim and paper abstracts.
+- [x] **Wire into output** — Add confidence annotations to structured output after each major claim. Example: `[Confidence: HIGH — 8 supporting, 1 contradicting]`
+- [x] **Tests** — Unit tests for scoring logic.
 
 ## Priority 6 — Interactive Conversational Mode
-- [ ] **Chat mode agent** — Add conversation memory to `ResearchAgent` using LangChain message history. Support follow-up queries that reference previous context.
-- [ ] **CLI** — Add `ra chat` command that runs an interactive REPL with conversation state.
-- [ ] **API** — Add `/api/chat` endpoint with session_id for stateful conversations.
-- [ ] **Tests** — Test multi-turn conversations with mock agent.
+- [x] **Chat mode agent** — Add conversation memory to `ResearchAgent` using LangChain message history. Support follow-up queries that reference previous context.
+- [x] **CLI** — Add `ra chat` command that runs an interactive REPL with conversation state.
+- [x] **API** — Add `/api/chat` endpoint with session_id for stateful conversations.
+- [x] **Tests** — Test multi-turn conversations with mock agent.
 
 ## Priority 7 — Demo & Visualization
 - [ ] **Remotion demo video** — Side-by-side: GPT-4o (hallucinated citations) vs Arxie (verified citations + citation graph). Build with Remotion (React).
