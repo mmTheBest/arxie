@@ -54,3 +54,8 @@ data/cache/
 # Local development
 scratch/
 tmp/
+
+# Node / Remotion
+node_modules/
+remotion/node_modules/
+remotion/out/

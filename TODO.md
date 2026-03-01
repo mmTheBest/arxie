@@ -40,7 +40,7 @@
 - [x] **Tests** — Test multi-turn conversations with mock agent.
 
 ## Priority 7 — Demo & Visualization
-- [ ] **Remotion demo video** — Side-by-side: GPT-4o (hallucinated citations) vs Arxie (verified citations + citation graph). Build with Remotion (React).
+- [x] **Remotion demo video** — Side-by-side: GPT-4o (hallucinated citations) vs Arxie (verified citations + citation graph). Build with Remotion (React).
 - [ ] **Citation graph visualization** — React/mermaid/d3 component rendering paper relationships as directed graph.
 
 ## Completed
