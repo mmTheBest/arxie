@@ -2,7 +2,7 @@
 
 ## 1. Product Overview
 
-**Name:** Academic Research Assistant (RA)
+**Name:** Arxie
 
 **One-liner:** An AI research assistant that reads real papers, not its training data.
 
@@ -90,17 +90,17 @@ RA: [citation chase, ranks by impact]
 - [x] Dockerfile + deployment config
 - [x] 87+ unit tests
 
-### Phase 6 (IN PROGRESS): Differentiation
-- [ ] Full-text analysis — Agent reads full paper PDFs, not just abstracts
-- [ ] Multi-hop reasoning — Iterative search -> read -> follow citations -> synthesize
-- [ ] Literature review mode — Structured multi-section output with thematic grouping
-- [ ] Citation graph — Trace idea evolution through citation chains
-- [ ] Confidence scoring — Per-claim evidence strength (supporting/contradicting paper counts)
-- [ ] Conversational mode — Multi-turn research sessions with memory
+### Phase 6 (COMPLETE): Differentiation
+- [x] Full-text analysis — Agent reads full paper PDFs, not just abstracts
+- [x] Multi-hop reasoning — Iterative search -> read -> follow citations -> synthesize
+- [x] Literature review mode — Structured multi-section output with thematic grouping
+- [x] Citation graph — Trace idea evolution through citation chains
+- [x] Confidence scoring — Per-claim evidence strength (supporting/contradicting paper counts)
+- [x] Conversational mode — Multi-turn research sessions with memory
 
-### Phase 7: Demo & Polish
-- [ ] Remotion demo video — Side-by-side: GPT-4o (hallucinated) vs RA (verified)
-- [ ] Citation graph visualization — Interactive graph component
+### Phase 7 (COMPLETE): Demo & Polish
+- [x] Remotion demo video — Side-by-side: GPT-4o (hallucinated) vs RA (verified)
+- [x] Citation graph visualization — Interactive graph component
 
 ## 5. Technical Architecture
 
