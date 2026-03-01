@@ -15,13 +15,13 @@
 - [x] **Integrate into agent loop** — Update system prompt to instruct agent to use `read_paper_fulltext` for detailed questions. Verify agent calls the tool when asked about methods/results.
 
 ## Priority 2 — Multi-Hop Reasoning
-- [ ] **Deep search mode** — Add `deep_search` parameter to `ResearchAgent`. When enabled: (1) initial search, (2) read top-3 full text, (3) follow citations from those papers, (4) synthesize across all sources. Increase `max_iterations` for deep mode.
-- [ ] **CLI + API** — Add `--deep` flag to `ra query` CLI. Add `deep` parameter to `/api/query` endpoint.
+- [x] **Deep search mode** — Add `deep_search` parameter to `ResearchAgent`. When enabled: (1) initial search, (2) read top-3 full text, (3) follow citations from those papers, (4) synthesize across all sources. Increase `max_iterations` for deep mode.
+- [x] **CLI + API** — Add `--deep` flag to `ra query` CLI. Add `deep` parameter to `/api/query` endpoint.
 
 ## Priority 3 — Literature Review Generation
-- [ ] **Lit review agent mode** — New class or mode in `src/ra/agents/` that produces structured output: Introduction → Thematic Groups → Key Findings → Research Gaps → Future Directions. Groups papers by theme using LLM clustering.
-- [ ] **CLI + API** — Add `ra lit-review "topic"` CLI command. Add `/api/lit-review` endpoint.
-- [ ] **Tests** — Unit tests with mock agent for output structure validation.
+- [x] **Lit review agent mode** — New class or mode in `src/ra/agents/` that produces structured output: Introduction → Thematic Groups → Key Findings → Research Gaps → Future Directions. Groups papers by theme using LLM clustering.
+- [x] **CLI + API** — Add `ra lit-review "topic"` CLI command. Add `/api/lit-review` endpoint.
+- [x] **Tests** — Unit tests with mock agent for output structure validation.
 
 ## Priority 4 — Citation Graph Exploration
 - [ ] **Trace influence tool** — Add `trace_influence` tool to `src/ra/tools/retrieval_tools.py`. Takes a paper title/ID → follows forward citations iteratively → builds chronological influence chain. Returns JSON timeline.

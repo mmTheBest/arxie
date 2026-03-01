@@ -47,6 +47,12 @@ _TRANSIENT_HTTP_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 _INLINE_CITATION_RE = re.compile(
     r"\([A-Z][A-Za-z\-]+(?:\s+et\s+al\.)?(?:\s*&\s*[A-Z][A-Za-z\-]+)?,\s*(?:19|20)\d{2}\)"
 )
+_DEEP_INITIAL_SEARCH_LIMIT = 10
+_DEEP_FULLTEXT_TOP_K = 3
+_DEEP_CITATION_LIMIT = 5
+_DEEP_CITATION_SEARCH_LIMIT = 3
+_DEEP_MAX_CITATION_SEARCHES = 10
+_DEEP_FULLTEXT_SNIPPET_CHARS = 1200
 
 
 _SYSTEM_PROMPT = """You are an Academic Research Assistant.
@@ -64,7 +70,9 @@ Your goals:
 Tool-use rules:
 - You MUST call search_papers at least once before finalizing any answer.
 - Use search_papers first, then get_paper_details for promising results.
-- When a user asks about specific methods, results, experiments, discussion points, or conclusions from a paper, call read_paper_fulltext for that paper before answering.
+- When a user asks about specific methods, results, experiments, discussion points,
+  or conclusions from a paper, call read_paper_fulltext for that paper before
+  answering.
 - Use forward citation chasing (get_paper_citations) to find follow-ups or validations when helpful.
 
 Uncertainty rules:
@@ -354,22 +362,36 @@ class ResearchAgentCallback(BaseCallbackHandler):
 class ResearchAgent:
     """Academic Research Assistant agent (LangChain >=1.2 create_agent)."""
 
-    def __init__(self, *, model: str | None = None, verbose: bool = False):
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        verbose: bool = False,
+        deep_search: bool = False,
+    ):
         configure_logging_from_env()
         config = load_config()
 
         self.model = model or config.ra_model
+        self.deep_search = bool(deep_search)
         self.max_api_retries = max(0, _safe_env_int("RA_AGENT_MAX_RETRIES", 3))
         self.retry_base_delay_seconds = max(
             0.0,
             _safe_env_float("RA_AGENT_RETRY_BASE_SECONDS", 1.0),
         )
-        self.max_iterations = max(4, _safe_env_int("RA_AGENT_MAX_ITERATIONS", 30))
+        base_iterations = max(4, _safe_env_int("RA_AGENT_MAX_ITERATIONS", 30))
+        if self.deep_search:
+            deep_default = max(50, base_iterations + 20)
+            deep_iterations = _safe_env_int("RA_AGENT_DEEP_MAX_ITERATIONS", deep_default)
+            self.max_iterations = max(base_iterations, deep_iterations)
+        else:
+            self.max_iterations = base_iterations
         logger.debug(
             "Initializing ResearchAgent",
             extra={
                 "event": "research_agent.init",
                 "model": self.model,
+                "deep_search": self.deep_search,
                 "max_api_retries": self.max_api_retries,
                 "max_iterations": self.max_iterations,
             },
@@ -471,6 +493,171 @@ class ResearchAgent:
             logger.warning("Failed to prefetch seed papers in sync flow: %s", exc)
         except Exception:
             logger.warning("Failed to prefetch seed papers in sync flow.", exc_info=True)
+
+    @staticmethod
+    def _truncate_text(text: str, *, max_chars: int) -> str:
+        clean = " ".join((text or "").split())
+        if not clean:
+            return ""
+        if len(clean) <= max_chars:
+            return clean
+        return clean[: max_chars - 3].rstrip() + "..."
+
+    @staticmethod
+    def _dedupe_strings(values: list[str]) -> list[str]:
+        unique: list[str] = []
+        seen: set[str] = set()
+        for raw in values:
+            value = raw.strip()
+            if not value:
+                continue
+            key = " ".join(value.lower().split())
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(value)
+        return unique
+
+    def _format_paper_brief(self, paper: Paper) -> str:
+        title = (paper.title or "").strip() or "Untitled"
+        source = str(getattr(paper, "source", "unknown") or "unknown")
+        inline = self._citation_formatter.format_inline(paper)
+        return f"{title} {inline} [{source}]"
+
+    async def _build_deep_search_context_async(self, query: str) -> str:
+        initial_papers = await self.retriever.search(
+            query=query,
+            limit=_DEEP_INITIAL_SEARCH_LIMIT,
+            sources=("semantic_scholar", "arxiv"),
+        )
+        if not initial_papers:
+            return ""
+
+        self._cache_seed_papers(initial_papers)
+        top_papers = initial_papers[:_DEEP_FULLTEXT_TOP_K]
+
+        full_text_entries: list[str] = []
+        for paper in top_papers:
+            try:
+                full_text = await self.retriever.get_full_text(paper)
+            except Exception:
+                logger.warning(
+                    "Deep search full-text read failed for paper_id=%s.",
+                    paper.id,
+                    exc_info=True,
+                )
+                continue
+
+            snippet = self._truncate_text(full_text, max_chars=_DEEP_FULLTEXT_SNIPPET_CHARS)
+            if not snippet:
+                continue
+            summary = f"{self._format_paper_brief(paper)}: {snippet}"
+            full_text_entries.append(summary)
+
+        citation_titles: list[str] = []
+        for paper in top_papers:
+            try:
+                citations = await self.semantic_scholar.get_citations(
+                    paper_id=paper.id,
+                    limit=_DEEP_CITATION_LIMIT,
+                )
+            except Exception:
+                logger.warning(
+                    "Deep search citation chase failed for paper_id=%s.",
+                    paper.id,
+                    exc_info=True,
+                )
+                continue
+
+            for citation in citations:
+                title = str(getattr(citation, "title", "") or "").strip()
+                if title:
+                    citation_titles.append(title)
+
+        deduped_citation_titles = self._dedupe_strings(citation_titles)
+        deduped_citation_titles = deduped_citation_titles[:_DEEP_MAX_CITATION_SEARCHES]
+
+        citation_search_results: list[Paper] = []
+        for title in deduped_citation_titles:
+            try:
+                papers = await self.retriever.search(
+                    query=title,
+                    limit=_DEEP_CITATION_SEARCH_LIMIT,
+                    sources=("semantic_scholar", "arxiv"),
+                )
+            except Exception:
+                logger.warning(
+                    "Deep search follow-up lookup failed for citation title=%r.",
+                    title,
+                    exc_info=True,
+                )
+                continue
+            citation_search_results.extend(papers)
+
+        self._cache_seed_papers(citation_search_results)
+
+        lines = ["Initial search:"]
+        for paper in initial_papers[:5]:
+            lines.append(f"- {self._format_paper_brief(paper)}")
+
+        lines.append("")
+        lines.append("Full-text review (top 3):")
+        if full_text_entries:
+            for entry in full_text_entries:
+                lines.append(f"- {entry}")
+        else:
+            lines.append("- No full-text snippets were available for the top papers.")
+
+        lines.append("")
+        lines.append("Citation chasing:")
+        if deduped_citation_titles:
+            for title in deduped_citation_titles:
+                lines.append(f"- Followed citation title: {title}")
+        else:
+            lines.append("- No citation titles were available from the top papers.")
+
+        if citation_search_results:
+            for paper in citation_search_results[:8]:
+                lines.append(f"- Citation search hit: {self._format_paper_brief(paper)}")
+        else:
+            lines.append("- No additional papers were retrieved from citation-title search.")
+
+        return "\n".join(lines).strip()
+
+    def _augment_query_with_deep_context(self, query: str, context: str) -> str:
+        return (
+            "User question:\n"
+            f"{query}\n\n"
+            "Deep-search evidence package "
+            "(initial search + full-text review + citation chasing):\n"
+            f"{context}\n\n"
+            "Synthesize across all sources above and any additional tool lookups. "
+            "Keep claims grounded in cited papers."
+        )
+
+    async def _prepare_query_async(self, query: str) -> str:
+        if not getattr(self, "deep_search", False):
+            return query
+        try:
+            context = await self._build_deep_search_context_async(query)
+        except Exception:
+            logger.warning("Deep search preparation failed in async flow.", exc_info=True)
+            return query
+        if not context:
+            return query
+        return self._augment_query_with_deep_context(query, context)
+
+    def _prepare_query_sync(self, query: str) -> str:
+        if not getattr(self, "deep_search", False):
+            return query
+        try:
+            return asyncio.run(self._prepare_query_async(query))
+        except RuntimeError as exc:
+            logger.warning("Deep search preparation skipped in sync flow: %s", exc)
+            return query
+        except Exception:
+            logger.warning("Deep search preparation failed in sync flow.", exc_info=True)
+            return query
 
     def _error_response(self) -> str:
         return (
@@ -592,12 +779,19 @@ class ResearchAgent:
             if hasattr(msg, "type") and msg.type == "ai" and not getattr(msg, "tool_calls", None):
                 return str(msg.content)
             # dict form
-            if isinstance(msg, dict) and msg.get("role") == "assistant" and not msg.get("tool_calls"):
+            if (
+                isinstance(msg, dict)
+                and msg.get("role") == "assistant"
+                and not msg.get("tool_calls")
+            ):
                 return str(msg.get("content", ""))
         # Fallback: last message content
         if messages:
             last = messages[-1]
-            return str(getattr(last, "content", "") or (last.get("content", "") if isinstance(last, dict) else ""))
+            fallback = ""
+            if isinstance(last, dict):
+                fallback = str(last.get("content", ""))
+            return str(getattr(last, "content", "") or fallback)
         return ""
 
     async def arun(self, query: str) -> str:
@@ -607,8 +801,9 @@ class ResearchAgent:
         except ValueError:
             logger.warning("Rejected invalid query input in arun.")
             return self._invalid_query_response()
-        inputs = {"messages": [HumanMessage(content=query)]}
         self._callback.papers.clear()
+        prepared_query = await self._prepare_query_async(query)
+        inputs = {"messages": [HumanMessage(content=prepared_query)]}
         config = {
             "callbacks": [self._callback],
             "recursion_limit": self.max_iterations,
@@ -629,8 +824,9 @@ class ResearchAgent:
         except ValueError:
             logger.warning("Rejected invalid query input in run.")
             return self._invalid_query_response()
-        inputs = {"messages": [HumanMessage(content=query)]}
         self._callback.papers.clear()
+        prepared_query = self._prepare_query_sync(query)
+        inputs = {"messages": [HumanMessage(content=prepared_query)]}
         config = {
             "callbacks": [self._callback],
             "recursion_limit": self.max_iterations,

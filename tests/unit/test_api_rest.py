@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
-import pytest
 from fastapi.testclient import TestClient
 
 from ra.api import create_app
@@ -10,7 +9,13 @@ from ra.retrieval.unified import Paper
 
 
 class _StubRetriever:
-    def __init__(self, *, search_result=None, paper_result=None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        search_result=None,
+        paper_result=None,
+        error: Exception | None = None,
+    ) -> None:
         self._search_result = search_result if search_result is not None else []
         self._paper_result = paper_result
         self._error = error
@@ -64,12 +69,25 @@ class _StubAgent:
         return self._answer
 
 
+class _StubLitReviewAgent:
+    def __init__(self, review: str) -> None:
+        self._review = review
+
+    async def arun(self, topic: str) -> str:  # noqa: ARG002
+        return self._review
+
+
 def _mk_app(
     *,
     retriever_factory: Callable[[], _StubRetriever] | None = None,
     agent_factory: Callable[[], _StubAgent] | None = None,
+    lit_review_agent_factory: Callable[[], _StubLitReviewAgent] | None = None,
 ):
-    return create_app(retriever_factory=retriever_factory, agent_factory=agent_factory)
+    return create_app(
+        retriever_factory=retriever_factory,
+        agent_factory=agent_factory,
+        lit_review_agent_factory=lit_review_agent_factory,
+    )
 
 
 def test_health_endpoint_returns_ok():
@@ -160,6 +178,94 @@ def test_answer_endpoint_maps_agent_factory_errors_to_service_unavailable():
     assert resp.status_code == 503
     payload = resp.json()
     assert payload["error"] == "agent_unavailable"
+
+
+def test_lit_review_endpoint_returns_structured_review():
+    observed: dict[str, object] = {}
+    expected_review = (
+        "## Introduction\nIntro.\n\n"
+        "## Thematic Groups\n- Theme A\n\n"
+        "## Key Findings\n- Finding\n\n"
+        "## Research Gaps\n- Gap\n\n"
+        "## Future Directions\n- Next steps"
+    )
+
+    class _TrackingLitReviewAgent(_StubLitReviewAgent):
+        async def arun(self, topic: str) -> str:
+            observed["topic"] = topic
+            return await super().arun(topic)
+
+    def _lit_review_factory() -> _TrackingLitReviewAgent:
+        return _TrackingLitReviewAgent(expected_review)
+
+    app = _mk_app(lit_review_agent_factory=_lit_review_factory)
+    client = TestClient(app)
+
+    resp = client.post("/api/lit-review", json={"topic": "graph neural networks"})
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["topic"] == "graph neural networks"
+    assert payload["review"] == expected_review
+    assert observed["topic"] == "graph neural networks"
+
+
+def test_lit_review_endpoint_maps_factory_errors_to_service_unavailable():
+    def _failing_lit_review_factory() -> _StubLitReviewAgent:
+        raise ValueError("OPENAI_API_KEY missing")
+
+    app = _mk_app(lit_review_agent_factory=_failing_lit_review_factory)
+    client = TestClient(app)
+
+    resp = client.post("/api/lit-review", json={"topic": "test"})
+
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["error"] == "agent_unavailable"
+
+
+def test_query_endpoint_passes_deep_flag_to_agent_factory():
+    observed: dict[str, object] = {}
+
+    class _TrackingAgent(_StubAgent):
+        async def arun(self, query: str) -> str:
+            observed["query"] = query
+            return await super().arun(query)
+
+    def _agent_factory(*, deep_search: bool = False) -> _TrackingAgent:
+        observed["deep_search"] = deep_search
+        return _TrackingAgent("## Answer\nok\n\n## References\nNone.")
+
+    app = _mk_app(agent_factory=_agent_factory)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/query",
+        json={"query": "What is retrieval augmented generation?", "deep": True},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["query"].startswith("What is retrieval")
+    assert payload["answer"] == "## Answer\nok\n\n## References\nNone."
+    assert observed["deep_search"] is True
+    assert observed["query"] == "What is retrieval augmented generation?"
+
+
+def test_query_endpoint_defaults_deep_to_false():
+    observed: list[bool] = []
+
+    def _agent_factory(*, deep_search: bool = False) -> _StubAgent:
+        observed.append(deep_search)
+        return _StubAgent("## Answer\nok\n\n## References\nNone.")
+
+    app = _mk_app(agent_factory=_agent_factory)
+    client = TestClient(app)
+
+    resp = client.post("/query", json={"query": "test"})
+
+    assert resp.status_code == 200
+    assert observed == [False]
 
 
 def test_validation_errors_use_structured_payload():

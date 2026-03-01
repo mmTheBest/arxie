@@ -65,7 +65,8 @@ class AnswerRequest(BaseModel):
         str_strip_whitespace=True,
         json_schema_extra={
             "example": {
-                "query": "What are the main limitations of retrieval-augmented generation?"
+                "query": "What are the main limitations of retrieval-augmented generation?",
+                "deep": False,
             }
         },
     )
@@ -76,6 +77,41 @@ class AnswerRequest(BaseModel):
         max_length=4000,
         description="Research question to answer using the retrieval and reasoning pipeline.",
         examples=["What are the main limitations of retrieval-augmented generation?"],
+    )
+    deep: bool = Field(
+        False,
+        description=(
+            "Enable multi-step deep research mode "
+            "(initial search, full-text reads, and citation chasing)."
+        ),
+        examples=[False],
+    )
+
+
+class LitReviewRequest(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "topic": "graph neural networks for molecular property prediction",
+                "max_papers": 20,
+            }
+        },
+    )
+
+    topic: str = Field(
+        ...,
+        min_length=1,
+        max_length=1000,
+        description="Topic to synthesize into a structured literature review.",
+        examples=["graph neural networks for molecular property prediction"],
+    )
+    max_papers: int = Field(
+        20,
+        ge=1,
+        le=50,
+        description="Maximum number of papers to retrieve and synthesize.",
+        examples=[20],
     )
 
 
@@ -149,7 +185,7 @@ class PaperResponse(BaseModel):
     citation: str = Field(..., description="Formatted citation string.")
 
     @classmethod
-    def from_paper(cls, paper: Paper) -> "PaperResponse":
+    def from_paper(cls, paper: Paper) -> PaperResponse:
         return cls(
             id=paper.id,
             title=paper.title,
@@ -254,6 +290,29 @@ class AnswerResponse(BaseModel):
 
     query: str = Field(..., description="Original research question.")
     answer: str = Field(..., description="Structured Markdown answer from the research agent.")
+
+
+class LitReviewResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "topic": "graph neural networks for molecular property prediction",
+                "review": (
+                    "## Introduction\n...\n\n## Thematic Groups\n...\n\n## Key Findings\n..."
+                    "\n\n## Research Gaps\n...\n\n## Future Directions\n..."
+                ),
+            }
+        }
+    )
+
+    topic: str = Field(..., description="Original literature review topic.")
+    review: str = Field(
+        ...,
+        description=(
+            "Structured Markdown literature review with sections: Introduction, "
+            "Thematic Groups, Key Findings, Research Gaps, Future Directions."
+        ),
+    )
 
 
 class HealthResponse(BaseModel):

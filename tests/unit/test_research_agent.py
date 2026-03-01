@@ -17,9 +17,10 @@ class _GraphStub:
         self._responses = list(responses)
         self.calls = 0
         self.configs: list[dict[str, Any]] = []
+        self.inputs: list[dict[str, Any]] = []
 
     def invoke(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-        _ = inputs
+        self.inputs.append(inputs)
         self.configs.append(config)
         i = self.calls
         self.calls += 1
@@ -37,6 +38,7 @@ class _UsageLoggerStub:
 def _mk_agent(graph: _GraphStub) -> ResearchAgent:
     agent = object.__new__(ResearchAgent)
     agent.graph = graph
+    agent.deep_search = False
     agent.max_iterations = 7
     agent.max_api_retries = 2
     agent.retry_base_delay_seconds = 0.0
@@ -58,6 +60,22 @@ def _paper() -> Paper:
         doi="10.5555/3295222.3295349",
         arxiv_id=None,
         source="semantic_scholar",
+    )
+
+
+def _paper_with(*, paper_id: str, title: str, source: str = "semantic_scholar") -> Paper:
+    return Paper(
+        id=paper_id,
+        title=title,
+        abstract=None,
+        authors=["Author One"],
+        year=2020,
+        venue="Venue",
+        citation_count=0,
+        pdf_url="https://example.org/paper.pdf",
+        doi=None,
+        arxiv_id=None,
+        source=source,
     )
 
 
@@ -106,6 +124,24 @@ def test_run_retries_transient_errors_with_backoff(monkeypatch: pytest.MonkeyPat
     assert "Final answer." in output
 
 
+def test_run_deep_search_uses_prepared_query_and_recursion_limit():
+    graph = _GraphStub([{"messages": [{"role": "assistant", "content": "Deep answer."}]}])
+    agent = _mk_agent(graph)
+    agent.deep_search = True
+    agent.max_iterations = 50
+
+    prepared_queries: list[str] = []
+    agent._prepare_query_sync = lambda query: prepared_queries.append(query) or "DEEP QUERY"
+    agent._ensure_seed_papers_sync = lambda _: None
+
+    output = agent.run("transformers")
+
+    assert prepared_queries == ["transformers"]
+    assert graph.configs[0]["recursion_limit"] == 50
+    assert "DEEP QUERY" in str(graph.inputs[0]["messages"][0].content)
+    assert "Deep answer." in output
+
+
 def test_run_handles_non_transient_invoke_errors():
     graph = _GraphStub([ValueError("bad input")])
     agent = _mk_agent(graph)
@@ -138,7 +174,9 @@ def test_run_rejects_control_character_query_without_invoking_graph():
 
 
 def test_run_backfills_seed_papers_when_tool_loop_collects_none():
-    graph = _GraphStub([{"messages": [{"role": "assistant", "content": "Transformers improved MT quality."}]}])
+    graph = _GraphStub(
+        [{"messages": [{"role": "assistant", "content": "Transformers improved MT quality."}]}]
+    )
     agent = _mk_agent(graph)
     p = _paper()
 
@@ -151,6 +189,106 @@ def test_run_backfills_seed_papers_when_tool_loop_collects_none():
     assert "(Vaswani et al., 2017)" in output
     assert "\n## References\n" in output
     assert "Vaswani, A." in output
+
+
+@pytest.mark.asyncio
+async def test_build_deep_search_context_reads_top_3_then_chases_citations():
+    initial = [
+        _paper_with(paper_id="p1", title="Initial 1"),
+        _paper_with(paper_id="p2", title="Initial 2"),
+        _paper_with(paper_id="p3", title="Initial 3"),
+        _paper_with(paper_id="p4", title="Initial 4"),
+    ]
+    followups = {
+        "Citation A": [_paper_with(paper_id="c1", title="Citation A result", source="arxiv")],
+        "Citation B": [
+            _paper_with(
+                paper_id="c2",
+                title="Citation B result",
+                source="semantic_scholar",
+            )
+        ],
+        "Citation C": [_paper_with(paper_id="c3", title="Citation C result", source="arxiv")],
+    }
+
+    class _RetrieverStub:
+        def __init__(self) -> None:
+            self.search_calls: list[str] = []
+            self.full_text_calls: list[str] = []
+
+        async def search(
+            self, query: str, limit: int, sources: tuple[str, str]
+        ) -> list[Paper]:
+            _ = (limit, sources)
+            self.search_calls.append(query)
+            if query == "transformers":
+                return initial
+            return followups.get(query, [])
+
+        async def get_full_text(self, paper: Paper) -> str:
+            self.full_text_calls.append(paper.id)
+            return f"full text for {paper.id}"
+
+    class _SemanticScholarStub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int]] = []
+
+        async def get_citations(self, paper_id: str, limit: int) -> list[Any]:
+            self.calls.append((paper_id, limit))
+            mapping = {
+                "p1": [SimpleNamespace(title="Citation A")],
+                "p2": [SimpleNamespace(title="Citation B")],
+                "p3": [SimpleNamespace(title="Citation C")],
+            }
+            return mapping.get(paper_id, [])
+
+    agent = _mk_agent(_GraphStub([]))
+    agent.deep_search = True
+    agent.retriever = _RetrieverStub()
+    agent.semantic_scholar = _SemanticScholarStub()
+
+    context = await agent._build_deep_search_context_async("transformers")
+
+    assert agent.retriever.search_calls[0] == "transformers"
+    assert agent.retriever.full_text_calls == ["p1", "p2", "p3"]
+    assert agent.semantic_scholar.calls == [("p1", 5), ("p2", 5), ("p3", 5)]
+    assert set(agent.retriever.search_calls[1:]) == {"Citation A", "Citation B", "Citation C"}
+    assert {"c1", "c2", "c3"}.issubset(agent._callback.papers.keys())
+    assert "Initial search" in context
+    assert "Full-text review" in context
+    assert "Citation chasing" in context
+
+
+def test_init_uses_higher_iteration_budget_for_deep_search(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("RA_AGENT_MAX_ITERATIONS", raising=False)
+    monkeypatch.delenv("RA_AGENT_DEEP_MAX_ITERATIONS", raising=False)
+    monkeypatch.setattr("ra.agents.research_agent.configure_logging_from_env", lambda: None)
+    monkeypatch.setattr(
+        "ra.agents.research_agent.ChatOpenAI",
+        lambda *args, **kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "ra.agents.research_agent.UnifiedRetriever",
+        lambda *args, **kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "ra.agents.research_agent.SemanticScholarClient",
+        lambda *args, **kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "ra.agents.research_agent.make_retrieval_tools",
+        lambda **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "ra.agents.research_agent.create_agent",
+        lambda **kwargs: SimpleNamespace(invoke=lambda inputs, config: {}),
+    )
+
+    normal = ResearchAgent(deep_search=False)
+    deep = ResearchAgent(deep_search=True)
+
+    assert deep.max_iterations > normal.max_iterations
 
 
 def test_callback_collects_papers_from_toolmessage_content():

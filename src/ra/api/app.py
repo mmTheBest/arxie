@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 from fastapi import Body, FastAPI
 
+from ra.agents.lit_review_agent import LitReviewAgent
 from ra.agents.research_agent import ResearchAgent
 from ra.api.errors import RAAPIError, register_exception_handlers
 from ra.api.models import (
@@ -19,6 +20,8 @@ from ra.api.models import (
     AnswerResponse,
     ErrorResponse,
     HealthResponse,
+    LitReviewRequest,
+    LitReviewResponse,
     PaperResponse,
     RetrieveBatchItemResponse,
     RetrieveBatchRequest,
@@ -37,7 +40,8 @@ from ra.utils.logging_config import configure_logging_from_env
 logger = logging.getLogger(__name__)
 
 RetrieverFactory = Callable[[], UnifiedRetriever]
-AgentFactory = Callable[[], ResearchAgent]
+AgentFactory = Callable[..., ResearchAgent]
+LitReviewAgentFactory = Callable[[], LitReviewAgent]
 
 OPENAPI_TAGS = [
     {
@@ -88,7 +92,25 @@ ANSWER_REQUEST_EXAMPLES = {
     "limitations_question": {
         "summary": "Question answered by research agent",
         "value": {
-            "query": "What are the main limitations of retrieval-augmented generation?"
+            "query": "What are the main limitations of retrieval-augmented generation?",
+            "deep": False,
+        },
+    },
+    "deep_research_question": {
+        "summary": "Enable deep research mode",
+        "value": {
+            "query": "Compare LoRA and QLoRA training trade-offs with supporting evidence.",
+            "deep": True,
+        },
+    }
+}
+
+LIT_REVIEW_REQUEST_EXAMPLES = {
+    "topic_synthesis": {
+        "summary": "Generate a structured literature review",
+        "value": {
+            "topic": "graph neural networks for molecular property prediction",
+            "max_papers": 20,
         },
     }
 }
@@ -164,14 +186,48 @@ def _default_retriever_factory() -> UnifiedRetriever:
     return UnifiedRetriever()
 
 
-def _default_agent_factory() -> ResearchAgent:
-    return ResearchAgent()
+def _default_agent_factory(*, deep_search: bool = False) -> ResearchAgent:
+    return ResearchAgent(deep_search=deep_search)
+
+
+def _default_lit_review_agent_factory() -> LitReviewAgent:
+    return LitReviewAgent()
 
 
 def _sources_for_request(source: str) -> tuple[str, ...]:
     if source == "both":
         return ("semantic_scholar", "arxiv")
     return (source,)
+
+
+def _factory_supports_deep_search(factory: AgentFactory) -> bool:
+    return _callable_supports_kwarg(factory, "deep_search")
+
+
+def _callable_supports_kwarg(fn: Any, name: str) -> bool:
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return False
+
+    params = signature.parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()):
+        return True
+
+    deep_param = params.get(name)
+    if deep_param is None:
+        return False
+
+    return deep_param.kind in (
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    )
+
+
+def _create_agent_from_factory(factory: AgentFactory, *, deep_search: bool) -> Any:
+    if _factory_supports_deep_search(factory):
+        return factory(deep_search=deep_search)
+    return factory()
 
 
 async def _close_resource(resource: Any) -> None:
@@ -238,6 +294,7 @@ def create_app(
     *,
     retriever_factory: RetrieverFactory | None = None,
     agent_factory: AgentFactory | None = None,
+    lit_review_agent_factory: LitReviewAgentFactory | None = None,
 ) -> FastAPI:
     """Create the FastAPI app instance.
 
@@ -247,6 +304,7 @@ def create_app(
 
     retriever_factory = retriever_factory or _default_retriever_factory
     agent_factory = agent_factory or _default_agent_factory
+    lit_review_agent_factory = lit_review_agent_factory or _default_lit_review_agent_factory
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -272,6 +330,7 @@ def create_app(
     )
     app.state.retriever_factory = retriever_factory
     app.state.agent_factory = agent_factory
+    app.state.lit_review_agent_factory = lit_review_agent_factory
 
     register_exception_handlers(app)
 
@@ -521,41 +580,9 @@ def create_app(
         found = sum(1 for item in items if item.paper is not None)
         return RetrieveBatchResponse(count=len(items), found=found, results=items)
 
-    @app.post(
-        "/answer",
-        response_model=AnswerResponse,
-        summary="Generate Literature-Grounded Answer",
-        description=(
-            "Runs the research agent pipeline to generate a structured Markdown "
-            "answer for a research question."
-        ),
-        response_description="Structured answer produced by the research agent.",
-        responses={
-            400: _error_response_doc(
-                description="Invalid answer request.",
-                error="invalid_input",
-                message="query must not be empty",
-            ),
-            422: VALIDATION_ERROR_RESPONSE,
-            500: INTERNAL_ERROR_RESPONSE,
-            502: _error_response_doc(
-                description="Answer provider request failed.",
-                error="upstream_error",
-                message="Answer backend request failed: RequestError.",
-            ),
-            503: _error_response_doc(
-                description="Answer agent is unavailable.",
-                error="agent_unavailable",
-                message="OPENAI_API_KEY missing",
-            ),
-        },
-        tags=["pipeline"],
-    )
-    async def answer_question(
-        payload: AnswerRequest = Body(..., openapi_examples=ANSWER_REQUEST_EXAMPLES),
-    ) -> AnswerResponse:
+    async def _run_query_pipeline(payload: AnswerRequest) -> AnswerResponse:
         try:
-            agent = app.state.agent_factory()
+            agent = _create_agent_from_factory(app.state.agent_factory, deep_search=payload.deep)
         except ValueError as exc:
             raise RAAPIError(
                 status_code=503,
@@ -586,6 +613,149 @@ def create_app(
             ) from exc
 
         return AnswerResponse(query=payload.query, answer=answer)
+
+    async def _run_lit_review_pipeline(payload: LitReviewRequest) -> LitReviewResponse:
+        try:
+            agent = app.state.lit_review_agent_factory()
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=503,
+                error="agent_unavailable",
+                message=str(exc),
+            ) from exc
+        except Exception as exc:
+            logger.exception("Failed to initialize LitReviewAgent", exc_info=exc)
+            raise RAAPIError(
+                status_code=500,
+                error="internal_error",
+                message="Failed to initialize lit-review agent.",
+            ) from exc
+
+        try:
+            if _callable_supports_kwarg(agent.arun, "max_papers"):
+                review = await agent.arun(payload.topic, max_papers=payload.max_papers)
+            else:
+                review = await agent.arun(payload.topic)
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            raise RAAPIError(
+                status_code=502,
+                error="upstream_error",
+                message=f"Lit review backend request failed: {type(exc).__name__}.",
+            ) from exc
+
+        return LitReviewResponse(topic=payload.topic, review=review)
+
+    @app.post(
+        "/query",
+        response_model=AnswerResponse,
+        summary="Run Research Query",
+        description=(
+            "Runs the research agent pipeline to generate a structured Markdown "
+            "answer for a research question."
+        ),
+        response_description="Structured answer produced by the research agent.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid query request.",
+                error="invalid_input",
+                message="query must not be empty",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+            502: _error_response_doc(
+                description="Query provider request failed.",
+                error="upstream_error",
+                message="Query backend request failed: RequestError.",
+            ),
+            503: _error_response_doc(
+                description="Query agent is unavailable.",
+                error="agent_unavailable",
+                message="OPENAI_API_KEY missing",
+            ),
+        },
+        tags=["pipeline"],
+    )
+    async def query_question(
+        payload: AnswerRequest = Body(..., openapi_examples=ANSWER_REQUEST_EXAMPLES),
+    ) -> AnswerResponse:
+        return await _run_query_pipeline(payload)
+
+    @app.post(
+        "/api/lit-review",
+        response_model=LitReviewResponse,
+        summary="Generate Structured Literature Review",
+        description=(
+            "Runs the literature review mode to retrieve papers, cluster them by theme, "
+            "and produce a structured synthesis."
+        ),
+        response_description="Structured literature review generated by the lit-review agent.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid lit-review request.",
+                error="invalid_input",
+                message="topic must not be empty",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+            502: _error_response_doc(
+                description="Lit-review provider request failed.",
+                error="upstream_error",
+                message="Lit review backend request failed: RequestError.",
+            ),
+            503: _error_response_doc(
+                description="Lit-review agent is unavailable.",
+                error="agent_unavailable",
+                message="OPENAI_API_KEY missing",
+            ),
+        },
+        tags=["pipeline"],
+    )
+    async def lit_review(
+        payload: LitReviewRequest = Body(..., openapi_examples=LIT_REVIEW_REQUEST_EXAMPLES),
+    ) -> LitReviewResponse:
+        return await _run_lit_review_pipeline(payload)
+
+    @app.post(
+        "/answer",
+        response_model=AnswerResponse,
+        summary="Generate Literature-Grounded Answer",
+        description=(
+            "Alias for `/query`. Runs the research agent pipeline to generate a "
+            "structured Markdown answer for a research question."
+        ),
+        response_description="Structured answer produced by the research agent.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid answer request.",
+                error="invalid_input",
+                message="query must not be empty",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+            502: _error_response_doc(
+                description="Answer provider request failed.",
+                error="upstream_error",
+                message="Answer backend request failed: RequestError.",
+            ),
+            503: _error_response_doc(
+                description="Answer agent is unavailable.",
+                error="agent_unavailable",
+                message="OPENAI_API_KEY missing",
+            ),
+        },
+        tags=["pipeline"],
+        deprecated=True,
+    )
+    async def answer_question(
+        payload: AnswerRequest = Body(..., openapi_examples=ANSWER_REQUEST_EXAMPLES),
+    ) -> AnswerResponse:
+        return await _run_query_pipeline(payload)
 
     return app
 
