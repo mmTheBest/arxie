@@ -41,7 +41,7 @@
 
 ## Priority 7 — Demo & Visualization
 - [x] **Remotion demo video** — Side-by-side: GPT-4o (hallucinated citations) vs Arxie (verified citations + citation graph). Build with Remotion (React).
-- [ ] **Citation graph visualization** — React/mermaid/d3 component rendering paper relationships as directed graph.
+- [x] **Citation graph visualization** — React/mermaid/d3 component rendering paper relationships as directed graph.
 
 ## Completed
 - [x] Phase 1: Foundation (retrieval clients, CLI, tests)

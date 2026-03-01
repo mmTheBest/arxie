@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@remotion/google-fonts": "^4.0.366",
+    "d3-force": "^3.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "remotion": "^4.0.366"

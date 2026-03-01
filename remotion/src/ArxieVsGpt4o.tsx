@@ -10,6 +10,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
+import {CitationGraphVisualization} from './CitationGraphVisualization';
 import {TIMELINE} from './config';
 import {
   arxieAnswer,
@@ -44,103 +45,6 @@ const responseStyle: React.CSSProperties = {
   lineHeight: 1.42,
   color: '#ebeff5',
   marginTop: 16,
-};
-
-const graphNodeRadius = 16;
-
-const CitationGraph: React.FC<{progress: number}> = ({progress}) => {
-  const width = 760;
-  const height = 240;
-
-  const nodeMap = new Map(citationGraph.nodes.map((node) => [node.id, node]));
-
-  return (
-    <div
-      style={{
-        ...cardStyle,
-        marginTop: 22,
-        height,
-        position: 'relative',
-        overflow: 'hidden',
-        background:
-          'linear-gradient(135deg, rgba(10, 34, 34, 0.9), rgba(5, 17, 37, 0.94))',
-      }}
-    >
-      <div style={{fontSize: 22, color: '#9de8d7', marginBottom: 12}}>Citation Influence Graph</div>
-      <svg width={width} height={height - 34} viewBox={`0 0 ${width} ${height - 34}`}>
-        {citationGraph.edges.map((edge, index) => {
-          const from = nodeMap.get(edge.from);
-          const to = nodeMap.get(edge.to);
-          if (!from || !to) {
-            return null;
-          }
-
-          const x1 = (from.x / 100) * width;
-          const y1 = (from.y / 100) * (height - 34);
-          const x2 = (to.x / 100) * width;
-          const y2 = (to.y / 100) * (height - 34);
-
-          const strokeProgress = interpolate(
-            progress,
-            [index * 0.16, index * 0.16 + 0.22],
-            [0, 1],
-            {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-          );
-
-          return (
-            <line
-              key={`${edge.from}-${edge.to}`}
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
-              stroke="#6de9ce"
-              strokeWidth={3}
-              strokeDasharray="1"
-              strokeDashoffset={1 - strokeProgress}
-              opacity={strokeProgress}
-            />
-          );
-        })}
-        {citationGraph.nodes.map((node, index) => {
-          const nodeProgress = interpolate(
-            progress,
-            [index * 0.14, index * 0.14 + 0.2],
-            [0, 1],
-            {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'},
-          );
-
-          const x = (node.x / 100) * width;
-          const y = (node.y / 100) * (height - 34);
-
-          return (
-            <g key={node.id} opacity={nodeProgress}>
-              <circle cx={x} cy={y} r={graphNodeRadius} fill="#122f3f" stroke="#90f4dc" strokeWidth={2.5} />
-              <text
-                x={x}
-                y={y + 5}
-                textAnchor="middle"
-                fill="#d4fff3"
-                fontSize={10}
-                fontFamily={bodyFont}
-              >
-                {node.year}
-              </text>
-              <text
-                x={x + 22}
-                y={y + 4}
-                fill="#eff8fb"
-                fontSize={13}
-                fontFamily={bodyFont}
-              >
-                {node.label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
 };
 
 const CitationList: React.FC<{
@@ -274,7 +178,25 @@ export const ArxieVsGpt4o: React.FC = () => {
                 frame={frame - TIMELINE.comparisonStart + 10}
               />
               <div style={{opacity: graphProgress, transform: `translateY(${(1 - graphProgress) * 20}px)`}}>
-                <CitationGraph progress={graphProgress} />
+                <div
+                  style={{
+                    ...cardStyle,
+                    marginTop: 22,
+                    height: 240,
+                    position: 'relative',
+                    overflow: 'hidden',
+                    background:
+                      'linear-gradient(135deg, rgba(10, 34, 34, 0.9), rgba(5, 17, 37, 0.94))',
+                  }}
+                >
+                  <CitationGraphVisualization
+                    data={citationGraph}
+                    width={760}
+                    height={240}
+                    progress={graphProgress}
+                    title="Citation Influence Graph"
+                  />
+                </div>
               </div>
             </div>
           </div>
