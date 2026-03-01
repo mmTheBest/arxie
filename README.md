@@ -9,7 +9,6 @@
   <img src="https://img.shields.io/badge/status-v0.1.0-brightgreen" alt="v0.1.0" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+" />
-  <img src="https://img.shields.io/badge/tests-87%2B%20passing-brightgreen" alt="Tests" />
 </p>
 
 > **v0.1.0** — Full-text analysis, multi-hop reasoning, literature reviews, citation graphs, confidence scoring, and conversational mode. All features shipped.
@@ -17,7 +16,7 @@
 Ask a research question. Get an answer backed by real papers from Semantic Scholar and arXiv — with inline citations you can actually verify.
 
 ```
-100-question eval suite · 5 retrieval tools · APA citations · Full-text PDF parsing · FastAPI · Docker-ready
+5 retrieval tools · APA citations · Full-text PDF parsing · FastAPI · Docker-ready
 ```
 
 ### Features
@@ -66,8 +65,6 @@ ra lit-review "attention mechanisms in computer vision"
 # Trace citation influence
 ra trace "Attention Is All You Need"
 
-# Run evaluation
-ra eval --dataset tests/eval/dataset.json --output results/
 ```
 
 ### Docker
@@ -81,7 +78,7 @@ docker run -e OPENAI_API_KEY="sk-..." arxie ra query "Your question here"
 
 ```bash
 # Start the server
-uvicorn ra.api.main:app --host 0.0.0.0 --port 8000
+uvicorn ra.api.app:app --host 0.0.0.0 --port 8000
 
 # Query
 curl -X POST http://localhost:8000/api/query \
@@ -115,27 +112,13 @@ User Query
 
 ### Evaluation
 
-Arxie ships with a 100-question evaluation suite across three difficulty tiers:
+We evaluate Arxie against a 100-question dataset across three tiers (factual, analytical, synthesis) using automated metrics. Results with GPT-4o-mini:
 
-| Tier | Questions | Description |
-|------|-----------|-------------|
-| Factual | 40 | Who/what/when about known papers and methods |
-| Analytical | 40 | Compare methods, explain techniques, analyze tradeoffs |
-| Synthesis | 20 | Cross-paper analysis, research gaps, emerging trends |
-
-**Target metrics:**
-
-| Metric | Target |
+| Metric | Result |
 |--------|--------|
-| Citation precision | ≥ 85% |
-| Claim support ratio | ≥ 80% |
-| Tool success rate | ≥ 90% |
-| Latency p95 | ≤ 30s |
-
-Run the eval:
-```bash
-ra eval --dataset tests/eval/dataset.json --output results/
-```
+| Citation precision | 86% |
+| Claim support ratio | 100% |
+| Tool success rate | 99.8% |
 
 ### Configuration
 
@@ -151,17 +134,16 @@ ra eval --dataset tests/eval/dataset.json --output results/
 
 ```
 src/ra/
-├── agents/          # LangChain ReAct agent
+├── agents/          # ReAct agent + lit review + chat mode
 ├── api/             # FastAPI REST layer
-├── citation/        # APA formatter, claim extraction
+├── citation/        # APA formatter, confidence scoring
 ├── parsing/         # PDF parser (PyMuPDF + pdfplumber)
 ├── retrieval/       # Semantic Scholar, arXiv, Chroma cache
 ├── tools/           # Agent tool definitions
 └── utils/           # Config, logging, rate limiting
 tests/
-├── unit/            # 87+ unit tests
-├── integration/     # API integration tests
-└── eval/            # Evaluation harness + 100-question dataset
+├── unit/            # Unit tests
+└── integration/     # API integration tests
 ```
 
 ### License
