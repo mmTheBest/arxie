@@ -9,6 +9,7 @@ from ra.tools.retrieval_tools import (
     GetPaperDetailsArgs,
     GetPaperFullTextArgs,
     SearchPapersArgs,
+    TraceInfluenceArgs,
     make_retrieval_tools,
 )
 
@@ -18,4 +19,5 @@ __all__ = [
     "GetPaperDetailsArgs",
     "GetPaperFullTextArgs",
     "GetPaperCitationsArgs",
+    "TraceInfluenceArgs",
 ]

@@ -15,15 +15,16 @@ import asyncio
 import json
 import logging
 import threading
+from collections import deque
 from collections.abc import Awaitable
 from typing import Literal, TypeVar
 
 import httpx
+from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from langchain_core.tools import StructuredTool
-
 from ra.parsing import PDFParser, Section
+from ra.retrieval.semantic_scholar import Paper as SemanticScholarPaper
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.utils.security import sanitize_identifier, sanitize_user_text
@@ -182,6 +183,43 @@ class GetPaperCitationsArgs(BaseModel):
     @classmethod
     def _validate_paper_id(cls, value: str) -> str:
         return sanitize_identifier(value, field_name="paper_id", max_length=256)
+
+
+class TraceInfluenceArgs(BaseModel):
+    """Arguments for tracing forward citation influence over time."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    paper: str = Field(
+        ...,
+        description=(
+            "Paper title or identifier. Identifier can be Semantic Scholar paperId, "
+            "DOI (optionally prefixed with DOI:), or arXiv id."
+        ),
+    )
+    max_depth: int = Field(
+        3,
+        ge=1,
+        le=6,
+        description="Number of forward-citation hops to follow.",
+    )
+    citations_per_paper: int = Field(
+        20,
+        ge=1,
+        le=100,
+        description="Maximum citing papers to fetch at each hop.",
+    )
+    max_papers: int = Field(
+        200,
+        ge=1,
+        le=1000,
+        description="Safety cap on the total number of timeline papers.",
+    )
+
+    @field_validator("paper")
+    @classmethod
+    def _validate_paper(cls, value: str) -> str:
+        return sanitize_user_text(value, field_name="paper", max_length=1000)
 
 
 def _tool_named_error_payload(tool: str, error: str, message: str, **extra: object) -> str:
@@ -378,6 +416,149 @@ def make_retrieval_tools(
     def get_paper_citations_sync(paper_id: str, limit: int = 20) -> str:
         return _run_coroutine_sync(get_paper_citations(paper_id=paper_id, limit=limit))
 
+    async def trace_influence(
+        paper: str,
+        max_depth: int = 3,
+        citations_per_paper: int = 20,
+        max_papers: int = 200,
+    ) -> str:
+        """Trace forward citations iteratively and return a chronological influence timeline."""
+
+        tool_name = "trace_influence"
+        try:
+            seed_paper: SemanticScholarPaper | None = None
+            resolved_by = "identifier"
+
+            try:
+                seed_paper = await semantic_scholar.get_paper(paper_id=paper)
+            except ValueError:
+                # Titles or non-identifier inputs can fail identifier validation.
+                seed_paper = None
+
+            if seed_paper is None:
+                resolved_by = "title_search"
+                matches = await semantic_scholar.search(query=paper, limit=1)
+                seed_paper = matches[0] if matches else None
+
+            if seed_paper is None:
+                return _tool_named_error_payload(
+                    tool_name,
+                    "paper_not_found",
+                    "No matching paper found for the provided title or identifier.",
+                    input=paper,
+                )
+
+            seed_id = (seed_paper.paper_id or "").strip()
+            if not seed_id:
+                return _tool_named_error_payload(
+                    tool_name,
+                    "paper_missing_id",
+                    "Resolved seed paper is missing a Semantic Scholar paper ID.",
+                    input=paper,
+                )
+
+            papers_by_id: dict[str, SemanticScholarPaper] = {seed_id: seed_paper}
+            parent_ids_by_paper: dict[str, set[str]] = {seed_id: set()}
+            queue: deque[tuple[SemanticScholarPaper, int]] = deque([(seed_paper, 0)])
+            truncated = False
+
+            while queue:
+                current, depth = queue.popleft()
+                current_id = (current.paper_id or "").strip()
+                if not current_id:
+                    continue
+                if depth >= max_depth:
+                    continue
+
+                citing_papers = await semantic_scholar.get_citations(
+                    paper_id=current_id,
+                    limit=citations_per_paper,
+                )
+                for citing in citing_papers:
+                    citing_id = (citing.paper_id or "").strip()
+                    if not citing_id:
+                        continue
+
+                    parent_ids_by_paper.setdefault(citing_id, set()).add(current_id)
+
+                    if citing_id in papers_by_id:
+                        continue
+
+                    if len(papers_by_id) >= max_papers:
+                        truncated = True
+                        break
+                    papers_by_id[citing_id] = citing
+                    queue.append((citing, depth + 1))
+
+                if truncated:
+                    break
+
+            def _timeline_sort_key(item: tuple[str, SemanticScholarPaper]) -> tuple[int, str, str]:
+                paper_id, paper_item = item
+                year = paper_item.year if isinstance(paper_item.year, int) else 9999
+                title = (paper_item.title or "").lower()
+                return (year, title, paper_id)
+
+            timeline: list[dict[str, object]] = []
+            for paper_id, paper_item in sorted(papers_by_id.items(), key=_timeline_sort_key):
+                parent_ids = sorted(parent_ids_by_paper.get(paper_id, set()))
+                citation_links = []
+                for parent_id in parent_ids:
+                    parent = papers_by_id.get(parent_id)
+                    citation_links.append(
+                        {
+                            "from_paper_id": parent_id,
+                            "from_paper_title": parent.title if parent else None,
+                            "to_paper_id": paper_id,
+                            "to_paper_title": paper_item.title,
+                        }
+                    )
+
+                timeline.append(
+                    {
+                        "year": paper_item.year,
+                        "paper_title": paper_item.title,
+                        "paper_id": paper_id,
+                        "citation_links": citation_links,
+                    }
+                )
+
+            payload: dict[str, object] = {
+                "input": paper,
+                "resolved_by": resolved_by,
+                "seed_paper": {
+                    "year": seed_paper.year,
+                    "paper_title": seed_paper.title,
+                    "paper_id": seed_id,
+                },
+                "max_depth": max_depth,
+                "citations_per_paper": citations_per_paper,
+                "max_papers": max_papers,
+                "count": len(timeline),
+                "timeline": timeline,
+            }
+            if truncated:
+                payload["truncated"] = True
+            return json.dumps(payload, ensure_ascii=False)
+        except Exception as exc:
+            logger.exception("Tool execution failed: trace_influence")
+            return _tool_error_payload(tool_name, exc)
+
+    def trace_influence_sync(
+        paper: str,
+        max_depth: int = 3,
+        citations_per_paper: int = 20,
+        max_papers: int = 200,
+    ) -> str:
+        return _run_coroutine_sync(
+            trace_influence(
+                paper=paper,
+                max_depth=max_depth,
+                citations_per_paper=citations_per_paper,
+                max_papers=max_papers,
+            )
+        )
+
     return [
         StructuredTool(
             name="search_papers",
@@ -442,5 +623,16 @@ def make_retrieval_tools(
             args_schema=GetPaperCitationsArgs,
             func=get_paper_citations_sync,
             coroutine=get_paper_citations,
+        ),
+        StructuredTool(
+            name="trace_influence",
+            description=(
+                "Trace a paper's forward citation influence chain over time. "
+                "Accepts a paper title or identifier and returns a chronological JSON timeline with "
+                "year, paper title, paper ID, and citation links."
+            ),
+            args_schema=TraceInfluenceArgs,
+            func=trace_influence_sync,
+            coroutine=trace_influence,
         ),
     ]

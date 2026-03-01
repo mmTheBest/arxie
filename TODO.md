@@ -24,7 +24,7 @@
 - [x] **Tests** — Unit tests with mock agent for output structure validation.
 
 ## Priority 4 — Citation Graph Exploration
-- [ ] **Trace influence tool** — Add `trace_influence` tool to `src/ra/tools/retrieval_tools.py`. Takes a paper title/ID → follows forward citations iteratively → builds chronological influence chain. Returns JSON timeline.
+- [x] **Trace influence tool** — Add `trace_influence` tool to `src/ra/tools/retrieval_tools.py`. Takes a paper title/ID → follows forward citations iteratively → builds chronological influence chain. Returns JSON timeline.
 - [ ] **CLI** — Add `ra trace "paper or concept"` CLI command.
 - [ ] **Text-based visualization** — Format timeline as readable text output (Year → Paper → cited by → Paper).
 
