@@ -6,6 +6,7 @@ import {
   LogicalBackboneTreeScaffold,
   buildEvidenceInspectorSelection,
   deriveLogicalBackboneLevels,
+  notifyEvidenceInspectorSelection,
   updateLogicalBackboneNodeClaimInMemory,
   type LogicalBackboneNode,
 } from '../src/proposal-shell/LogicalBackboneTree';
@@ -66,6 +67,47 @@ describe('logical backbone in-memory edit helpers', () => {
       nodeId: 'n-1',
       paperIds: ['paper-1', 'paper-2'],
     });
+  });
+
+  it('notifies the evidence inspector hook with normalized selection payload', () => {
+    const calls: Array<{nodeId: string; paperIds: string[]}> = [];
+    const selection = notifyEvidenceInspectorSelection(
+      [
+        makeNode({
+          node_id: 'n-1',
+          linked_paper_ids: ['paper-a', 'paper-a', '  paper-b  ', ''],
+        }),
+      ],
+      'n-1',
+      (nextSelection) => {
+        calls.push(nextSelection);
+      },
+    );
+
+    expect(selection).toEqual({
+      nodeId: 'n-1',
+      paperIds: ['paper-a', 'paper-b'],
+    });
+    expect(calls).toEqual([
+      {
+        nodeId: 'n-1',
+        paperIds: ['paper-a', 'paper-b'],
+      },
+    ]);
+  });
+
+  it('does not notify evidence inspector hook when target node is missing', () => {
+    const calls: Array<{nodeId: string; paperIds: string[]}> = [];
+    const selection = notifyEvidenceInspectorSelection(
+      [makeNode({node_id: 'n-1', linked_paper_ids: ['paper-a']})],
+      'missing-node',
+      (nextSelection) => {
+        calls.push(nextSelection);
+      },
+    );
+
+    expect(selection).toBeNull();
+    expect(calls).toEqual([]);
   });
 });
 

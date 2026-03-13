@@ -231,6 +231,18 @@ export function buildEvidenceInspectorSelection(
   return null;
 }
 
+export function notifyEvidenceInspectorSelection(
+  nodes: LogicalBackboneNode[],
+  targetNodeId: string,
+  onNodeSelectForInspector?: (selection: EvidenceInspectorSelection) => void,
+): EvidenceInspectorSelection | null {
+  const selection = buildEvidenceInspectorSelection(nodes, targetNodeId);
+  if (selection) {
+    onNodeSelectForInspector?.(selection);
+  }
+  return selection;
+}
+
 export function LogicalBackboneTreeScaffold({
   nodes,
   selectedNodeId,
@@ -354,10 +366,11 @@ export function LogicalBackboneTreeScaffold({
                         data-inspector-target={node.node_id}
                         disabled={disabled}
                         onClick={() => {
-                          const selection = buildEvidenceInspectorSelection(nodes, node.node_id);
-                          if (selection) {
-                            onNodeSelectForInspector?.(selection);
-                          }
+                          notifyEvidenceInspectorSelection(
+                            nodes,
+                            node.node_id,
+                            onNodeSelectForInspector,
+                          );
                         }}
                         style={{
                           borderRadius: 999,
