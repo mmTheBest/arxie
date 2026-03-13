@@ -236,3 +236,73 @@ def test_planning_artifacts_support_dependency_propagation() -> None:
     assert impacted[("experiment_flow_diagram", "experiment-1")] is True
     assert impacted[("analysis_plan_tree", "analysis-1")] is True
     assert impacted[("outcome_comparison_matrix", "outcome-1")] is True
+
+
+def test_dependency_creation_rejects_self_edge() -> None:
+    client = TestClient(_mk_app())
+    _ = _upsert_node(
+        client,
+        session_id="session-1",
+        artifact="logical_tree",
+        node_id="logic-1",
+        content="Problem statement",
+    )
+
+    response = client.post(
+        "/api/proposal/artifacts/session-1/dependencies",
+        json={
+            "upstream_artifact": "logical_tree",
+            "upstream_node_id": "logic-1",
+            "downstream_artifact": "logical_tree",
+            "downstream_node_id": "logic-1",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"] == "invalid_input"
+    assert "must connect different nodes" in payload["message"]
+
+
+def test_dependency_creation_rejects_cycle_edge() -> None:
+    client = TestClient(_mk_app())
+    _ = _upsert_node(
+        client,
+        session_id="session-1",
+        artifact="logical_tree",
+        node_id="logic-1",
+        content="Problem statement",
+    )
+    _ = _upsert_node(
+        client,
+        session_id="session-1",
+        artifact="evidence_map",
+        node_id="evidence-1",
+        content="Evidence bucket",
+    )
+
+    first = client.post(
+        "/api/proposal/artifacts/session-1/dependencies",
+        json={
+            "upstream_artifact": "logical_tree",
+            "upstream_node_id": "logic-1",
+            "downstream_artifact": "evidence_map",
+            "downstream_node_id": "evidence-1",
+        },
+    )
+    assert first.status_code == 201
+
+    cycle = client.post(
+        "/api/proposal/artifacts/session-1/dependencies",
+        json={
+            "upstream_artifact": "evidence_map",
+            "upstream_node_id": "evidence-1",
+            "downstream_artifact": "logical_tree",
+            "downstream_node_id": "logic-1",
+        },
+    )
+
+    assert cycle.status_code == 400
+    payload = cycle.json()
+    assert payload["error"] == "invalid_input"
+    assert "would create a cycle" in payload["message"]

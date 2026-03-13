@@ -119,8 +119,18 @@ class ArtifactSyncManager:
         upstream_key = (upstream_artifact, _normalize_node_id(upstream_node_id))
         downstream_key = (downstream_artifact, _normalize_node_id(downstream_node_id))
 
+        if upstream_key == downstream_key:
+            raise ValueError("dependency edge must connect different nodes")
+
         self._require_node(graph, session_id=key, key=upstream_key)
         self._require_node(graph, session_id=key, key=downstream_key)
+
+        if self._would_create_cycle(
+            graph,
+            upstream_key=upstream_key,
+            downstream_key=downstream_key,
+        ):
+            raise ValueError("dependency edge would create a cycle")
 
         graph.edges.setdefault(upstream_key, set()).add(downstream_key)
         graph.edges.setdefault(downstream_key, set())
@@ -214,11 +224,24 @@ class ArtifactSyncManager:
         queue: deque[tuple[ProposalArtifact, str]] = deque(graph.edges.get(source_key, ()))
         while queue:
             candidate = queue.popleft()
+            if candidate == source_key:
+                continue
             if candidate in discovered:
                 continue
             discovered.add(candidate)
             queue.extend(graph.edges.get(candidate, ()))
         return discovered
+
+    @classmethod
+    def _would_create_cycle(
+        cls,
+        graph: _SessionArtifactGraph,
+        *,
+        upstream_key: tuple[ProposalArtifact, str],
+        downstream_key: tuple[ProposalArtifact, str],
+    ) -> bool:
+        reachable_from_downstream = cls._collect_downstream(graph, downstream_key)
+        return upstream_key in reachable_from_downstream
 
     @staticmethod
     def _require_node(
