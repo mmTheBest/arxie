@@ -145,3 +145,17 @@ def test_transition_outputs_are_deterministic_for_identical_inputs() -> None:
 
     assert out_a == out_b
 
+
+def test_stage_four_and_five_required_fields_match_planning_artifact_contract() -> None:
+    engine = ProposalStageEngine()
+
+    assert engine.required_fields(ProposalStage.DATA_FEASIBILITY_PLANNING) == (
+        "data_options_table",
+        "feasibility_scorecard",
+        "selected_data_strategy",
+    )
+    assert engine.required_fields(ProposalStage.EXPERIMENT_ANALYSIS_DESIGN) == (
+        "experiment_flow_diagram",
+        "analysis_plan_tree",
+        "outcome_comparison_matrix",
+    )

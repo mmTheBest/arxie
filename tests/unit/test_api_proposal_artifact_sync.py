@@ -153,3 +153,86 @@ def test_provenance_clickthrough_returns_not_found_when_node_has_no_link() -> No
     assert response.status_code == 404
     payload = response.json()
     assert payload["error"] == "provenance_not_found"
+
+
+def test_planning_artifacts_support_dependency_propagation() -> None:
+    client = TestClient(_mk_app())
+
+    _ = _upsert_node(
+        client,
+        session_id="session-1",
+        artifact="data_options_table",
+        node_id="data-option-1",
+        content="Public cohort option with demographics and outcomes.",
+    )
+    _ = _upsert_node(
+        client,
+        session_id="session-1",
+        artifact="experiment_flow_diagram",
+        node_id="experiment-1",
+        content="Enroll -> randomize -> monitor -> evaluate.",
+    )
+    _ = _upsert_node(
+        client,
+        session_id="session-1",
+        artifact="analysis_plan_tree",
+        node_id="analysis-1",
+        content="Primary model -> sensitivity checks.",
+    )
+    _ = _upsert_node(
+        client,
+        session_id="session-1",
+        artifact="outcome_comparison_matrix",
+        node_id="outcome-1",
+        content="Expected and adverse outcomes by branch.",
+    )
+
+    dep_1 = client.post(
+        "/api/proposal/artifacts/session-1/dependencies",
+        json={
+            "upstream_artifact": "data_options_table",
+            "upstream_node_id": "data-option-1",
+            "downstream_artifact": "experiment_flow_diagram",
+            "downstream_node_id": "experiment-1",
+        },
+    )
+    assert dep_1.status_code == 201
+
+    dep_2 = client.post(
+        "/api/proposal/artifacts/session-1/dependencies",
+        json={
+            "upstream_artifact": "experiment_flow_diagram",
+            "upstream_node_id": "experiment-1",
+            "downstream_artifact": "analysis_plan_tree",
+            "downstream_node_id": "analysis-1",
+        },
+    )
+    assert dep_2.status_code == 201
+
+    dep_3 = client.post(
+        "/api/proposal/artifacts/session-1/dependencies",
+        json={
+            "upstream_artifact": "analysis_plan_tree",
+            "upstream_node_id": "analysis-1",
+            "downstream_artifact": "outcome_comparison_matrix",
+            "downstream_node_id": "outcome-1",
+        },
+    )
+    assert dep_3.status_code == 201
+
+    edited = client.post(
+        "/api/proposal/artifacts/session-1/edits",
+        json={
+            "artifact": "data_options_table",
+            "node_id": "data-option-1",
+            "content": "Public cohort option (revised for coverage gaps).",
+        },
+    )
+    assert edited.status_code == 200
+    payload = edited.json()
+    assert payload["impacted_count"] == 3
+
+    impacted = {(item["artifact"], item["node_id"]): item["stale"] for item in payload["impacted"]}
+    assert impacted[("experiment_flow_diagram", "experiment-1")] is True
+    assert impacted[("analysis_plan_tree", "analysis-1")] is True
+    assert impacted[("outcome_comparison_matrix", "outcome-1")] is True

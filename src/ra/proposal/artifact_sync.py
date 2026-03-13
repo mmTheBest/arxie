@@ -13,6 +13,11 @@ class ProposalArtifact(str, Enum):
     LOGICAL_TREE = "logical_tree"
     EVIDENCE_MAP = "evidence_map"
     HYPOTHESIS_TREE = "hypothesis_tree"
+    DATA_OPTIONS_TABLE = "data_options_table"
+    FEASIBILITY_SCORECARD = "feasibility_scorecard"
+    EXPERIMENT_FLOW_DIAGRAM = "experiment_flow_diagram"
+    ANALYSIS_PLAN_TREE = "analysis_plan_tree"
+    OUTCOME_COMPARISON_MATRIX = "outcome_comparison_matrix"
 
 
 @dataclass(frozen=True, slots=True)

@@ -1390,7 +1390,11 @@ def create_app(
         ),
         artifact: ProposalArtifact = Path(
             ...,
-            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+            description=(
+                "Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`, "
+                "`data_options_table`, `feasibility_scorecard`, `experiment_flow_diagram`, "
+                "`analysis_plan_tree`, `outcome_comparison_matrix`)."
+            ),
         ),
         node_id: str = Path(
             ...,
@@ -1590,7 +1594,11 @@ def create_app(
         ),
         artifact: ProposalArtifact = Path(
             ...,
-            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+            description=(
+                "Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`, "
+                "`data_options_table`, `feasibility_scorecard`, `experiment_flow_diagram`, "
+                "`analysis_plan_tree`, `outcome_comparison_matrix`)."
+            ),
         ),
         node_id: str = Path(
             ...,
@@ -1664,7 +1672,11 @@ def create_app(
         ),
         artifact: ProposalArtifact = Path(
             ...,
-            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+            description=(
+                "Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`, "
+                "`data_options_table`, `feasibility_scorecard`, `experiment_flow_diagram`, "
+                "`analysis_plan_tree`, `outcome_comparison_matrix`)."
+            ),
         ),
         node_id: str = Path(
             ...,
