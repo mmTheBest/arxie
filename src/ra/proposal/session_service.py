@@ -10,6 +10,7 @@ from ra.proposal.store import (
     ProposalSessionSnapshot,
     ProposalSessionStore,
     SessionNotFoundError,
+    SessionVersionConflictError,
 )
 
 
@@ -46,6 +47,7 @@ class ProposalSessionService:
         expected_version: int,
     ) -> ProposalSessionSnapshot:
         current = self.get_session(session_id)
+        _assert_expected_version(current, expected_version)
         updated_state = self._stage_engine.update_stage_payload(current.state, stage, payload)
         return self._store.save_snapshot(
             current.session_id,
@@ -60,6 +62,7 @@ class ProposalSessionService:
         expected_version: int,
     ) -> ProposalSessionSnapshot:
         current = self.get_session(session_id)
+        _assert_expected_version(current, expected_version)
         advanced_state = self._stage_engine.advance_stage(current.state)
         return self._store.save_snapshot(
             current.session_id,
@@ -73,3 +76,15 @@ def _normalize_session_id(session_id: str) -> str:
     if not key:
         raise ValueError("session_id must not be empty")
     return key
+
+
+def _assert_expected_version(
+    snapshot: ProposalSessionSnapshot,
+    expected_version: int,
+) -> None:
+    if snapshot.version != expected_version:
+        raise SessionVersionConflictError(
+            snapshot.session_id,
+            expected_version=expected_version,
+            current_version=snapshot.version,
+        )

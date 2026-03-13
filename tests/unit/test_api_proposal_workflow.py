@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from ra.api import create_app
-from ra.proposal import ProposalStage
+from ra.proposal import ProposalStage, ProposalStageEngine
 
 
 class _StubRetriever:
@@ -129,6 +129,104 @@ def test_advance_stage_endpoint_rejects_incomplete_stage_with_structured_error()
     assert payload["error"] == "stage_transition_rejected"
     assert payload["details"][0]["reason"] == "incomplete_stage"
     assert "problem" in payload["details"][0]["missing_fields"]
+
+
+def test_advance_stage_endpoint_returns_version_conflict_before_stage_validation() -> None:
+    client = TestClient(_mk_app())
+    _ = _create_session(client, session_id="session-1")
+    updated = client.patch(
+        "/api/proposal/sessions/session-1/stages/idea_intake",
+        json={
+            "expected_version": 0,
+            "payload": {"problem": "P"},
+        },
+    )
+    assert updated.status_code == 200
+
+    stale = client.post("/api/proposal/sessions/session-1/advance", json={"expected_version": 0})
+
+    assert stale.status_code == 409
+    payload = stale.json()
+    assert payload["error"] == "version_conflict"
+    assert payload["details"][0]["session_id"] == "session-1"
+    assert payload["details"][0]["expected_version"] == 0
+    assert payload["details"][0]["current_version"] == 1
+
+
+def test_advance_stage_endpoint_rejects_final_stage_with_structured_reason() -> None:
+    client = TestClient(_mk_app())
+    _ = _create_session(client, session_id="session-1")
+    engine = ProposalStageEngine()
+
+    version = 0
+    for stage in engine.stage_sequence[:-1]:
+        fill_stage = client.patch(
+            f"/api/proposal/sessions/session-1/stages/{stage.value}",
+            json={
+                "expected_version": version,
+                "payload": engine.required_fields_payload(stage),
+            },
+        )
+        assert fill_stage.status_code == 200
+        version = fill_stage.json()["version"]
+
+        advance_stage = client.post(
+            "/api/proposal/sessions/session-1/advance",
+            json={"expected_version": version},
+        )
+        assert advance_stage.status_code == 200
+        version = advance_stage.json()["version"]
+
+    fill_final = client.patch(
+        f"/api/proposal/sessions/session-1/stages/{ProposalStage.PROPOSAL_ASSEMBLY.value}",
+        json={
+            "expected_version": version,
+            "payload": engine.required_fields_payload(ProposalStage.PROPOSAL_ASSEMBLY),
+        },
+    )
+    assert fill_final.status_code == 200
+    version = fill_final.json()["version"]
+
+    final_advance = client.post(
+        "/api/proposal/sessions/session-1/advance",
+        json={"expected_version": version},
+    )
+
+    assert final_advance.status_code == 409
+    payload = final_advance.json()
+    assert payload["error"] == "stage_transition_rejected"
+    assert payload["details"][0]["reason"] == "final_stage_reached"
+    assert payload["details"][0]["from_stage"] == ProposalStage.PROPOSAL_ASSEMBLY.value
+    assert payload["details"][0]["to_stage"] == ProposalStage.PROPOSAL_ASSEMBLY.value
+
+
+def test_stage_gate_entry_exit_requires_non_empty_required_fields() -> None:
+    client = TestClient(_mk_app())
+    _ = _create_session(client, session_id="session-1")
+
+    update = client.patch(
+        "/api/proposal/sessions/session-1/stages/idea_intake",
+        json={
+            "expected_version": 0,
+            "payload": {
+                "problem": "Unsupported claims in generated summaries.",
+                "target_population": "   ",
+                "mechanism": "Retrieval-grounded synthesis with citation checks.",
+                "expected_outcome": "Higher precision in citation-backed claims.",
+            },
+        },
+    )
+
+    assert update.status_code == 200
+    payload = update.json()
+    assert payload["state"]["stage_states"]["idea_intake"]["confirmed"] is False
+
+    advance = client.post("/api/proposal/sessions/session-1/advance", json={"expected_version": 1})
+    assert advance.status_code == 409
+    error = advance.json()
+    assert error["error"] == "stage_transition_rejected"
+    assert error["details"][0]["reason"] == "incomplete_stage"
+    assert "target_population" in error["details"][0]["missing_fields"]
 
 
 def test_update_stage_endpoint_rejects_stale_version_with_conflict_error() -> None:

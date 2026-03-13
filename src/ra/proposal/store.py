@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Protocol
+from typing import Any, Mapping, Protocol
 
-from ra.proposal.models import ProposalWorkflowState, StageState
+from ra.proposal.models import STAGE_SEQUENCE, ProposalStage, ProposalWorkflowState, StageState
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,8 +150,53 @@ def _clone_snapshot(snapshot: ProposalSessionSnapshot) -> ProposalSessionSnapsho
 
 
 def _clone_state(state: ProposalWorkflowState) -> ProposalWorkflowState:
-    stage_states = {
-        stage: StageState(payload=dict(stage_state.payload), confirmed=stage_state.confirmed)
-        for stage, stage_state in state.stage_states.items()
-    }
-    return ProposalWorkflowState(current_stage=state.current_stage, stage_states=stage_states)
+    current_stage = _normalize_stage(state.current_stage) or STAGE_SEQUENCE[0]
+
+    incoming = state.stage_states if isinstance(state.stage_states, Mapping) else {}
+    normalized_stage_states: dict[ProposalStage, StageState] = {}
+    for raw_stage, raw_stage_state in incoming.items():
+        stage = _normalize_stage(raw_stage)
+        if stage is None:
+            continue
+        normalized_stage_states[stage] = _coerce_stage_state(raw_stage_state)
+
+    canonical_stage_states: dict[ProposalStage, StageState] = {}
+    for stage in STAGE_SEQUENCE:
+        canonical_stage_states[stage] = normalized_stage_states.get(stage, StageState())
+
+    return ProposalWorkflowState(current_stage=current_stage, stage_states=canonical_stage_states)
+
+
+def _normalize_stage(value: object) -> ProposalStage | None:
+    if isinstance(value, ProposalStage):
+        return value
+    if isinstance(value, str):
+        candidate = value.strip()
+        if not candidate:
+            return None
+        try:
+            return ProposalStage(candidate)
+        except ValueError:
+            return None
+    return None
+
+
+def _coerce_stage_state(value: object) -> StageState:
+    if isinstance(value, StageState):
+        return StageState(
+            payload=_coerce_payload(value.payload),
+            confirmed=bool(value.confirmed),
+        )
+
+    if isinstance(value, Mapping):
+        payload = _coerce_payload(value.get("payload"))
+        confirmed = bool(value.get("confirmed", False))
+        return StageState(payload=payload, confirmed=confirmed)
+
+    return StageState()
+
+
+def _coerce_payload(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): payload_value for key, payload_value in value.items()}

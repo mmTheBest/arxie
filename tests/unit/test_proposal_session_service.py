@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from ra.proposal import (
     InMemoryProposalSessionStore,
+    ProposalSessionSnapshot,
     ProposalSessionService,
     ProposalStage,
     ProposalStageEngine,
+    ProposalWorkflowState,
     SessionVersionConflictError,
+    StageState,
 )
 
 
@@ -88,6 +91,29 @@ def test_update_rejects_stale_version_with_predictable_conflict_error() -> None:
         raise AssertionError("Expected SessionVersionConflictError for stale version")
 
 
+def test_advance_rejects_stale_version_before_transition_validation() -> None:
+    service = ProposalSessionService(
+        store=InMemoryProposalSessionStore(),
+        stage_engine=ProposalStageEngine(),
+    )
+    _ = service.create_session("session-1")
+    _ = service.update_stage_payload(
+        "session-1",
+        ProposalStage.IDEA_INTAKE,
+        {"problem": "Only one field"},
+        expected_version=0,
+    )
+
+    try:
+        _ = service.advance_stage("session-1", expected_version=0)
+    except SessionVersionConflictError as exc:
+        assert exc.session_id == "session-1"
+        assert exc.expected_version == 0
+        assert exc.current_version == 1
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected SessionVersionConflictError for stale advance version")
+
+
 def test_recover_latest_snapshot_after_store_rehydration() -> None:
     engine = ProposalStageEngine()
     store = InMemoryProposalSessionStore()
@@ -117,3 +143,38 @@ def test_recover_latest_snapshot_after_store_rehydration() -> None:
         expected_version=recovered.version,
     )
     assert updated.version == 3
+
+
+def test_rehydrate_legacy_snapshot_backfills_missing_stage_state_entries() -> None:
+    legacy_state = ProposalWorkflowState(
+        current_stage="logic_refinement",  # type: ignore[arg-type]
+        stage_states={  # type: ignore[arg-type]
+            "idea_intake": StageState(
+                payload={
+                    "problem": "Legacy snapshot",
+                    "target_population": "Researchers",
+                    "mechanism": "Legacy mechanism",
+                    "expected_outcome": "Legacy outcome",
+                },
+                confirmed=True,
+            ),
+            "logic_refinement": {"payload": {"problem_gap_chain": "gap"}, "confirmed": False},
+            "deprecated_stage": StageState(payload={"obsolete": True}, confirmed=True),
+        },
+    )
+    legacy_snapshot = ProposalSessionSnapshot(
+        session_id="legacy-session",
+        version=7,
+        state=legacy_state,
+    )
+    recovered_store = InMemoryProposalSessionStore.from_snapshots({"legacy-session": legacy_snapshot})
+    recovered_service = ProposalSessionService(store=recovered_store, stage_engine=ProposalStageEngine())
+
+    recovered = recovered_service.get_session("legacy-session")
+
+    assert recovered.session_id == "legacy-session"
+    assert recovered.version == 7
+    assert recovered.state.current_stage is ProposalStage.LOGIC_REFINEMENT
+    assert tuple(recovered.state.stage_states.keys()) == ProposalStageEngine().stage_sequence
+    assert recovered.state.stage_states[ProposalStage.EVIDENCE_MAPPING].payload == {}
+    assert recovered.state.stage_states[ProposalStage.EVIDENCE_MAPPING].confirmed is False
