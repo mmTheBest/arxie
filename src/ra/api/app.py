@@ -37,6 +37,8 @@ from ra.api.models import (
     SearchResponse,
 )
 from ra.api.proposal_models import (
+    ProposalEvidenceQueryRequest,
+    ProposalEvidenceQueryResponse,
     ProposalBranchCompareRequest,
     ProposalBranchCompareResponse,
     ProposalBranchCreateRequest,
@@ -50,6 +52,7 @@ from ra.api.proposal_models import (
 from ra.proposal import (
     BranchAlreadyExistsError,
     BranchNotFoundError,
+    EvidenceMapper,
     HypothesisBranchManager,
     InMemoryProposalSessionStore,
     ProposalSessionService,
@@ -70,6 +73,7 @@ AgentFactory = Callable[..., ResearchAgent]
 LitReviewAgentFactory = Callable[[], LitReviewAgent]
 ProposalSessionServiceFactory = Callable[[], ProposalSessionService]
 BranchManagerFactory = Callable[[], HypothesisBranchManager]
+EvidenceMapperFactory = Callable[[], EvidenceMapper]
 
 OPENAPI_TAGS = [
     {
@@ -319,6 +323,10 @@ def _default_branch_manager_factory() -> HypothesisBranchManager:
     return HypothesisBranchManager()
 
 
+def _default_evidence_mapper_factory() -> EvidenceMapper:
+    return EvidenceMapper()
+
+
 def _sources_for_request(source: str) -> tuple[str, ...]:
     if source == "both":
         return ("semantic_scholar", "arxiv")
@@ -386,6 +394,14 @@ def _get_or_create_branch_manager(app: FastAPI) -> HypothesisBranchManager:
         manager = app.state.branch_manager_factory()
         app.state.branch_manager = manager
     return manager
+
+
+def _get_or_create_evidence_mapper(app: FastAPI) -> EvidenceMapper:
+    mapper = getattr(app.state, "evidence_mapper", None)
+    if mapper is None:
+        mapper = app.state.evidence_mapper_factory()
+        app.state.evidence_mapper = mapper
+    return mapper
 
 
 def _version_conflict_details(exc: SessionVersionConflictError) -> list[dict[str, Any]]:
@@ -461,6 +477,7 @@ def create_app(
     lit_review_agent_factory: LitReviewAgentFactory | None = None,
     proposal_session_service_factory: ProposalSessionServiceFactory | None = None,
     branch_manager_factory: BranchManagerFactory | None = None,
+    evidence_mapper_factory: EvidenceMapperFactory | None = None,
 ) -> FastAPI:
     """Create the FastAPI app instance.
 
@@ -475,6 +492,7 @@ def create_app(
         proposal_session_service_factory or _default_proposal_session_service_factory
     )
     branch_manager_factory = branch_manager_factory or _default_branch_manager_factory
+    evidence_mapper_factory = evidence_mapper_factory or _default_evidence_mapper_factory
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -482,6 +500,7 @@ def create_app(
         app.state.chat_agents = {}
         app.state.proposal_session_service = proposal_session_service_factory()
         app.state.branch_manager = branch_manager_factory()
+        app.state.evidence_mapper = evidence_mapper_factory()
         try:
             yield
         finally:
@@ -510,9 +529,11 @@ def create_app(
     app.state.lit_review_agent_factory = lit_review_agent_factory
     app.state.proposal_session_service_factory = proposal_session_service_factory
     app.state.branch_manager_factory = branch_manager_factory
+    app.state.evidence_mapper_factory = evidence_mapper_factory
     app.state.chat_agents = {}
     app.state.proposal_session_service = proposal_session_service_factory()
     app.state.branch_manager = branch_manager_factory()
+    app.state.evidence_mapper = evidence_mapper_factory()
 
     register_exception_handlers(app)
 
@@ -1249,6 +1270,45 @@ def create_app(
             ) from exc
 
         return ProposalSessionResponse.from_snapshot(snapshot)
+
+    @app.post(
+        "/api/proposal/evidence/query",
+        response_model=ProposalEvidenceQueryResponse,
+        summary="Query Proposal Evidence Map",
+        description=(
+            "Buckets provided papers into supporting, contradicting, and adjacent evidence "
+            "for a proposal claim with deterministic relevance scoring."
+        ),
+        response_description="Bucketed evidence map with representative IDs and landscape summary.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid evidence mapping request.",
+                error="invalid_input",
+                message="claim must not be empty",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def query_proposal_evidence(
+        payload: ProposalEvidenceQueryRequest = Body(...),
+    ) -> ProposalEvidenceQueryResponse:
+        mapper = _get_or_create_evidence_mapper(app)
+        try:
+            mapped = mapper.map_evidence(
+                payload.claim,
+                [paper.to_domain() for paper in payload.papers],
+                pinned_paper_ids=set(payload.pinned_paper_ids),
+            )
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalEvidenceQueryResponse.from_domain(mapped)
 
     @app.post(
         "/api/proposal/branches",

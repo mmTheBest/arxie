@@ -11,10 +11,14 @@ from ra.proposal import (
     BranchComparisonResult,
     BranchConfidenceLabel,
     BranchScorecard,
+    EvidenceItem,
+    EvidenceMappingResult,
     HypothesisBranch,
+    LandscapeSummary,
     ProposalSessionSnapshot,
     ProposalStage,
 )
+from ra.retrieval.unified import Paper
 
 
 class ProposalSessionCreateRequest(BaseModel):
@@ -134,6 +138,124 @@ class ProposalSessionResponse(BaseModel):
             state=ProposalWorkflowStateResponse(
                 current_stage=snapshot.state.current_stage,
                 stage_states=stage_states,
+            ),
+        )
+
+
+class ProposalEvidencePaperInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    paper_id: str = Field(..., min_length=1, max_length=256)
+    title: str = Field(..., min_length=1, max_length=1000)
+    abstract: str | None = Field(None, max_length=20000)
+    doi: str | None = Field(None, max_length=512)
+    arxiv_id: str | None = Field(None, max_length=128)
+    pdf_url: str | None = Field(None, max_length=2048)
+    source: str = Field(
+        default="semantic_scholar",
+        description="Paper source (`semantic_scholar`, `arxiv`, or `both`).",
+    )
+
+    def to_domain(self) -> Paper:
+        source_value = str(self.source or "semantic_scholar").strip().lower()
+        if source_value not in {"semantic_scholar", "arxiv", "both"}:
+            source_value = "semantic_scholar"
+
+        return Paper(
+            id=self.paper_id,
+            title=self.title,
+            abstract=self.abstract,
+            authors=[],
+            year=None,
+            venue=None,
+            citation_count=None,
+            pdf_url=self.pdf_url,
+            doi=self.doi,
+            arxiv_id=self.arxiv_id,
+            source=source_value,
+        )
+
+
+class ProposalEvidenceQueryRequest(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "claim": "Transformers improve machine translation quality.",
+                "pinned_paper_ids": ["p1"],
+                "papers": [
+                    {
+                        "paper_id": "p1",
+                        "title": "Positive evidence",
+                        "abstract": "Transformers improve translation quality.",
+                        "doi": "10.1000/xyz123",
+                    }
+                ],
+            }
+        },
+    )
+
+    claim: str = Field(..., min_length=1, max_length=4000)
+    papers: list[ProposalEvidencePaperInput] = Field(..., min_length=1)
+    pinned_paper_ids: list[str] = Field(default_factory=list)
+
+
+class ProposalEvidenceItemResponse(BaseModel):
+    paper_id: str
+    title: str
+    relevance_score: float = Field(..., ge=0.0, le=1.0)
+    pinned: bool
+    provenance_link: str | None = None
+
+    @classmethod
+    def from_domain(cls, item: EvidenceItem) -> ProposalEvidenceItemResponse:
+        return cls(
+            paper_id=item.paper_id,
+            title=item.title,
+            relevance_score=item.relevance_score,
+            pinned=item.pinned,
+            provenance_link=item.provenance_link,
+        )
+
+
+class ProposalLandscapeSummaryResponse(BaseModel):
+    consensus: str
+    controversy: str
+    unknowns: str
+
+    @classmethod
+    def from_domain(cls, summary: LandscapeSummary) -> ProposalLandscapeSummaryResponse:
+        return cls(
+            consensus=summary.consensus,
+            controversy=summary.controversy,
+            unknowns=summary.unknowns,
+        )
+
+
+class ProposalEvidenceQueryResponse(BaseModel):
+    supporting: list[ProposalEvidenceItemResponse]
+    contradicting: list[ProposalEvidenceItemResponse]
+    adjacent: list[ProposalEvidenceItemResponse]
+    bucket_counts: dict[str, int]
+    representative_paper_ids: dict[str, list[str]]
+    landscape_summary: ProposalLandscapeSummaryResponse
+
+    @classmethod
+    def from_domain(cls, result: EvidenceMappingResult) -> ProposalEvidenceQueryResponse:
+        return cls(
+            supporting=[ProposalEvidenceItemResponse.from_domain(item) for item in result.supporting],
+            contradicting=[
+                ProposalEvidenceItemResponse.from_domain(item)
+                for item in result.contradicting
+            ],
+            adjacent=[ProposalEvidenceItemResponse.from_domain(item) for item in result.adjacent],
+            bucket_counts=dict(result.bucket_counts),
+            representative_paper_ids={
+                key: list(value)
+                for key, value in result.representative_paper_ids.items()
+            },
+            landscape_summary=ProposalLandscapeSummaryResponse.from_domain(
+                result.landscape_summary
             ),
         )
 

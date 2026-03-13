@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
-from ra.retrieval.unified import Paper
+from ra.retrieval.unified import Paper, normalize_arxiv_id, normalize_doi
 
 _TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
 _STOPWORDS = {
@@ -78,6 +78,7 @@ class EvidenceItem:
     title: str
     relevance_score: float
     pinned: bool = False
+    provenance_link: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +181,7 @@ class EvidenceMapper:
                     title=title,
                     relevance_score=round(max(0.0, min(1.0, similarity)), 6),
                     pinned=pinned,
+                    provenance_link=self._provenance_link(paper),
                 )
             )
 
@@ -269,3 +271,19 @@ class EvidenceMapper:
         if norm_a == 0.0 or norm_b == 0.0:
             return 0.0
         return dot / (norm_a * norm_b)
+
+    @staticmethod
+    def _provenance_link(paper: Paper) -> str | None:
+        doi = normalize_doi(getattr(paper, "doi", None))
+        if doi:
+            return f"https://doi.org/{doi}"
+
+        pdf_url = str(getattr(paper, "pdf_url", "") or "").strip()
+        if pdf_url:
+            return pdf_url
+
+        arxiv_id = normalize_arxiv_id(str(getattr(paper, "arxiv_id", "") or ""))
+        if arxiv_id:
+            return f"https://arxiv.org/abs/{arxiv_id}"
+
+        return None
