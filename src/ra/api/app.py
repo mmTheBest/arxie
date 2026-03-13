@@ -7,7 +7,9 @@ import inspect
 import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from fastapi import Body, FastAPI, Path
@@ -39,6 +41,10 @@ from ra.api.models import (
 from ra.api.proposal_models import (
     ProposalEvidenceQueryRequest,
     ProposalEvidenceQueryResponse,
+    ProposalConversationMessageCreateRequest,
+    ProposalConversationMessageResponse,
+    ProposalConversationThreadResponse,
+    ProposalEvidenceInspectorResponse,
     ProposalBranchCompareRequest,
     ProposalBranchCompareResponse,
     ProposalBranchCreateRequest,
@@ -404,6 +410,16 @@ def _get_or_create_evidence_mapper(app: FastAPI) -> EvidenceMapper:
     return mapper
 
 
+def _get_or_create_proposal_conversations(
+    app: FastAPI,
+) -> dict[str, list[ProposalConversationMessageResponse]]:
+    conversations = getattr(app.state, "proposal_conversations", None)
+    if not isinstance(conversations, dict):
+        conversations = {}
+        app.state.proposal_conversations = conversations
+    return conversations
+
+
 def _version_conflict_details(exc: SessionVersionConflictError) -> list[dict[str, Any]]:
     return [
         {
@@ -501,6 +517,7 @@ def create_app(
         app.state.proposal_session_service = proposal_session_service_factory()
         app.state.branch_manager = branch_manager_factory()
         app.state.evidence_mapper = evidence_mapper_factory()
+        app.state.proposal_conversations = {}
         try:
             yield
         finally:
@@ -534,6 +551,7 @@ def create_app(
     app.state.proposal_session_service = proposal_session_service_factory()
     app.state.branch_manager = branch_manager_factory()
     app.state.evidence_mapper = evidence_mapper_factory()
+    app.state.proposal_conversations = {}
 
     register_exception_handlers(app)
 
@@ -1309,6 +1327,118 @@ def create_app(
             ) from exc
 
         return ProposalEvidenceQueryResponse.from_domain(mapped)
+
+    @app.post(
+        "/api/proposal/conversations/{session_id}/messages",
+        response_model=ProposalConversationMessageResponse,
+        status_code=201,
+        summary="Create Proposal Conversation Message",
+        description="Appends a message to a proposal session conversation thread.",
+        response_description="Created conversation message.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid conversation message payload.",
+                error="invalid_input",
+                message="role must be one of: user, assistant, system",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def create_proposal_conversation_message(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        payload: ProposalConversationMessageCreateRequest = Body(...),
+    ) -> ProposalConversationMessageResponse:
+        role = str(payload.role or "").strip().lower()
+        if role not in {"user", "assistant", "system"}:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message="role must be one of: user, assistant, system",
+            )
+
+        message = ProposalConversationMessageResponse(
+            message_id=str(uuid4()),
+            session_id=session_id,
+            role=role,
+            content=payload.content,
+            metadata={str(k): str(v) for k, v in payload.metadata.items()},
+            created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        )
+        conversations = _get_or_create_proposal_conversations(app)
+        conversations.setdefault(session_id, []).append(message)
+        return message
+
+    @app.get(
+        "/api/proposal/conversations/{session_id}/messages",
+        response_model=ProposalConversationThreadResponse,
+        summary="List Proposal Conversation Messages",
+        description="Returns the ordered conversation thread for a proposal session.",
+        response_description="Conversation thread snapshot.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid conversation lookup request.",
+                error="invalid_input",
+                message="session_id must not be empty",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def list_proposal_conversation_messages(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+    ) -> ProposalConversationThreadResponse:
+        conversations = _get_or_create_proposal_conversations(app)
+        messages = list(conversations.get(session_id, []))
+        return ProposalConversationThreadResponse(
+            session_id=session_id,
+            count=len(messages),
+            messages=messages,
+        )
+
+    @app.get(
+        "/api/proposal/evidence/{session_id}/inspector",
+        response_model=ProposalEvidenceInspectorResponse,
+        summary="Get Proposal Evidence Inspector",
+        description=(
+            "Returns the evidence-inspector contract payload for the dashboard shell. "
+            "Current implementation returns placeholder items until persisted inspector state is wired."
+        ),
+        response_description="Evidence inspector payload.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid evidence inspector request.",
+                error="invalid_input",
+                message="session_id must not be empty",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def get_proposal_evidence_inspector(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+    ) -> ProposalEvidenceInspectorResponse:
+        return ProposalEvidenceInspectorResponse(
+            session_id=session_id,
+            count=0,
+            items=[],
+        )
 
     @app.post(
         "/api/proposal/branches",

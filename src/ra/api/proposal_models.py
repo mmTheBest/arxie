@@ -260,6 +260,43 @@ class ProposalEvidenceQueryResponse(BaseModel):
         )
 
 
+class ProposalConversationMessageCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    role: str = Field(..., min_length=1, max_length=32)
+    content: str = Field(..., min_length=1, max_length=20000)
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
+class ProposalConversationMessageResponse(BaseModel):
+    message_id: str
+    session_id: str
+    role: str
+    content: str
+    metadata: dict[str, str] = Field(default_factory=dict)
+    created_at: str
+
+
+class ProposalConversationThreadResponse(BaseModel):
+    session_id: str
+    count: int
+    messages: list[ProposalConversationMessageResponse]
+
+
+class ProposalEvidenceInspectorItemResponse(BaseModel):
+    paper_id: str
+    title: str
+    bucket: str
+    relevance_score: float = Field(..., ge=0.0, le=1.0)
+    provenance_link: str | None = None
+
+
+class ProposalEvidenceInspectorResponse(BaseModel):
+    session_id: str
+    count: int
+    items: list[ProposalEvidenceInspectorItemResponse]
+
+
 class ProposalBranchScorecard(BaseModel):
     evidence_support: float = Field(
         ...,
