@@ -17,6 +17,8 @@ from ra.proposal import (
     HypothesisBranch,
     LandscapeSummary,
     ProposalArtifact,
+    ProposalExportDocument,
+    ProposalExportFormat,
     ProposalSessionSnapshot,
     ProposalStage,
 )
@@ -144,6 +146,29 @@ class ProposalSessionResponse(BaseModel):
         )
 
 
+class ProposalSessionExportResponse(BaseModel):
+    session_id: str
+    format: ProposalExportFormat
+    content_type: str
+    filename: str
+    content: str
+
+    @classmethod
+    def from_domain(
+        cls,
+        *,
+        session_id: str,
+        export: ProposalExportDocument,
+    ) -> ProposalSessionExportResponse:
+        return cls(
+            session_id=session_id,
+            format=export.export_format,
+            content_type=export.content_type,
+            filename=export.filename,
+            content=export.content,
+        )
+
+
 class ProposalEvidencePaperInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -245,7 +270,9 @@ class ProposalEvidenceQueryResponse(BaseModel):
     @classmethod
     def from_domain(cls, result: EvidenceMappingResult) -> ProposalEvidenceQueryResponse:
         return cls(
-            supporting=[ProposalEvidenceItemResponse.from_domain(item) for item in result.supporting],
+            supporting=[
+                ProposalEvidenceItemResponse.from_domain(item) for item in result.supporting
+            ],
             contradicting=[
                 ProposalEvidenceItemResponse.from_domain(item)
                 for item in result.contradicting

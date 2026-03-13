@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from fastapi import Body, FastAPI, Path
+from fastapi import Body, FastAPI, Path, Query
 from fastapi.responses import RedirectResponse
 
 from ra.agents.lit_review_agent import LitReviewAgent
@@ -48,18 +48,19 @@ from ra.api.proposal_models import (
     ProposalArtifactEditSourceResponse,
     ProposalArtifactNodeResponse,
     ProposalArtifactNodeUpsertRequest,
-    ProposalEvidenceQueryRequest,
-    ProposalEvidenceQueryResponse,
-    ProposalConversationMessageCreateRequest,
-    ProposalConversationMessageResponse,
-    ProposalConversationThreadResponse,
-    ProposalEvidenceInspectorResponse,
     ProposalBranchCompareRequest,
     ProposalBranchCompareResponse,
     ProposalBranchCreateRequest,
     ProposalBranchListResponse,
     ProposalBranchResponse,
+    ProposalConversationMessageCreateRequest,
+    ProposalConversationMessageResponse,
+    ProposalConversationThreadResponse,
+    ProposalEvidenceInspectorResponse,
+    ProposalEvidenceQueryRequest,
+    ProposalEvidenceQueryResponse,
     ProposalSessionCreateRequest,
+    ProposalSessionExportResponse,
     ProposalSessionResponse,
     ProposalStageAdvanceRequest,
     ProposalStageUpdateRequest,
@@ -73,6 +74,9 @@ from ra.proposal import (
     HypothesisBranchManager,
     InMemoryProposalSessionStore,
     ProposalArtifact,
+    ProposalAssembler,
+    ProposalExporter,
+    ProposalExportFormat,
     ProposalSessionService,
     ProposalStage,
     ProposalStageEngine,
@@ -94,6 +98,8 @@ ProposalSessionServiceFactory = Callable[[], ProposalSessionService]
 BranchManagerFactory = Callable[[], HypothesisBranchManager]
 EvidenceMapperFactory = Callable[[], EvidenceMapper]
 ArtifactSyncManagerFactory = Callable[[], ArtifactSyncManager]
+ProposalAssemblerFactory = Callable[[], ProposalAssembler]
+ProposalExporterFactory = Callable[[], ProposalExporter]
 
 OPENAPI_TAGS = [
     {
@@ -351,6 +357,14 @@ def _default_artifact_sync_manager_factory() -> ArtifactSyncManager:
     return ArtifactSyncManager()
 
 
+def _default_proposal_assembler_factory() -> ProposalAssembler:
+    return ProposalAssembler()
+
+
+def _default_proposal_exporter_factory() -> ProposalExporter:
+    return ProposalExporter()
+
+
 def _sources_for_request(source: str) -> tuple[str, ...]:
     if source == "both":
         return ("semantic_scholar", "arxiv")
@@ -446,6 +460,22 @@ def _get_or_create_artifact_sync_manager(app: FastAPI) -> ArtifactSyncManager:
     return manager
 
 
+def _get_or_create_proposal_assembler(app: FastAPI) -> ProposalAssembler:
+    assembler = getattr(app.state, "proposal_assembler", None)
+    if assembler is None:
+        assembler = app.state.proposal_assembler_factory()
+        app.state.proposal_assembler = assembler
+    return assembler
+
+
+def _get_or_create_proposal_exporter(app: FastAPI) -> ProposalExporter:
+    exporter = getattr(app.state, "proposal_exporter", None)
+    if exporter is None:
+        exporter = app.state.proposal_exporter_factory()
+        app.state.proposal_exporter = exporter
+    return exporter
+
+
 def _version_conflict_details(exc: SessionVersionConflictError) -> list[dict[str, Any]]:
     return [
         {
@@ -521,6 +551,8 @@ def create_app(
     branch_manager_factory: BranchManagerFactory | None = None,
     evidence_mapper_factory: EvidenceMapperFactory | None = None,
     artifact_sync_manager_factory: ArtifactSyncManagerFactory | None = None,
+    proposal_assembler_factory: ProposalAssemblerFactory | None = None,
+    proposal_exporter_factory: ProposalExporterFactory | None = None,
 ) -> FastAPI:
     """Create the FastAPI app instance.
 
@@ -539,6 +571,8 @@ def create_app(
     artifact_sync_manager_factory = (
         artifact_sync_manager_factory or _default_artifact_sync_manager_factory
     )
+    proposal_assembler_factory = proposal_assembler_factory or _default_proposal_assembler_factory
+    proposal_exporter_factory = proposal_exporter_factory or _default_proposal_exporter_factory
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -548,6 +582,8 @@ def create_app(
         app.state.branch_manager = branch_manager_factory()
         app.state.evidence_mapper = evidence_mapper_factory()
         app.state.artifact_sync_manager = artifact_sync_manager_factory()
+        app.state.proposal_assembler = proposal_assembler_factory()
+        app.state.proposal_exporter = proposal_exporter_factory()
         app.state.proposal_conversations = {}
         try:
             yield
@@ -579,11 +615,15 @@ def create_app(
     app.state.branch_manager_factory = branch_manager_factory
     app.state.evidence_mapper_factory = evidence_mapper_factory
     app.state.artifact_sync_manager_factory = artifact_sync_manager_factory
+    app.state.proposal_assembler_factory = proposal_assembler_factory
+    app.state.proposal_exporter_factory = proposal_exporter_factory
     app.state.chat_agents = {}
     app.state.proposal_session_service = proposal_session_service_factory()
     app.state.branch_manager = branch_manager_factory()
     app.state.evidence_mapper = evidence_mapper_factory()
     app.state.artifact_sync_manager = artifact_sync_manager_factory()
+    app.state.proposal_assembler = proposal_assembler_factory()
+    app.state.proposal_exporter = proposal_exporter_factory()
     app.state.proposal_conversations = {}
 
     register_exception_handlers(app)
@@ -1153,6 +1193,69 @@ def create_app(
             ) from exc
 
         return ProposalSessionResponse.from_snapshot(snapshot)
+
+    @app.get(
+        "/api/proposal/sessions/{session_id}/export",
+        response_model=ProposalSessionExportResponse,
+        summary="Export Proposal Session Draft",
+        description=(
+            "Assembles a deterministic proposal draft from session stage state and "
+            "returns markdown or PDF export content."
+        ),
+        response_description="Rendered proposal export payload.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid export request.",
+                error="invalid_input",
+                message="session_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Session not found.",
+                error="session_not_found",
+                message="Session 'proposal-session-1' was not found.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def export_proposal_session(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        export_format: ProposalExportFormat = Query(
+            default=ProposalExportFormat.MARKDOWN,
+            alias="format",
+            description="Export format (`markdown` or `pdf`).",
+        ),
+    ) -> ProposalSessionExportResponse:
+        service = _get_or_create_proposal_session_service(app)
+        assembler = _get_or_create_proposal_assembler(app)
+        exporter = _get_or_create_proposal_exporter(app)
+        try:
+            snapshot = service.get_session(session_id)
+            draft = assembler.assemble(session_id=snapshot.session_id, state=snapshot.state)
+            exported = exporter.render(draft, export_format=export_format)
+        except SessionNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="session_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalSessionExportResponse.from_domain(
+            session_id=snapshot.session_id,
+            export=exported,
+        )
 
     @app.patch(
         "/api/proposal/sessions/{session_id}/stages/{stage}",
@@ -1798,7 +1901,8 @@ def create_app(
         summary="Get Proposal Evidence Inspector",
         description=(
             "Returns the evidence-inspector contract payload for the dashboard shell. "
-            "Current implementation returns placeholder items until persisted inspector state is wired."
+            "Current implementation returns placeholder items until persisted inspector "
+            "state is wired."
         ),
         response_description="Evidence inspector payload.",
         responses={
