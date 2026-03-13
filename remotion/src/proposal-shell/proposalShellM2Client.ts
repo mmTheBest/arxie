@@ -62,6 +62,11 @@ export interface CreateConversationMessageInput {
   metadata?: Record<string, string>;
 }
 
+export interface PromoteBranchInput {
+  sessionId: string;
+  branchId: string;
+}
+
 export interface ProposalShellM2Client {
   loadShellState: (sessionId: string) => Promise<ProposalShellStateContract>;
   saveStagePayload: (
@@ -70,6 +75,7 @@ export interface ProposalShellM2Client {
   createConversationMessage: (
     input: CreateConversationMessageInput,
   ) => Promise<ProposalConversationMessageContract>;
+  promoteBranch: (input: PromoteBranchInput) => Promise<ProposalBranchContract>;
 }
 
 export interface ProposalShellM2ClientOptions {
@@ -97,6 +103,14 @@ function normalizeSessionId(sessionId: string): string {
   const normalized = sessionId.trim();
   if (!normalized) {
     throw new Error('sessionId must not be empty');
+  }
+  return normalized;
+}
+
+function normalizeBranchId(branchId: string): string {
+  const normalized = branchId.trim();
+  if (!normalized) {
+    throw new Error('branchId must not be empty');
   }
   return normalized;
 }
@@ -295,9 +309,25 @@ export function createProposalShellM2Client(
     );
   };
 
+  const promoteBranch = async (input: PromoteBranchInput): Promise<ProposalBranchContract> => {
+    const normalizedSessionId = normalizeSessionId(input.sessionId);
+    const normalizedBranchId = normalizeBranchId(input.branchId);
+    return requestJson(
+      fetchImpl,
+      toRequestUrl(
+        apiBase,
+        `/api/proposal/branches/${encodeURIComponent(normalizedSessionId)}/${encodeURIComponent(normalizedBranchId)}/promote`,
+      ),
+      {
+        method: 'POST',
+      },
+    );
+  };
+
   return {
     loadShellState,
     saveStagePayload,
     createConversationMessage,
+    promoteBranch,
   };
 }
