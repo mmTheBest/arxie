@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-from fastapi import Body, FastAPI
+from fastapi import Body, FastAPI, Path
 
 from ra.agents.lit_review_agent import LitReviewAgent
 from ra.agents.research_agent import ResearchAgent
@@ -36,6 +36,30 @@ from ra.api.models import (
     SearchRequest,
     SearchResponse,
 )
+from ra.api.proposal_models import (
+    ProposalBranchCompareRequest,
+    ProposalBranchCompareResponse,
+    ProposalBranchCreateRequest,
+    ProposalBranchListResponse,
+    ProposalBranchResponse,
+    ProposalSessionCreateRequest,
+    ProposalSessionResponse,
+    ProposalStageAdvanceRequest,
+    ProposalStageUpdateRequest,
+)
+from ra.proposal import (
+    BranchAlreadyExistsError,
+    BranchNotFoundError,
+    HypothesisBranchManager,
+    InMemoryProposalSessionStore,
+    ProposalSessionService,
+    ProposalStage,
+    ProposalStageEngine,
+    SessionAlreadyExistsError,
+    SessionNotFoundError,
+    SessionVersionConflictError,
+    StageTransitionError,
+)
 from ra.retrieval.unified import UnifiedRetriever
 from ra.utils.logging_config import configure_logging_from_env
 
@@ -44,6 +68,8 @@ logger = logging.getLogger(__name__)
 RetrieverFactory = Callable[[], UnifiedRetriever]
 AgentFactory = Callable[..., ResearchAgent]
 LitReviewAgentFactory = Callable[[], LitReviewAgent]
+ProposalSessionServiceFactory = Callable[[], ProposalSessionService]
+BranchManagerFactory = Callable[[], HypothesisBranchManager]
 
 OPENAPI_TAGS = [
     {
@@ -56,6 +82,10 @@ OPENAPI_TAGS = [
             "Core research workflow endpoints for searching papers, retrieving paper "
             "metadata, and generating grounded answers."
         ),
+    },
+    {
+        "name": "proposal",
+        "description": "Stage-gated proposal workflow endpoints for session state management.",
     },
 ]
 
@@ -161,6 +191,78 @@ RETRIEVE_BATCH_REQUEST_EXAMPLES = {
     }
 }
 
+PROPOSAL_CREATE_SESSION_REQUEST_EXAMPLES = {
+    "new_session": {
+        "summary": "Create a proposal workflow session",
+        "value": {"session_id": "proposal-session-1"},
+    }
+}
+
+PROPOSAL_UPDATE_STAGE_REQUEST_EXAMPLES = {
+    "stage_payload_patch": {
+        "summary": "Merge payload fields into a stage snapshot",
+        "value": {
+            "expected_version": 2,
+            "payload": {
+                "supporting_evidence": ["paper-1", "paper-2"],
+                "contradicting_evidence": ["paper-3"],
+                "landscape_summary": "Consensus exists, but methods are heterogeneous.",
+            },
+        },
+    }
+}
+
+PROPOSAL_ADVANCE_STAGE_REQUEST_EXAMPLES = {
+    "next_stage": {
+        "summary": "Advance to the next stage",
+        "value": {"expected_version": 3},
+    }
+}
+
+PROPOSAL_BRANCH_CREATE_REQUEST_EXAMPLES = {
+    "new_branch": {
+        "summary": "Create a branch",
+        "value": {
+            "session_id": "proposal-session-1",
+            "branch_id": "branch-a",
+            "name": "Primary mechanism",
+            "hypothesis": "Mechanism A drives outcome B.",
+            "scorecard": {
+                "evidence_support": 0.8,
+                "feasibility": 0.7,
+                "risk": 0.3,
+                "impact": 0.9,
+            },
+        },
+    },
+    "fork_branch": {
+        "summary": "Fork an existing branch",
+        "value": {
+            "session_id": "proposal-session-1",
+            "branch_id": "branch-b",
+            "parent_branch_id": "branch-a",
+            "name": "Alternative mechanism",
+            "hypothesis": "Mechanism C drives outcome B.",
+            "scorecard": {
+                "evidence_support": 0.6,
+                "feasibility": 0.8,
+                "risk": 0.4,
+                "impact": 0.8,
+            },
+        },
+    },
+}
+
+PROPOSAL_BRANCH_COMPARE_REQUEST_EXAMPLES = {
+    "compare_two_branches": {
+        "summary": "Compare two branches",
+        "value": {
+            "session_id": "proposal-session-1",
+            "branch_ids": ["branch-a", "branch-b"],
+        },
+    }
+}
+
 
 def _error_response_doc(
     *,
@@ -204,6 +306,17 @@ def _default_agent_factory(*, deep_search: bool = False) -> ResearchAgent:
 
 def _default_lit_review_agent_factory() -> LitReviewAgent:
     return LitReviewAgent()
+
+
+def _default_proposal_session_service_factory() -> ProposalSessionService:
+    return ProposalSessionService(
+        store=InMemoryProposalSessionStore(),
+        stage_engine=ProposalStageEngine(),
+    )
+
+
+def _default_branch_manager_factory() -> HypothesisBranchManager:
+    return HypothesisBranchManager()
 
 
 def _sources_for_request(source: str) -> tuple[str, ...]:
@@ -259,6 +372,45 @@ def _get_or_create_shared_retriever(app: FastAPI) -> Any:
     return retriever
 
 
+def _get_or_create_proposal_session_service(app: FastAPI) -> ProposalSessionService:
+    service = getattr(app.state, "proposal_session_service", None)
+    if service is None:
+        service = app.state.proposal_session_service_factory()
+        app.state.proposal_session_service = service
+    return service
+
+
+def _get_or_create_branch_manager(app: FastAPI) -> HypothesisBranchManager:
+    manager = getattr(app.state, "branch_manager", None)
+    if manager is None:
+        manager = app.state.branch_manager_factory()
+        app.state.branch_manager = manager
+    return manager
+
+
+def _version_conflict_details(exc: SessionVersionConflictError) -> list[dict[str, Any]]:
+    return [
+        {
+            "session_id": exc.session_id,
+            "expected_version": exc.expected_version,
+            "current_version": exc.current_version,
+        }
+    ]
+
+
+def _stage_transition_details(exc: StageTransitionError) -> list[dict[str, Any]]:
+    details: dict[str, Any] = {
+        "reason": exc.reason.value,
+        "from_stage": exc.from_stage.value,
+        "to_stage": exc.to_stage.value,
+    }
+    if exc.allowed_next_stage is not None:
+        details["allowed_next_stage"] = exc.allowed_next_stage.value
+    if exc.missing_fields:
+        details["missing_fields"] = list(exc.missing_fields)
+    return [details]
+
+
 async def _run_search_batch(
     retriever: Any,
     jobs: list[tuple[str, int, tuple[str, ...]]],
@@ -307,6 +459,8 @@ def create_app(
     retriever_factory: RetrieverFactory | None = None,
     agent_factory: AgentFactory | None = None,
     lit_review_agent_factory: LitReviewAgentFactory | None = None,
+    proposal_session_service_factory: ProposalSessionServiceFactory | None = None,
+    branch_manager_factory: BranchManagerFactory | None = None,
 ) -> FastAPI:
     """Create the FastAPI app instance.
 
@@ -317,11 +471,17 @@ def create_app(
     retriever_factory = retriever_factory or _default_retriever_factory
     agent_factory = agent_factory or _default_agent_factory
     lit_review_agent_factory = lit_review_agent_factory or _default_lit_review_agent_factory
+    proposal_session_service_factory = (
+        proposal_session_service_factory or _default_proposal_session_service_factory
+    )
+    branch_manager_factory = branch_manager_factory or _default_branch_manager_factory
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.retriever = retriever_factory()
         app.state.chat_agents = {}
+        app.state.proposal_session_service = proposal_session_service_factory()
+        app.state.branch_manager = branch_manager_factory()
         try:
             yield
         finally:
@@ -348,7 +508,11 @@ def create_app(
     app.state.retriever_factory = retriever_factory
     app.state.agent_factory = agent_factory
     app.state.lit_review_agent_factory = lit_review_agent_factory
+    app.state.proposal_session_service_factory = proposal_session_service_factory
+    app.state.branch_manager_factory = branch_manager_factory
     app.state.chat_agents = {}
+    app.state.proposal_session_service = proposal_session_service_factory()
+    app.state.branch_manager = branch_manager_factory()
 
     register_exception_handlers(app)
 
@@ -826,6 +990,478 @@ def create_app(
         payload: LitReviewRequest = Body(..., openapi_examples=LIT_REVIEW_REQUEST_EXAMPLES),
     ) -> LitReviewResponse:
         return await _run_lit_review_pipeline(payload)
+
+    @app.post(
+        "/api/proposal/sessions",
+        response_model=ProposalSessionResponse,
+        status_code=201,
+        summary="Create Proposal Session",
+        description="Creates a proposal workflow session with deterministic initial stage state.",
+        response_description="Created proposal session snapshot.",
+        responses={
+            409: _error_response_doc(
+                description="Session already exists.",
+                error="session_exists",
+                message="Session 'proposal-session-1' already exists.",
+                details=[{"session_id": "proposal-session-1"}],
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def create_proposal_session(
+        payload: ProposalSessionCreateRequest = Body(
+            ...,
+            openapi_examples=PROPOSAL_CREATE_SESSION_REQUEST_EXAMPLES,
+        ),
+    ) -> ProposalSessionResponse:
+        service = _get_or_create_proposal_session_service(app)
+        try:
+            snapshot = service.create_session(payload.session_id)
+        except SessionAlreadyExistsError as exc:
+            raise RAAPIError(
+                status_code=409,
+                error="session_exists",
+                message=str(exc),
+                details=[{"session_id": exc.session_id}],
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalSessionResponse.from_snapshot(snapshot)
+
+    @app.get(
+        "/api/proposal/sessions/{session_id}",
+        response_model=ProposalSessionResponse,
+        summary="Get Proposal Session",
+        description="Returns the latest persisted snapshot for a proposal workflow session.",
+        response_description="Current proposal session snapshot.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid session identifier.",
+                error="invalid_input",
+                message="session_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Session not found.",
+                error="session_not_found",
+                message="Session 'proposal-session-1' was not found.",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def get_proposal_session(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+    ) -> ProposalSessionResponse:
+        service = _get_or_create_proposal_session_service(app)
+        try:
+            snapshot = service.get_session(session_id)
+        except SessionNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="session_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalSessionResponse.from_snapshot(snapshot)
+
+    @app.patch(
+        "/api/proposal/sessions/{session_id}/stages/{stage}",
+        response_model=ProposalSessionResponse,
+        summary="Update Proposal Stage Payload",
+        description=(
+            "Merges payload fields into a target stage snapshot "
+            "using optimistic concurrency checks."
+        ),
+        response_description="Updated proposal session snapshot after stage payload merge.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid stage update request.",
+                error="invalid_input",
+                message="session_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Session not found.",
+                error="session_not_found",
+                message="Session 'proposal-session-1' was not found.",
+            ),
+            409: _error_response_doc(
+                description="Session version conflict.",
+                error="version_conflict",
+                message="Version conflict for session 'proposal-session-1': expected 2, current 3.",
+                details=[
+                    {
+                        "session_id": "proposal-session-1",
+                        "expected_version": 2,
+                        "current_version": 3,
+                    }
+                ],
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def update_proposal_stage(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        stage: ProposalStage = Path(
+            ...,
+            description="Canonical stage identifier to update.",
+        ),
+        payload: ProposalStageUpdateRequest = Body(
+            ...,
+            openapi_examples=PROPOSAL_UPDATE_STAGE_REQUEST_EXAMPLES,
+        ),
+    ) -> ProposalSessionResponse:
+        service = _get_or_create_proposal_session_service(app)
+        try:
+            snapshot = service.update_stage_payload(
+                session_id,
+                stage,
+                payload.payload,
+                expected_version=payload.expected_version,
+            )
+        except SessionNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="session_not_found",
+                message=str(exc),
+            ) from exc
+        except SessionVersionConflictError as exc:
+            raise RAAPIError(
+                status_code=409,
+                error="version_conflict",
+                message=str(exc),
+                details=_version_conflict_details(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalSessionResponse.from_snapshot(snapshot)
+
+    @app.post(
+        "/api/proposal/sessions/{session_id}/advance",
+        response_model=ProposalSessionResponse,
+        summary="Advance Proposal Session Stage",
+        description=(
+            "Advances the session to the next stage when the current stage is complete and "
+            "the session version matches `expected_version`."
+        ),
+        response_description="Updated proposal session snapshot after successful stage transition.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid stage advancement request.",
+                error="invalid_input",
+                message="session_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Session not found.",
+                error="session_not_found",
+                message="Session 'proposal-session-1' was not found.",
+            ),
+            409: _error_response_doc(
+                description="Stage transition rejected.",
+                error="stage_transition_rejected",
+                message="Stage 'idea_intake' is incomplete. Fill missing fields: problem.",
+                details=[
+                    {
+                        "reason": "incomplete_stage",
+                        "from_stage": "idea_intake",
+                        "to_stage": "logic_refinement",
+                        "missing_fields": ["problem"],
+                    }
+                ],
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def advance_proposal_stage(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        payload: ProposalStageAdvanceRequest = Body(
+            ...,
+            openapi_examples=PROPOSAL_ADVANCE_STAGE_REQUEST_EXAMPLES,
+        ),
+    ) -> ProposalSessionResponse:
+        service = _get_or_create_proposal_session_service(app)
+        try:
+            snapshot = service.advance_stage(
+                session_id,
+                expected_version=payload.expected_version,
+            )
+        except SessionNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="session_not_found",
+                message=str(exc),
+            ) from exc
+        except SessionVersionConflictError as exc:
+            raise RAAPIError(
+                status_code=409,
+                error="version_conflict",
+                message=str(exc),
+                details=_version_conflict_details(exc),
+            ) from exc
+        except StageTransitionError as exc:
+            raise RAAPIError(
+                status_code=409,
+                error="stage_transition_rejected",
+                message=str(exc),
+                details=_stage_transition_details(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalSessionResponse.from_snapshot(snapshot)
+
+    @app.post(
+        "/api/proposal/branches",
+        response_model=ProposalBranchResponse,
+        status_code=201,
+        summary="Create Proposal Branch",
+        description="Creates a hypothesis branch or fork for proposal exploration.",
+        response_description="Created branch snapshot.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid branch request.",
+                error="invalid_input",
+                message="branch_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Parent branch not found.",
+                error="branch_not_found",
+                message="Branch 'missing' was not found for session 'proposal-session-1'.",
+            ),
+            409: _error_response_doc(
+                description="Branch already exists.",
+                error="branch_exists",
+                message="Branch 'branch-a' already exists for session 'proposal-session-1'.",
+                details=[
+                    {
+                        "session_id": "proposal-session-1",
+                        "branch_id": "branch-a",
+                    }
+                ],
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def create_proposal_branch(
+        payload: ProposalBranchCreateRequest = Body(
+            ...,
+            openapi_examples=PROPOSAL_BRANCH_CREATE_REQUEST_EXAMPLES,
+        ),
+    ) -> ProposalBranchResponse:
+        manager = _get_or_create_branch_manager(app)
+        try:
+            branch = manager.create_branch(
+                session_id=payload.session_id,
+                branch_id=payload.branch_id,
+                name=payload.name,
+                hypothesis=payload.hypothesis,
+                scorecard=payload.scorecard.to_domain(),
+                parent_branch_id=payload.parent_branch_id,
+            )
+        except BranchAlreadyExistsError as exc:
+            raise RAAPIError(
+                status_code=409,
+                error="branch_exists",
+                message=str(exc),
+                details=[{"session_id": exc.session_id, "branch_id": exc.branch_id}],
+            ) from exc
+        except BranchNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="branch_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        return ProposalBranchResponse.from_domain(branch)
+
+    @app.get(
+        "/api/proposal/branches/{session_id}",
+        response_model=ProposalBranchListResponse,
+        summary="List Proposal Branches",
+        description="Lists branches for a proposal session in deterministic creation order.",
+        response_description="Ordered branch list for the session.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid session identifier.",
+                error="invalid_input",
+                message="session_id must not be empty",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def list_proposal_branches(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+    ) -> ProposalBranchListResponse:
+        manager = _get_or_create_branch_manager(app)
+        try:
+            branches = manager.list_branches(session_id)
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        return ProposalBranchListResponse(
+            session_id=session_id,
+            count=len(branches),
+            branches=[ProposalBranchResponse.from_domain(branch) for branch in branches],
+        )
+
+    @app.post(
+        "/api/proposal/branches/compare",
+        response_model=ProposalBranchCompareResponse,
+        summary="Compare Proposal Branches",
+        description=(
+            "Compares branches on evidence support, feasibility, risk, and impact, then returns "
+            "the top-ranked branch."
+        ),
+        response_description="Branch ranking and winner based on normalized aggregate score.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid compare request.",
+                error="invalid_input",
+                message="branch_ids must include at least two unique branch IDs",
+            ),
+            404: _error_response_doc(
+                description="Branch not found for session.",
+                error="branch_not_found",
+                message="Branch 'missing' was not found for session 'proposal-session-1'.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def compare_proposal_branches(
+        payload: ProposalBranchCompareRequest = Body(
+            ...,
+            openapi_examples=PROPOSAL_BRANCH_COMPARE_REQUEST_EXAMPLES,
+        ),
+    ) -> ProposalBranchCompareResponse:
+        manager = _get_or_create_branch_manager(app)
+        try:
+            comparison = manager.compare_branches(
+                session_id=payload.session_id,
+                branch_ids=tuple(payload.branch_ids),
+            )
+        except BranchNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="branch_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        return ProposalBranchCompareResponse.from_domain(comparison)
+
+    @app.post(
+        "/api/proposal/branches/{session_id}/{branch_id}/promote",
+        response_model=ProposalBranchResponse,
+        summary="Promote Proposal Branch",
+        description="Promotes a branch to primary and demotes all other branches in the session.",
+        response_description="Promoted branch snapshot.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid promote request.",
+                error="invalid_input",
+                message="branch_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Branch not found for session.",
+                error="branch_not_found",
+                message="Branch 'missing' was not found for session 'proposal-session-1'.",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def promote_proposal_branch(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        branch_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Branch identifier.",
+        ),
+    ) -> ProposalBranchResponse:
+        manager = _get_or_create_branch_manager(app)
+        try:
+            branch = manager.promote_branch(session_id=session_id, branch_id=branch_id)
+        except BranchNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="branch_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        return ProposalBranchResponse.from_domain(branch)
 
     @app.post(
         "/answer",
