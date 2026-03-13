@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import Body, FastAPI, Path
+from fastapi.responses import RedirectResponse
 
 from ra.agents.lit_review_agent import LitReviewAgent
 from ra.agents.research_agent import ResearchAgent
@@ -39,6 +40,14 @@ from ra.api.models import (
     SearchResponse,
 )
 from ra.api.proposal_models import (
+    ProposalArtifactDependencyCreateRequest,
+    ProposalArtifactDependencyResponse,
+    ProposalArtifactDependencySnapshotResponse,
+    ProposalArtifactEditRequest,
+    ProposalArtifactEditResponse,
+    ProposalArtifactEditSourceResponse,
+    ProposalArtifactNodeResponse,
+    ProposalArtifactNodeUpsertRequest,
     ProposalEvidenceQueryRequest,
     ProposalEvidenceQueryResponse,
     ProposalConversationMessageCreateRequest,
@@ -56,14 +65,18 @@ from ra.api.proposal_models import (
     ProposalStageUpdateRequest,
 )
 from ra.proposal import (
+    ArtifactNodeNotFoundError,
+    ArtifactSyncManager,
     BranchAlreadyExistsError,
     BranchNotFoundError,
     EvidenceMapper,
     HypothesisBranchManager,
     InMemoryProposalSessionStore,
+    ProposalArtifact,
     ProposalSessionService,
     ProposalStage,
     ProposalStageEngine,
+    ProvenanceNotFoundError,
     SessionAlreadyExistsError,
     SessionNotFoundError,
     SessionVersionConflictError,
@@ -80,6 +93,7 @@ LitReviewAgentFactory = Callable[[], LitReviewAgent]
 ProposalSessionServiceFactory = Callable[[], ProposalSessionService]
 BranchManagerFactory = Callable[[], HypothesisBranchManager]
 EvidenceMapperFactory = Callable[[], EvidenceMapper]
+ArtifactSyncManagerFactory = Callable[[], ArtifactSyncManager]
 
 OPENAPI_TAGS = [
     {
@@ -333,6 +347,10 @@ def _default_evidence_mapper_factory() -> EvidenceMapper:
     return EvidenceMapper()
 
 
+def _default_artifact_sync_manager_factory() -> ArtifactSyncManager:
+    return ArtifactSyncManager()
+
+
 def _sources_for_request(source: str) -> tuple[str, ...]:
     if source == "both":
         return ("semantic_scholar", "arxiv")
@@ -420,6 +438,14 @@ def _get_or_create_proposal_conversations(
     return conversations
 
 
+def _get_or_create_artifact_sync_manager(app: FastAPI) -> ArtifactSyncManager:
+    manager = getattr(app.state, "artifact_sync_manager", None)
+    if manager is None:
+        manager = app.state.artifact_sync_manager_factory()
+        app.state.artifact_sync_manager = manager
+    return manager
+
+
 def _version_conflict_details(exc: SessionVersionConflictError) -> list[dict[str, Any]]:
     return [
         {
@@ -494,6 +520,7 @@ def create_app(
     proposal_session_service_factory: ProposalSessionServiceFactory | None = None,
     branch_manager_factory: BranchManagerFactory | None = None,
     evidence_mapper_factory: EvidenceMapperFactory | None = None,
+    artifact_sync_manager_factory: ArtifactSyncManagerFactory | None = None,
 ) -> FastAPI:
     """Create the FastAPI app instance.
 
@@ -509,6 +536,9 @@ def create_app(
     )
     branch_manager_factory = branch_manager_factory or _default_branch_manager_factory
     evidence_mapper_factory = evidence_mapper_factory or _default_evidence_mapper_factory
+    artifact_sync_manager_factory = (
+        artifact_sync_manager_factory or _default_artifact_sync_manager_factory
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -517,6 +547,7 @@ def create_app(
         app.state.proposal_session_service = proposal_session_service_factory()
         app.state.branch_manager = branch_manager_factory()
         app.state.evidence_mapper = evidence_mapper_factory()
+        app.state.artifact_sync_manager = artifact_sync_manager_factory()
         app.state.proposal_conversations = {}
         try:
             yield
@@ -547,10 +578,12 @@ def create_app(
     app.state.proposal_session_service_factory = proposal_session_service_factory
     app.state.branch_manager_factory = branch_manager_factory
     app.state.evidence_mapper_factory = evidence_mapper_factory
+    app.state.artifact_sync_manager_factory = artifact_sync_manager_factory
     app.state.chat_agents = {}
     app.state.proposal_session_service = proposal_session_service_factory()
     app.state.branch_manager = branch_manager_factory()
     app.state.evidence_mapper = evidence_mapper_factory()
+    app.state.artifact_sync_manager = artifact_sync_manager_factory()
     app.state.proposal_conversations = {}
 
     register_exception_handlers(app)
@@ -1327,6 +1360,346 @@ def create_app(
             ) from exc
 
         return ProposalEvidenceQueryResponse.from_domain(mapped)
+
+    @app.put(
+        "/api/proposal/artifacts/{session_id}/nodes/{artifact}/{node_id}",
+        response_model=ProposalArtifactNodeResponse,
+        summary="Upsert Proposal Artifact Node",
+        description=(
+            "Creates or updates an artifact node for cross-artifact synchronization across "
+            "logical tree, evidence map, and hypothesis tree surfaces."
+        ),
+        response_description="Upserted artifact node snapshot.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid artifact node payload.",
+                error="invalid_input",
+                message="content must not be empty",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def upsert_proposal_artifact_node(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        artifact: ProposalArtifact = Path(
+            ...,
+            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+        ),
+        node_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Artifact node identifier.",
+        ),
+        payload: ProposalArtifactNodeUpsertRequest = Body(...),
+    ) -> ProposalArtifactNodeResponse:
+        manager = _get_or_create_artifact_sync_manager(app)
+        try:
+            node = manager.upsert_node(
+                session_id=session_id,
+                artifact=artifact,
+                node_id=node_id,
+                content=payload.content,
+                provenance_link=payload.provenance_link,
+            )
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        return ProposalArtifactNodeResponse.from_domain(node)
+
+    @app.post(
+        "/api/proposal/artifacts/{session_id}/dependencies",
+        response_model=ProposalArtifactDependencyResponse,
+        status_code=201,
+        summary="Create Proposal Artifact Dependency",
+        description=(
+            "Creates a directed dependency edge used to propagate stale markers when "
+            "an upstream artifact node is edited."
+        ),
+        response_description="Created dependency edge.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid dependency payload.",
+                error="invalid_input",
+                message="node_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Artifact node not found.",
+                error="artifact_node_not_found",
+                message=(
+                    "Artifact node 'logical_tree:logic-1' was not found in session "
+                    "'proposal-session-1'."
+                ),
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def create_proposal_artifact_dependency(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        payload: ProposalArtifactDependencyCreateRequest = Body(...),
+    ) -> ProposalArtifactDependencyResponse:
+        manager = _get_or_create_artifact_sync_manager(app)
+        try:
+            manager.add_dependency(
+                session_id=session_id,
+                upstream_artifact=payload.upstream_artifact,
+                upstream_node_id=payload.upstream_node_id,
+                downstream_artifact=payload.downstream_artifact,
+                downstream_node_id=payload.downstream_node_id,
+            )
+        except ArtifactNodeNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="artifact_node_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalArtifactDependencyResponse(
+            session_id=session_id,
+            upstream_artifact=payload.upstream_artifact,
+            upstream_node_id=payload.upstream_node_id,
+            downstream_artifact=payload.downstream_artifact,
+            downstream_node_id=payload.downstream_node_id,
+        )
+
+    @app.post(
+        "/api/proposal/artifacts/{session_id}/edits",
+        response_model=ProposalArtifactEditResponse,
+        summary="Propagate Proposal Artifact Edit",
+        description=(
+            "Applies an artifact node edit and propagates stale markers to dependent "
+            "nodes across synchronized artifact graphs."
+        ),
+        response_description="Edit source and impacted stale-node list.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid edit payload.",
+                error="invalid_input",
+                message="content must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Artifact node not found.",
+                error="artifact_node_not_found",
+                message=(
+                    "Artifact node 'logical_tree:logic-1' was not found in session "
+                    "'proposal-session-1'."
+                ),
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def propagate_proposal_artifact_edit(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        payload: ProposalArtifactEditRequest = Body(...),
+    ) -> ProposalArtifactEditResponse:
+        manager = _get_or_create_artifact_sync_manager(app)
+        try:
+            source, impacted = manager.record_edit(
+                session_id=session_id,
+                artifact=payload.artifact,
+                node_id=payload.node_id,
+                content=payload.content,
+            )
+        except ArtifactNodeNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="artifact_node_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalArtifactEditResponse(
+            session_id=session_id,
+            source=ProposalArtifactEditSourceResponse(
+                artifact=source.artifact,
+                node_id=source.node_id,
+            ),
+            impacted_count=len(impacted),
+            impacted=[ProposalArtifactNodeResponse.from_domain(node) for node in impacted],
+        )
+
+    @app.get(
+        "/api/proposal/artifacts/{session_id}/dependencies/{artifact}/{node_id}",
+        response_model=ProposalArtifactDependencySnapshotResponse,
+        summary="Get Proposal Artifact Dependency Snapshot",
+        description=(
+            "Returns transitive downstream dependencies for an artifact node with "
+            "current stale-marker status."
+        ),
+        response_description="Downstream dependency snapshot.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid dependency lookup request.",
+                error="invalid_input",
+                message="node_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Artifact node not found.",
+                error="artifact_node_not_found",
+                message=(
+                    "Artifact node 'logical_tree:logic-1' was not found in session "
+                    "'proposal-session-1'."
+                ),
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def get_proposal_artifact_dependencies(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        artifact: ProposalArtifact = Path(
+            ...,
+            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+        ),
+        node_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Artifact node identifier.",
+        ),
+    ) -> ProposalArtifactDependencySnapshotResponse:
+        manager = _get_or_create_artifact_sync_manager(app)
+        try:
+            downstream = manager.downstream_nodes(
+                session_id=session_id,
+                artifact=artifact,
+                node_id=node_id,
+            )
+        except ArtifactNodeNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="artifact_node_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalArtifactDependencySnapshotResponse(
+            session_id=session_id,
+            artifact=artifact,
+            node_id=node_id,
+            count=len(downstream),
+            downstream=[ProposalArtifactNodeResponse.from_domain(node) for node in downstream],
+        )
+
+    @app.get(
+        "/api/proposal/artifacts/{session_id}/provenance/{artifact}/{node_id}",
+        summary="Open Proposal Artifact Provenance Link",
+        description=(
+            "Returns a temporary redirect to the source provenance link for the requested "
+            "artifact node."
+        ),
+        response_description="307 redirect to provenance URL.",
+        responses={
+            307: {"description": "Redirected to provenance source."},
+            400: _error_response_doc(
+                description="Invalid provenance lookup request.",
+                error="invalid_input",
+                message="node_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Provenance link not found.",
+                error="provenance_not_found",
+                message=(
+                    "Provenance link not found for artifact node 'evidence_map:paper-1' in "
+                    "session 'proposal-session-1'."
+                ),
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def open_proposal_artifact_provenance(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        artifact: ProposalArtifact = Path(
+            ...,
+            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+        ),
+        node_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Artifact node identifier.",
+        ),
+    ) -> RedirectResponse:
+        manager = _get_or_create_artifact_sync_manager(app)
+        try:
+            url = manager.provenance_link(
+                session_id=session_id,
+                artifact=artifact,
+                node_id=node_id,
+            )
+        except ArtifactNodeNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="artifact_node_not_found",
+                message=str(exc),
+            ) from exc
+        except ProvenanceNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="provenance_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return RedirectResponse(url=url, status_code=307)
 
     @app.post(
         "/api/proposal/conversations/{session_id}/messages",

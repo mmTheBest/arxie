@@ -10,6 +10,13 @@ from ra.proposal.branching import (
     HypothesisBranch,
     HypothesisBranchManager,
 )
+from ra.proposal.artifact_sync import (
+    ArtifactNode,
+    ArtifactNodeNotFoundError,
+    ArtifactSyncManager,
+    ProposalArtifact,
+    ProvenanceNotFoundError,
+)
 from ra.proposal.evidence_mapper import (
     EvidenceItem,
     EvidenceMapper,
@@ -44,6 +51,11 @@ __all__ = [
     "BranchNotFoundError",
     "BranchAlreadyExistsError",
     "HypothesisBranchManager",
+    "ProposalArtifact",
+    "ArtifactNode",
+    "ArtifactSyncManager",
+    "ArtifactNodeNotFoundError",
+    "ProvenanceNotFoundError",
     "EvidenceItem",
     "EvidenceMappingResult",
     "LandscapeSummary",

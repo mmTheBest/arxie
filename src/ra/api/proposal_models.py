@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from ra.proposal import (
+    ArtifactNode,
     BranchComparisonItem,
     BranchComparisonResult,
     BranchConfidenceLabel,
@@ -15,6 +16,7 @@ from ra.proposal import (
     EvidenceMappingResult,
     HypothesisBranch,
     LandscapeSummary,
+    ProposalArtifact,
     ProposalSessionSnapshot,
     ProposalStage,
 )
@@ -295,6 +297,76 @@ class ProposalEvidenceInspectorResponse(BaseModel):
     session_id: str
     count: int
     items: list[ProposalEvidenceInspectorItemResponse]
+
+
+class ProposalArtifactNodeUpsertRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    content: str = Field(..., min_length=1, max_length=20000)
+    provenance_link: str | None = Field(None, max_length=2048)
+
+
+class ProposalArtifactNodeResponse(BaseModel):
+    artifact: ProposalArtifact
+    node_id: str
+    content: str
+    provenance_link: str | None = None
+    stale: bool
+
+    @classmethod
+    def from_domain(cls, node: ArtifactNode) -> ProposalArtifactNodeResponse:
+        return cls(
+            artifact=node.artifact,
+            node_id=node.node_id,
+            content=node.content,
+            provenance_link=node.provenance_link,
+            stale=node.stale,
+        )
+
+
+class ProposalArtifactDependencyCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    upstream_artifact: ProposalArtifact
+    upstream_node_id: str = Field(..., min_length=1, max_length=128)
+    downstream_artifact: ProposalArtifact
+    downstream_node_id: str = Field(..., min_length=1, max_length=128)
+
+
+class ProposalArtifactDependencyResponse(BaseModel):
+    session_id: str
+    upstream_artifact: ProposalArtifact
+    upstream_node_id: str
+    downstream_artifact: ProposalArtifact
+    downstream_node_id: str
+
+
+class ProposalArtifactEditRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    artifact: ProposalArtifact
+    node_id: str = Field(..., min_length=1, max_length=128)
+    content: str = Field(..., min_length=1, max_length=20000)
+
+
+class ProposalArtifactEditSourceResponse(BaseModel):
+    artifact: ProposalArtifact
+    node_id: str
+
+
+class ProposalArtifactEditResponse(BaseModel):
+    session_id: str
+    source: ProposalArtifactEditSourceResponse
+    impacted_count: int
+    impacted: list[ProposalArtifactNodeResponse]
+
+
+class ProposalArtifactDependencySnapshotResponse(BaseModel):
+    session_id: str
+    artifact: ProposalArtifact
+    node_id: str
+    count: int
+    downstream: list[ProposalArtifactNodeResponse]
 
 
 class ProposalBranchScorecard(BaseModel):
