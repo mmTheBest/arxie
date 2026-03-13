@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ra.proposal import (
     BranchComparisonItem,
     BranchComparisonResult,
+    BranchConfidenceLabel,
     BranchScorecard,
     HypothesisBranch,
     ProposalSessionSnapshot,
@@ -216,6 +217,10 @@ class ProposalBranchCreateRequest(BaseModel):
         max_length=128,
         description="Optional parent branch ID for forked branches.",
     )
+    metadata: dict[str, str] = Field(
+        default_factory=dict,
+        description="Optional metadata fields attached to the hypothesis node.",
+    )
 
 
 class ProposalBranchResponse(BaseModel):
@@ -224,6 +229,8 @@ class ProposalBranchResponse(BaseModel):
     name: str
     hypothesis: str
     scorecard: ProposalBranchScorecard
+    confidence_label: BranchConfidenceLabel
+    metadata: dict[str, str] = Field(default_factory=dict)
     parent_branch_id: str | None = None
     lineage: list[str] = Field(default_factory=list)
     is_primary: bool
@@ -236,6 +243,8 @@ class ProposalBranchResponse(BaseModel):
             name=branch.name,
             hypothesis=branch.hypothesis,
             scorecard=ProposalBranchScorecard.from_domain(branch.scorecard),
+            confidence_label=branch.confidence_label,
+            metadata=dict(branch.metadata),
             parent_branch_id=branch.parent_branch_id,
             lineage=list(branch.lineage),
             is_primary=branch.is_primary,
@@ -272,6 +281,7 @@ class ProposalBranchComparisonItemResponse(BaseModel):
     branch_id: str
     name: str
     scorecard: ProposalBranchScorecard
+    confidence_label: BranchConfidenceLabel
     aggregate_score: float = Field(..., ge=0.0, le=1.0)
     is_primary: bool
 
@@ -284,6 +294,7 @@ class ProposalBranchComparisonItemResponse(BaseModel):
             branch_id=item.branch_id,
             name=item.name,
             scorecard=ProposalBranchScorecard.from_domain(item.scorecard),
+            confidence_label=item.confidence_label,
             aggregate_score=item.aggregate_score,
             is_primary=item.is_primary,
         )

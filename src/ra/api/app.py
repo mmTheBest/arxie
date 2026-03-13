@@ -1298,6 +1298,7 @@ def create_app(
                 name=payload.name,
                 hypothesis=payload.hypothesis,
                 scorecard=payload.scorecard.to_domain(),
+                metadata=payload.metadata,
                 parent_branch_id=payload.parent_branch_id,
             )
         except BranchAlreadyExistsError as exc:
@@ -1359,6 +1360,58 @@ def create_app(
             count=len(branches),
             branches=[ProposalBranchResponse.from_domain(branch) for branch in branches],
         )
+
+    @app.get(
+        "/api/proposal/branches/{session_id}/{branch_id}",
+        response_model=ProposalBranchResponse,
+        summary="Get Proposal Branch",
+        description="Returns a single hypothesis branch node for a proposal session.",
+        response_description="Hypothesis branch snapshot.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid branch lookup request.",
+                error="invalid_input",
+                message="branch_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Branch not found for session.",
+                error="branch_not_found",
+                message="Branch 'missing' was not found for session 'proposal-session-1'.",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def get_proposal_branch(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        branch_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Branch identifier.",
+        ),
+    ) -> ProposalBranchResponse:
+        manager = _get_or_create_branch_manager(app)
+        try:
+            branch = manager.get_branch(session_id=session_id, branch_id=branch_id)
+        except BranchNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="branch_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        return ProposalBranchResponse.from_domain(branch)
 
     @app.post(
         "/api/proposal/branches/compare",

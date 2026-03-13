@@ -33,6 +33,7 @@ def test_create_and_fork_branch_preserves_lineage_integrity() -> None:
         name="Root hypothesis",
         hypothesis="Primary causal hypothesis.",
         scorecard=_score(evidence_support=0.7, feasibility=0.8, risk=0.3, impact=0.9),
+        metadata={"owner": "m3-backend"},
     )
 
     fork = manager.fork_branch(
@@ -46,8 +47,31 @@ def test_create_and_fork_branch_preserves_lineage_integrity() -> None:
 
     assert root.parent_branch_id is None
     assert root.lineage == ()
+    assert root.metadata["owner"] == "m3-backend"
     assert fork.parent_branch_id == "root"
     assert fork.lineage == ("root",)
+    assert fork.metadata["owner"] == "m3-backend"
+
+
+def test_branch_confidence_label_derives_from_scorecard() -> None:
+    manager = HypothesisBranchManager()
+    high = manager.create_branch(
+        session_id="session-1",
+        branch_id="high",
+        name="High confidence",
+        hypothesis="High confidence hypothesis.",
+        scorecard=_score(evidence_support=0.95, feasibility=0.9, risk=0.1, impact=0.9),
+    )
+    low = manager.create_branch(
+        session_id="session-1",
+        branch_id="low",
+        name="Low confidence",
+        hypothesis="Low confidence hypothesis.",
+        scorecard=_score(evidence_support=0.2, feasibility=0.2, risk=0.9, impact=0.1),
+    )
+
+    assert high.confidence_label.value == "high"
+    assert low.confidence_label.value == "low"
 
 
 def test_promote_branch_marks_only_one_primary_branch() -> None:

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+from enum import Enum
+
+
+class BranchConfidenceLabel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +33,8 @@ class HypothesisBranch:
     name: str
     hypothesis: str
     scorecard: BranchScorecard
+    confidence_label: BranchConfidenceLabel
+    metadata: dict[str, str] = field(default_factory=dict)
     parent_branch_id: str | None = None
     lineage: tuple[str, ...] = ()
     is_primary: bool = False
@@ -36,6 +45,7 @@ class BranchComparisonItem:
     branch_id: str
     name: str
     scorecard: BranchScorecard
+    confidence_label: BranchConfidenceLabel
     aggregate_score: float
     is_primary: bool
 
@@ -76,6 +86,7 @@ class HypothesisBranchManager:
         name: str,
         hypothesis: str,
         scorecard: BranchScorecard | None = None,
+        metadata: dict[str, str] | None = None,
         parent_branch_id: str | None = None,
     ) -> HypothesisBranch:
         sid = _normalize_key(session_id, field_name="session_id")
@@ -96,12 +107,15 @@ class HypothesisBranchManager:
 
         lineage = () if parent is None else parent.lineage + (parent.branch_id,)
         has_primary = any(branch.is_primary for branch in session_branches.values())
+        branch_scorecard = scorecard or _default_scorecard()
         branch = HypothesisBranch(
             session_id=sid,
             branch_id=bid,
             name=branch_name,
             hypothesis=branch_hypothesis,
-            scorecard=scorecard or _default_scorecard(),
+            scorecard=branch_scorecard,
+            confidence_label=_confidence_label_for_scorecard(branch_scorecard),
+            metadata=_normalize_metadata(metadata if metadata is not None else (parent.metadata if parent else {})),
             parent_branch_id=parent.branch_id if parent else None,
             lineage=lineage,
             is_primary=not has_primary,
@@ -127,6 +141,7 @@ class HypothesisBranchManager:
             name=name,
             hypothesis=hypothesis or source.hypothesis,
             scorecard=scorecard or source.scorecard,
+            metadata=dict(source.metadata),
             parent_branch_id=source.branch_id,
         )
 
@@ -183,6 +198,7 @@ class HypothesisBranchManager:
                     branch_id=branch.branch_id,
                     name=branch.name,
                     scorecard=branch.scorecard,
+                    confidence_label=branch.confidence_label,
                     aggregate_score=aggregate,
                     is_primary=branch.is_primary,
                 )
@@ -216,6 +232,21 @@ def _default_scorecard() -> BranchScorecard:
         risk=0.5,
         impact=0.5,
     )
+
+
+def _normalize_metadata(metadata: dict[str, str] | None) -> dict[str, str]:
+    if metadata is None:
+        return {}
+    return {str(key).strip(): str(value).strip() for key, value in metadata.items() if str(key).strip()}
+
+
+def _confidence_label_for_scorecard(scorecard: BranchScorecard) -> BranchConfidenceLabel:
+    aggregate = _aggregate_score(scorecard)
+    if aggregate >= 0.75:
+        return BranchConfidenceLabel.HIGH
+    if aggregate >= 0.5:
+        return BranchConfidenceLabel.MEDIUM
+    return BranchConfidenceLabel.LOW
 
 
 def _aggregate_score(scorecard: BranchScorecard) -> float:

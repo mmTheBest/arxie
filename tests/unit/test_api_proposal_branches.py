@@ -29,6 +29,7 @@ def _create_branch(
     hypothesis: str,
     parent_branch_id: str | None = None,
     scorecard: dict[str, float] | None = None,
+    metadata: dict[str, str] | None = None,
 ):
     payload: dict[str, object] = {
         "session_id": session_id,
@@ -45,6 +46,8 @@ def _create_branch(
     }
     if parent_branch_id is not None:
         payload["parent_branch_id"] = parent_branch_id
+    if metadata is not None:
+        payload["metadata"] = metadata
     return client.post("/api/proposal/branches", json=payload)
 
 
@@ -80,6 +83,35 @@ def test_create_branch_endpoint_and_list_endpoint_round_trip() -> None:
     assert [branch["branch_id"] for branch in listed_payload["branches"]] == ["root", "alt"]
     assert listed_payload["branches"][1]["parent_branch_id"] == "root"
     assert listed_payload["branches"][1]["lineage"] == ["root"]
+
+
+def test_get_branch_endpoint_returns_metadata_and_confidence_label() -> None:
+    client = TestClient(_mk_app())
+    created = _create_branch(
+        client,
+        session_id="session-1",
+        branch_id="root",
+        name="Root hypothesis",
+        hypothesis="Primary causal hypothesis.",
+        scorecard={
+            "evidence_support": 0.92,
+            "feasibility": 0.88,
+            "risk": 0.1,
+            "impact": 0.9,
+        },
+        metadata={"owner": "planner", "stage": "m3"},
+    )
+    assert created.status_code == 201
+    created_payload = created.json()
+    assert created_payload["confidence_label"] == "high"
+    assert created_payload["metadata"]["owner"] == "planner"
+
+    fetched = client.get("/api/proposal/branches/session-1/root")
+    assert fetched.status_code == 200
+    payload = fetched.json()
+    assert payload["branch_id"] == "root"
+    assert payload["confidence_label"] == "high"
+    assert payload["metadata"] == {"owner": "planner", "stage": "m3"}
 
 
 def test_compare_branches_endpoint_returns_winner_and_scores() -> None:
@@ -127,6 +159,7 @@ def test_compare_branches_endpoint_returns_winner_and_scores() -> None:
         payload["comparisons"][0]["aggregate_score"]
         >= payload["comparisons"][1]["aggregate_score"]
     )
+    assert payload["comparisons"][0]["confidence_label"] in {"high", "medium", "low"}
 
 
 def test_promote_branch_endpoint_enforces_single_primary_branch() -> None:
