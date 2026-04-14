@@ -1,0 +1,59 @@
+name: paperbase-local
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: paperbase-postgres
+    environment:
+      POSTGRES_DB: paperbase
+      POSTGRES_USER: paperbase
+      POSTGRES_PASSWORD: paperbase
+    ports:
+      - "5432:5432"
+    volumes:
+      - paperbase-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperbase -d paperbase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+    container_name: paperbase-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+    ports:
+      - "9200:9200"
+    volumes:
+      - paperbase-elasticsearch-data:/usr/share/elasticsearch/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: paperbase-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: paperbase
+      MINIO_ROOT_PASSWORD: paperbase123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - paperbase-minio-data:/data
+
+  redis:
+    image: redis:8
+    container_name: paperbase-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - paperbase-redis-data:/data
+
+volumes:
+  paperbase-postgres-data:
+  paperbase-elasticsearch-data:
+  paperbase-minio-data:
+  paperbase-redis-data:
+
