@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -14,22 +24,27 @@ def _uuid_str() -> str:
     return str(uuid4())
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class Base(DeclarativeBase):
     """Declarative base for Paperbase models."""
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=_utc_now,
+        onupdate=_utc_now,
         nullable=False,
     )
 
 
 class Paper(Base, TimestampMixin):
     __tablename__ = "papers"
+    __table_args__ = (UniqueConstraint("provider", "external_id", name="uq_papers_provider_external"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -45,6 +60,9 @@ class Paper(Base, TimestampMixin):
 
 class PaperSource(Base, TimestampMixin):
     __tablename__ = "paper_sources"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_record_id", name="uq_paper_sources_provider_record"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
@@ -222,6 +240,9 @@ class Collection(Base, TimestampMixin):
 
 class CollectionPaper(Base, TimestampMixin):
     __tablename__ = "collection_papers"
+    __table_args__ = (
+        UniqueConstraint("collection_id", "paper_id", name="uq_collection_papers_collection_paper"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
@@ -241,4 +262,3 @@ class Annotation(Base, TimestampMixin):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     tags_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     status: Mapped[str | None] = mapped_column(String(64))
-

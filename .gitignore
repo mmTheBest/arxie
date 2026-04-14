@@ -68,8 +68,11 @@ docs/
 !docs/
 docs/*
 !docs/architecture/
+!docs/plans/
 docs/architecture/*
 !docs/architecture/*.md
+docs/plans/*
+!docs/plans/*.md
 results/
 remotion/
 tests/eval/dataset.json
