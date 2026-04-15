@@ -29,6 +29,17 @@ Collections are now visible to the assistant layer through the Paperbase gateway
 This means curated field-specific corpora are no longer only a storage feature; they
 are part of the active Arxie workflow surface.
 
+## Current API Support
+
+Paperbase now exposes first-class collection and annotation endpoints:
+
+- create and list collections
+- add papers to collections and list collection membership
+- create annotations on papers and list annotations by target
+
+This is still local-first and single-user by default, but the API and schema keep
+ownership fields so the system can expand later without rewriting the core model.
+
 ## Collection Scope
 
 A collection is a user-owned curated slice of the corpus.

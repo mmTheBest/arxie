@@ -10,6 +10,7 @@ from ra.utils.logging_config import configure_logging_from_env
 from services.paperbase_api.errors import register_exception_handlers
 from services.paperbase_api.models import HealthResponse
 from services.paperbase_api.routes.compare import router as compare_router
+from services.paperbase_api.routes.collections import router as collections_router
 from services.paperbase_api.routes.papers import router as papers_router
 from services.paperbase_api.routes.search import router as search_router
 
@@ -29,7 +30,8 @@ def create_app(
         description=(
             "Internal platform API for querying the Paperbase corpus. "
             "This service exposes canonical paper records, parsed fulltext, "
-            "figures, and structured result comparison slices."
+            "figures, structured result comparison slices, curated collections, "
+            "and user annotations."
         ),
         version="0.1.0",
     )
@@ -44,4 +46,5 @@ def create_app(
     app.include_router(search_router)
     app.include_router(papers_router)
     app.include_router(compare_router)
+    app.include_router(collections_router)
     return app

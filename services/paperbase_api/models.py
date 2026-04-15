@@ -96,3 +96,88 @@ class CompareResultItemResponse(BaseModel):
 
 class CompareResultsResponse(BaseModel):
     data: list[CompareResultItemResponse]
+
+
+class CollectionCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(None, max_length=5000)
+    owner_id: str = Field(default="local-user", min_length=1, max_length=128)
+    scope_type: str = Field(default="private", min_length=1, max_length=64)
+    tags: list[str] = Field(default_factory=list)
+    extraction_profile_id: str | None = Field(None, min_length=1, max_length=36)
+
+
+class CollectionSummaryResponse(BaseModel):
+    id: str
+    owner_id: str
+    scope_type: str
+    title: str
+    description: str | None = None
+    extraction_profile_id: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class SingleCollectionResponse(BaseModel):
+    data: CollectionSummaryResponse
+
+
+class CollectionsResponse(BaseModel):
+    data: list[CollectionSummaryResponse]
+
+
+class CollectionPaperCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    paper_id: str = Field(..., min_length=1, max_length=36)
+    position: int | None = Field(None, ge=1)
+    membership_note: str | None = Field(None, max_length=5000)
+
+
+class CollectionPaperMembershipResponse(BaseModel):
+    id: str
+    collection_id: str
+    paper_id: str
+    position: int | None = None
+    membership_note: str | None = None
+    paper: PaperSummaryResponse
+
+
+class CollectionPapersResponse(BaseModel):
+    data: list[CollectionPaperMembershipResponse]
+
+
+class SingleCollectionPaperResponse(BaseModel):
+    data: CollectionPaperMembershipResponse
+
+
+class AnnotationCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    author_id: str = Field(default="local-user", min_length=1, max_length=128)
+    collection_id: str | None = Field(None, min_length=1, max_length=36)
+    target_type: str = Field(..., min_length=1, max_length=64)
+    target_id: str = Field(..., min_length=1, max_length=36)
+    body: str = Field(..., min_length=1, max_length=20000)
+    tags: list[str] = Field(default_factory=list)
+    status: str | None = Field(None, min_length=1, max_length=64)
+
+
+class AnnotationResponse(BaseModel):
+    id: str
+    author_id: str
+    collection_id: str | None = None
+    target_type: str
+    target_id: str
+    body: str
+    tags: list[str] = Field(default_factory=list)
+    status: str | None = None
+
+
+class SingleAnnotationResponse(BaseModel):
+    data: AnnotationResponse
+
+
+class AnnotationsResponse(BaseModel):
+    data: list[AnnotationResponse]

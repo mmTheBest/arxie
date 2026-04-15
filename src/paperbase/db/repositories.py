@@ -31,6 +31,9 @@ class PaperRepository:
         )
         return self.session.execute(statement).scalar_one_or_none()
 
+    def get_by_id(self, paper_id: str) -> Paper | None:
+        return self.session.get(Paper, paper_id)
+
     def upsert(
         self,
         *,
@@ -114,6 +117,16 @@ class CollectionRepository:
             Collection.title == title,
         )
         return self.session.execute(statement).scalar_one_or_none()
+
+    def get_by_id(self, collection_id: str) -> Collection | None:
+        return self.session.get(Collection, collection_id)
+
+    def list_collections(self, *, owner_id: str | None = None) -> Sequence[Collection]:
+        statement = select(Collection)
+        if owner_id is not None:
+            statement = statement.where(Collection.owner_id == owner_id)
+        statement = statement.order_by(Collection.created_at.asc(), Collection.title.asc())
+        return self.session.execute(statement).scalars().all()
 
     def create(
         self,
