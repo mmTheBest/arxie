@@ -20,6 +20,7 @@ from paperbase.db.models import (
     ResultRow,
     Section,
 )
+from paperbase.db.repositories import PaperRepository
 from ra.utils.security import sanitize_identifier
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
@@ -45,7 +46,12 @@ from services.paperbase_api.models import (
 router = APIRouter(prefix="/api/v1/papers", tags=["papers"])
 
 
-def _paper_to_response(paper: Paper) -> PaperDetailResponse:
+def _paper_to_response(
+    paper: Paper,
+    *,
+    authors: list[str] | None = None,
+    tags: list[str] | None = None,
+) -> PaperDetailResponse:
     return PaperDetailResponse(
         id=paper.id,
         title=paper.canonical_title,
@@ -56,6 +62,8 @@ def _paper_to_response(paper: Paper) -> PaperDetailResponse:
         external_id=paper.external_id,
         doi=paper.doi,
         arxiv_id=paper.arxiv_id,
+        authors=list(authors or []),
+        tags=list(tags or []),
     )
 
 
@@ -80,7 +88,14 @@ def fetch_paper(
 ) -> SinglePaperResponse:
     normalized_paper_id = sanitize_identifier(paper_id, field_name="paper_id", max_length=36)
     paper = _get_paper_or_404(session, normalized_paper_id)
-    return SinglePaperResponse(data=_paper_to_response(paper))
+    repository = PaperRepository(session)
+    return SinglePaperResponse(
+        data=_paper_to_response(
+            paper,
+            authors=repository.list_author_names(paper.id),
+            tags=repository.list_tags(paper.id),
+        )
+    )
 
 
 @router.get(

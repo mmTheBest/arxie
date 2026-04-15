@@ -18,12 +18,20 @@ def paper_index_template() -> dict[str, object]:
         "mappings": {
             "properties": {
                 "paper_id": {"type": "keyword"},
+                "provider": {"type": "keyword"},
+                "external_id": {"type": "keyword"},
                 "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "abstract": {"type": "text"},
                 "publication_year": {"type": "integer"},
                 "venue": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
-                "authors": {"type": "keyword"},
-                "tags": {"type": "keyword"},
+                "doi": {"type": "keyword"},
+                "arxiv_id": {"type": "keyword"},
+                "authors": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "tags": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "datasets": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "methods": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "metrics": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "extraction_state": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
         },

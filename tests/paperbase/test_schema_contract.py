@@ -6,6 +6,10 @@ from paperbase.db.models import Base
 def test_paperbase_metadata_contains_core_tables() -> None:
     expected_tables = {
         "papers",
+        "authors",
+        "paper_authors",
+        "tags",
+        "paper_tags",
         "paper_sources",
         "paper_files",
         "sections",
@@ -34,6 +38,9 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     extraction_runs = Base.metadata.tables["extraction_runs"]
     annotations = Base.metadata.tables["annotations"]
     papers = Base.metadata.tables["papers"]
+    authors = Base.metadata.tables["authors"]
+    paper_authors = Base.metadata.tables["paper_authors"]
+    paper_tags = Base.metadata.tables["paper_tags"]
 
     assert "owner_id" in collections.c
     assert "scope_type" in collections.c
@@ -49,3 +56,6 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     assert "target_type" in annotations.c
     assert "target_id" in annotations.c
     assert "body" in annotations.c
+    assert "display_name" in authors.c
+    assert "paper_id" in paper_authors.c
+    assert "tag_id" in paper_tags.c

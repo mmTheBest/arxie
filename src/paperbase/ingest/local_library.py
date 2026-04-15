@@ -70,6 +70,7 @@ def import_local_pdf_directory(
                 provider="local_filesystem",
                 external_id=external_id,
                 canonical_title=_canonical_title_for_path(pdf_path),
+                tags=["local-library"],
                 raw_metadata={
                     "file_name": pdf_path.name,
                     "source_dir": str(resolved_source_dir),

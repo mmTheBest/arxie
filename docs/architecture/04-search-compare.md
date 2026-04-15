@@ -20,10 +20,15 @@ existing paper search route for:
 - collection membership
 - publication year bounds
 - venue
+- author
+- tag
 - dataset
 - method
 - metric
 - extraction state
+
+Paper fetch responses now also expose `authors` and `tags`, so paper records can
+behave like structured corpus entries rather than title-only shells.
 
 ## Current Module Map
 
@@ -93,3 +98,23 @@ aliases such as long-form `Area Under the Receiver Operating Characteristic
 Curve` into `AUROC` and collapses duplicate summary entries. That keeps the
 local-first browse layer readable even before richer metric normalization and
 dedicated comparison tables are added.
+
+## Search Operations Surface
+
+The Paperbase search runtime is now exposed operationally through the API, not
+just as internal library code:
+
+- `GET /api/v1/search/status`
+- `POST /api/v1/search/reindex`
+
+This closes the gap between “the runtime classes exist” and “the platform can
+actually trigger and observe reindexing.” The current behavior is intentionally
+thin:
+
+- report whether a backend is configured
+- run a full rebuild of paper, chunk, and figure read models through the
+  configured backend
+- return explicit `503` errors when the search backend is unavailable
+
+This is still a local-first operator surface. It is not yet a full workerized
+index-management system.

@@ -57,6 +57,8 @@ def test_paperbase_api_exposes_search_fetch_fulltext_figures_and_compare(tmp_pat
             abstract="Long-range gene context modeling.",
             publication_year=2026,
             venue="Nature",
+            authors=["Alice Smith", "Bob Lee"],
+            tags=["single-cell", "scRegNet"],
         )
         PaperFileRepository(session).upsert(
             paper_id=paper.id,
@@ -109,6 +111,8 @@ def test_paperbase_api_exposes_search_fetch_fulltext_figures_and_compare(tmp_pat
 
     assert paper_response.status_code == 200
     assert paper_response.json()["data"]["title"] == "scLong"
+    assert paper_response.json()["data"]["authors"] == ["Alice Smith", "Bob Lee"]
+    assert paper_response.json()["data"]["tags"] == ["scRegNet", "single-cell"]
 
     assert fulltext_response.status_code == 200
     assert fulltext_response.json()["data"]["sections"][0]["title"] == "Abstract"

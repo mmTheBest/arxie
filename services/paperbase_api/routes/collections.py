@@ -68,7 +68,12 @@ def _build_named_artifact_summary(items, *, artifact_type: str) -> list[Collecti
     return list(summarized.values())
 
 
-def _paper_to_response(paper) -> PaperSummaryResponse:  # noqa: ANN001
+def _paper_to_response(
+    paper,  # noqa: ANN001
+    *,
+    authors: list[str] | None = None,
+    tags: list[str] | None = None,
+) -> PaperSummaryResponse:
     return PaperSummaryResponse(
         id=paper.id,
         title=paper.canonical_title,
@@ -79,6 +84,8 @@ def _paper_to_response(paper) -> PaperSummaryResponse:  # noqa: ANN001
         external_id=paper.external_id,
         doi=paper.doi,
         arxiv_id=paper.arxiv_id,
+        authors=list(authors or []),
+        tags=list(tags or []),
     )
 
 
@@ -249,7 +256,11 @@ def list_collection_papers(
                 paper_id=membership.paper_id,
                 position=membership.position,
                 membership_note=membership.membership_note,
-                paper=_paper_to_response(paper),
+                paper=_paper_to_response(
+                    paper,
+                    authors=paper_repository.list_author_names(paper.id),
+                    tags=paper_repository.list_tags(paper.id),
+                ),
             )
         )
     return CollectionPapersResponse(data=data)

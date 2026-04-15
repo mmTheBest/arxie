@@ -29,10 +29,30 @@ class PaperSummaryResponse(BaseModel):
     external_id: str
     doi: str | None = None
     arxiv_id: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class SearchPapersResponse(BaseModel):
     data: list[PaperSummaryResponse]
+
+
+class SearchStatusResponseData(BaseModel):
+    backend_configured: bool
+    backend_type: str | None = None
+
+
+class SearchStatusResponse(BaseModel):
+    data: SearchStatusResponseData
+
+
+class SearchReindexResponseData(BaseModel):
+    backend_type: str
+    indexed: dict[str, int]
+
+
+class SearchReindexResponse(BaseModel):
+    data: SearchReindexResponseData
 
 
 class SectionResponse(BaseModel):

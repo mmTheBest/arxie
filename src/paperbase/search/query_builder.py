@@ -44,9 +44,29 @@ def build_search_query(
     if venue:
         bool_query["filter"].append({"terms": {"venue.keyword": list(venue)}})
 
+    authors = filters.get("authors")
+    if authors:
+        bool_query["filter"].append({"terms": {"authors.keyword": list(authors)}})
+
     tags = filters.get("tags")
     if tags:
         bool_query["filter"].append({"terms": {"tags.keyword": list(tags)}})
+
+    datasets = filters.get("datasets")
+    if datasets:
+        bool_query["filter"].append({"terms": {"datasets.keyword": list(datasets)}})
+
+    methods = filters.get("methods")
+    if methods:
+        bool_query["filter"].append({"terms": {"methods.keyword": list(methods)}})
+
+    metrics = filters.get("metrics")
+    if metrics:
+        bool_query["filter"].append({"terms": {"metrics.keyword": list(metrics)}})
+
+    extraction_state = filters.get("extraction_state")
+    if extraction_state:
+        bool_query["filter"].append({"term": {"extraction_state": extraction_state}})
 
     query: dict[str, object] = {"bool": bool_query}
     if embedding_vector is not None:

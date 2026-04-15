@@ -5,17 +5,40 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, delete, select
 from sqlalchemy.orm import Session
 
 from paperbase.db.models import (
     Annotation,
+    Author,
     Collection,
     CollectionPaper,
     ExtractionProfile,
     Paper,
+    PaperAuthor,
     PaperFile,
+    PaperTag,
+    Tag,
 )
+
+
+def _normalize_entity_name(value: str) -> str:
+    return " ".join(value.strip().casefold().split())
+
+
+def _dedupe_preserve_order(values: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for value in values:
+        stripped = value.strip()
+        if not stripped:
+            continue
+        normalized = _normalize_entity_name(stripped)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned.append(stripped)
+    return cleaned
 
 
 class PaperRepository:
@@ -34,6 +57,54 @@ class PaperRepository:
     def get_by_id(self, paper_id: str) -> Paper | None:
         return self.session.get(Paper, paper_id)
 
+    def list_author_names(self, paper_id: str) -> list[str]:
+        rows = self.session.execute(
+            select(Author.display_name)
+            .join(PaperAuthor, PaperAuthor.author_id == Author.id)
+            .where(PaperAuthor.paper_id == paper_id)
+            .order_by(PaperAuthor.ordinal.asc(), Author.display_name.asc())
+        ).all()
+        return [row[0] for row in rows]
+
+    def list_author_names_by_paper_ids(self, paper_ids: Sequence[str]) -> dict[str, list[str]]:
+        if not paper_ids:
+            return {}
+
+        rows = self.session.execute(
+            select(PaperAuthor.paper_id, Author.display_name)
+            .join(Author, Author.id == PaperAuthor.author_id)
+            .where(PaperAuthor.paper_id.in_(paper_ids))
+            .order_by(PaperAuthor.paper_id.asc(), PaperAuthor.ordinal.asc(), Author.display_name.asc())
+        ).all()
+        grouped: dict[str, list[str]] = {paper_id: [] for paper_id in paper_ids}
+        for paper_id, display_name in rows:
+            grouped.setdefault(paper_id, []).append(display_name)
+        return grouped
+
+    def list_tags(self, paper_id: str) -> list[str]:
+        rows = self.session.execute(
+            select(Tag.display_name)
+            .join(PaperTag, PaperTag.tag_id == Tag.id)
+            .where(PaperTag.paper_id == paper_id)
+            .order_by(Tag.display_name.asc())
+        ).all()
+        return [row[0] for row in rows]
+
+    def list_tags_by_paper_ids(self, paper_ids: Sequence[str]) -> dict[str, list[str]]:
+        if not paper_ids:
+            return {}
+
+        rows = self.session.execute(
+            select(PaperTag.paper_id, Tag.display_name)
+            .join(Tag, Tag.id == PaperTag.tag_id)
+            .where(PaperTag.paper_id.in_(paper_ids))
+            .order_by(PaperTag.paper_id.asc(), Tag.display_name.asc())
+        ).all()
+        grouped: dict[str, list[str]] = {paper_id: [] for paper_id in paper_ids}
+        for paper_id, display_name in rows:
+            grouped.setdefault(paper_id, []).append(display_name)
+        return grouped
+
     def upsert(
         self,
         *,
@@ -46,6 +117,8 @@ class PaperRepository:
         doi: str | None = None,
         arxiv_id: str | None = None,
         raw_metadata: dict[str, Any] | None = None,
+        authors: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
     ) -> Paper:
         paper = self.get_by_provider_id(provider, external_id)
         if paper is None:
@@ -70,9 +143,65 @@ class PaperRepository:
             paper.arxiv_id = arxiv_id
             paper.raw_metadata = raw_metadata or paper.raw_metadata
 
+        self.session.flush()
+
+        if authors is not None:
+            self._sync_authors(paper_id=paper.id, author_names=authors)
+        if tags is not None:
+            self._sync_tags(paper_id=paper.id, tag_names=tags)
+
         self.session.commit()
         self.session.refresh(paper)
         return paper
+
+    def _sync_authors(self, *, paper_id: str, author_names: Sequence[str]) -> None:
+        cleaned_names = _dedupe_preserve_order(author_names)
+        self.session.execute(delete(PaperAuthor).where(PaperAuthor.paper_id == paper_id))
+        self.session.flush()
+
+        for ordinal, display_name in enumerate(cleaned_names, start=1):
+            normalized_name = _normalize_entity_name(display_name)
+            author = self.session.execute(
+                select(Author).where(Author.normalized_name == normalized_name)
+            ).scalar_one_or_none()
+            if author is None:
+                author = Author(normalized_name=normalized_name, display_name=display_name)
+                self.session.add(author)
+                self.session.flush()
+            else:
+                author.display_name = display_name
+
+            self.session.add(
+                PaperAuthor(
+                    paper_id=paper_id,
+                    author_id=author.id,
+                    ordinal=ordinal,
+                )
+            )
+
+    def _sync_tags(self, *, paper_id: str, tag_names: Sequence[str]) -> None:
+        cleaned_tags = sorted(_dedupe_preserve_order(tag_names), key=str.casefold)
+        self.session.execute(delete(PaperTag).where(PaperTag.paper_id == paper_id))
+        self.session.flush()
+
+        for display_name in cleaned_tags:
+            normalized_name = _normalize_entity_name(display_name)
+            tag = self.session.execute(
+                select(Tag).where(Tag.normalized_name == normalized_name)
+            ).scalar_one_or_none()
+            if tag is None:
+                tag = Tag(normalized_name=normalized_name, display_name=display_name)
+                self.session.add(tag)
+                self.session.flush()
+            else:
+                tag.display_name = display_name
+
+            self.session.add(
+                PaperTag(
+                    paper_id=paper_id,
+                    tag_id=tag.id,
+                )
+            )
 
 
 class ExtractionProfileRepository:

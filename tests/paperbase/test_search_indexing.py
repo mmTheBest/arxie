@@ -22,8 +22,16 @@ def test_indexer_builds_documents_for_papers_chunks_and_figures() -> None:
         abstract="Long-range gene context modeling.",
         year=2026,
         venue="Nature",
+        provider="local_filesystem",
+        external_id="paper-1",
+        doi="10.1000/example",
+        arxiv_id="2501.00001",
         authors=["Alice Smith", "Bob Lee"],
         tags=["scRegNet"],
+        datasets=["scRegNetBench"],
+        methods=["scLong"],
+        metrics=["AUROC"],
+        extraction_state="extracted",
     )
     chunk_doc = build_chunk_document(
         chunk_id="chunk-1",
@@ -41,6 +49,8 @@ def test_indexer_builds_documents_for_papers_chunks_and_figures() -> None:
     )
 
     assert paper_doc["paper_id"] == "paper-1"
+    assert paper_doc["provider"] == "local_filesystem"
+    assert paper_doc["metrics"] == ["AUROC"]
     assert chunk_doc["section_title"] == "Methods"
     assert figure_doc["figure_label"] == "Figure 1"
 
@@ -48,11 +58,23 @@ def test_indexer_builds_documents_for_papers_chunks_and_figures() -> None:
 def test_query_builder_supports_text_filters_and_vector_query() -> None:
     query = build_search_query(
         query_text="gene regulatory",
-        filters={"year_gte": 2024, "venue": ["Nature"], "tags": ["scRegNet"]},
+        filters={
+            "year_gte": 2024,
+            "venue": ["Nature"],
+            "authors": ["Alice Smith"],
+            "tags": ["scRegNet"],
+            "datasets": ["scRegNetBench"],
+            "methods": ["scLong"],
+            "metrics": ["AUROC"],
+            "extraction_state": "extracted",
+        },
         embedding_vector=[0.1, 0.2, 0.3],
     )
 
     assert query["bool"]["must"][0]["multi_match"]["query"] == "gene regulatory"
     assert {"range": {"publication_year": {"gte": 2024}}} in query["bool"]["filter"]
     assert {"terms": {"venue.keyword": ["Nature"]}} in query["bool"]["filter"]
+    assert {"terms": {"authors.keyword": ["Alice Smith"]}} in query["bool"]["filter"]
+    assert {"terms": {"metrics.keyword": ["AUROC"]}} in query["bool"]["filter"]
+    assert {"term": {"extraction_state": "extracted"}} in query["bool"]["filter"]
     assert query["knn"]["field"] == "embedding"

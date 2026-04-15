@@ -58,6 +58,43 @@ class Paper(Base, TimestampMixin):
     raw_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
 
+class Author(Base, TimestampMixin):
+    __tablename__ = "authors"
+    __table_args__ = (UniqueConstraint("normalized_name", name="uq_authors_normalized_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class PaperAuthor(Base, TimestampMixin):
+    __tablename__ = "paper_authors"
+    __table_args__ = (UniqueConstraint("paper_id", "author_id", name="uq_paper_authors_paper_author"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
+    author_id: Mapped[str] = mapped_column(ForeignKey("authors.id"), nullable=False, index=True)
+    ordinal: Mapped[int | None] = mapped_column(Integer)
+
+
+class Tag(Base, TimestampMixin):
+    __tablename__ = "tags"
+    __table_args__ = (UniqueConstraint("normalized_name", name="uq_tags_normalized_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class PaperTag(Base, TimestampMixin):
+    __tablename__ = "paper_tags"
+    __table_args__ = (UniqueConstraint("paper_id", "tag_id", name="uq_paper_tags_paper_tag"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
+    tag_id: Mapped[str] = mapped_column(ForeignKey("tags.id"), nullable=False, index=True)
+
+
 class PaperSource(Base, TimestampMixin):
     __tablename__ = "paper_sources"
     __table_args__ = (

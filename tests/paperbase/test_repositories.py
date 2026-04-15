@@ -27,6 +27,8 @@ def test_paper_repository_upsert_deduplicates_provider_records(tmp_path: Path) -
             abstract="Original abstract",
             publication_year=2024,
             venue="ACL",
+            authors=["Alice Smith", "Bob Lee"],
+            tags=["single-cell", "benchmark"],
         )
         second = repository.upsert(
             provider="semantic_scholar",
@@ -35,6 +37,8 @@ def test_paper_repository_upsert_deduplicates_provider_records(tmp_path: Path) -
             abstract="Updated abstract",
             publication_year=2025,
             venue="NeurIPS",
+            authors=["Alice Smith", "Carol Jones"],
+            tags=["benchmark", "foundation-model"],
         )
 
         assert first.id == second.id
@@ -45,6 +49,8 @@ def test_paper_repository_upsert_deduplicates_provider_records(tmp_path: Path) -
         assert stored is not None
         assert stored.id == first.id
         assert stored.venue == "NeurIPS"
+        assert repository.list_author_names(stored.id) == ["Alice Smith", "Carol Jones"]
+        assert repository.list_tags(stored.id) == ["benchmark", "foundation-model"]
 
 
 def test_collection_and_annotation_repositories_support_curated_local_workflows(

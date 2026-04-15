@@ -22,6 +22,8 @@ def test_paperbase_search_supports_collection_and_structured_filters(tmp_path) -
             abstract="Long-range gene context modeling.",
             publication_year=2026,
             venue="Nature",
+            authors=["Alice Smith", "Bob Lee"],
+            tags=["single-cell", "scRegNet"],
         )
         paper_two = PaperRepository(session).upsert(
             provider="local_filesystem",
@@ -30,6 +32,8 @@ def test_paperbase_search_supports_collection_and_structured_filters(tmp_path) -
             abstract="Baseline model for comparison.",
             publication_year=2024,
             venue="Cell",
+            authors=["Carol Jones"],
+            tags=["baseline"],
         )
 
         collection = CollectionRepository(session).create(
@@ -72,12 +76,16 @@ def test_paperbase_search_supports_collection_and_structured_filters(tmp_path) -
             "metric": "AUROC",
             "venue": "Nature",
             "year_gte": 2025,
+            "author": "Alice Smith",
+            "tag": "scRegNet",
             "extraction_state": "extracted",
         },
     )
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["data"]] == [paper_one_id]
+    assert response.json()["data"][0]["authors"] == ["Alice Smith", "Bob Lee"]
+    assert response.json()["data"][0]["tags"] == ["scRegNet", "single-cell"]
 
 
 def test_paperbase_search_requires_query_or_filter(tmp_path) -> None:
