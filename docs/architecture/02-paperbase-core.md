@@ -49,3 +49,10 @@ The first concrete Paperbase modules are:
 - `src/paperbase/db/repositories.py` — first write paths for papers, extraction profiles, collections, and annotations
 
 These modules are intentionally thin. They should encode durable boundaries now without prematurely building API, worker, or ingest orchestration around them.
+
+The first service layer now exists at:
+
+- `services/paperbase_api/app.py` — FastAPI entrypoint for corpus search, fetch, fulltext, figures, and comparison routes
+- `services/paperbase_api/routes/` — route groups for `search`, `papers`, and `compare`
+
+This service should stay independent from `src/ra/api/app.py`. Arxie will consume it through a gateway layer rather than sharing endpoint code directly.
