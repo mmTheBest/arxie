@@ -5,7 +5,18 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from paperbase.db.bootstrap import initialize_database
-from paperbase.db.models import Dataset, Figure, Method, Metric, ResultRow
+from paperbase.db.models import (
+    Dataset,
+    EngineeringTrick,
+    EvidenceSpan,
+    ExtractionRun,
+    Figure,
+    Finding,
+    GlossaryTerm,
+    Method,
+    Metric,
+    ResultRow,
+)
 from paperbase.db.repositories import PaperFileRepository, PaperRepository
 from paperbase.db.session import make_session_factory
 from paperbase.parsing.pipeline import PaperParsePipeline
@@ -108,3 +119,86 @@ def test_paperbase_api_exposes_search_fetch_fulltext_figures_and_compare(tmp_pat
     assert compare_response.status_code == 200
     assert compare_response.json()["data"][0]["metric"] == "AUROC"
     assert compare_response.json()["data"][0]["value_numeric"] == 0.91
+
+
+def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="sample-paper",
+            canonical_title="scLong",
+            abstract="Long-range gene context modeling.",
+            publication_year=2026,
+            venue="Nature",
+        )
+        dataset = Dataset(paper_id=paper.id, normalized_name="scregnetbench", display_name="scRegNetBench")
+        method = Method(paper_id=paper.id, normalized_name="sclong", display_name="scLong")
+        metric = Metric(paper_id=paper.id, normalized_name="auroc", display_name="AUROC")
+        glossary = GlossaryTerm(
+            paper_id=paper.id,
+            term="AUROC",
+            definition="Area under the ROC curve.",
+        )
+        finding = Finding(
+            paper_id=paper.id,
+            statement="scLong improves AUROC on scRegNetBench.",
+            polarity="positive",
+        )
+        trick = EngineeringTrick(
+            paper_id=paper.id,
+            title="Long-context token packing",
+            description="Pack distant regulatory context into a single input window.",
+        )
+        extraction_run = ExtractionRun(
+            paper_id=paper.id,
+            model_name="fake-extractor",
+            prompt_version="paperbase-v1",
+            schema_version="schema-v1",
+            status="completed",
+        )
+        session.add_all([dataset, method, metric, glossary, finding, trick, extraction_run])
+        session.flush()
+        session.add(
+            ResultRow(
+                paper_id=paper.id,
+                dataset_id=dataset.id,
+                method_id=method.id,
+                metric_id=metric.id,
+                value_numeric=0.91,
+                comparator_text="higher_is_better",
+                notes="Best reported score in the paper.",
+            )
+        )
+        session.add(
+            EvidenceSpan(
+                paper_id=paper.id,
+                extraction_run_id=extraction_run.id,
+                target_type="glossary_term",
+                target_id=glossary.id,
+                page_number=2,
+                quote_text="AUROC is the primary evaluation metric.",
+            )
+        )
+        session.commit()
+        paper_id = paper.id
+
+    client = TestClient(create_app(session_factory=session_factory))
+
+    structured_response = client.get(f"/api/v1/papers/{paper_id}/structured-data")
+
+    assert structured_response.status_code == 200
+    payload = structured_response.json()["data"]
+    assert payload["paper_id"] == paper_id
+    assert payload["datasets"][0]["display_name"] == "scRegNetBench"
+    assert payload["methods"][0]["display_name"] == "scLong"
+    assert payload["metrics"][0]["display_name"] == "AUROC"
+    assert payload["result_rows"][0]["value_numeric"] == 0.91
+    assert payload["glossary_terms"][0]["term"] == "AUROC"
+    assert payload["findings"][0]["statement"] == "scLong improves AUROC on scRegNetBench."
+    assert payload["engineering_tricks"][0]["title"] == "Long-context token packing"
+    assert payload["extraction_runs"][0]["status"] == "completed"
+    assert payload["evidence_spans"][0]["quote_text"] == "AUROC is the primary evaluation metric."

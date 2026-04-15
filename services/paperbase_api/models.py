@@ -74,6 +74,83 @@ class FiguresResponse(BaseModel):
     data: list[FigureResponse]
 
 
+class StructuredNamedArtifactResponse(BaseModel):
+    id: str
+    display_name: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResultRowArtifactResponse(BaseModel):
+    id: str
+    dataset_id: str | None = None
+    dataset: str | None = None
+    method_id: str | None = None
+    method: str | None = None
+    metric_id: str | None = None
+    metric: str | None = None
+    value_numeric: float | None = None
+    value_text: str | None = None
+    comparator_text: str | None = None
+    notes: str | None = None
+
+
+class GlossaryTermArtifactResponse(BaseModel):
+    id: str
+    term: str
+    definition: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class FindingArtifactResponse(BaseModel):
+    id: str
+    statement: str
+    polarity: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EngineeringTrickArtifactResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExtractionRunArtifactResponse(BaseModel):
+    id: str
+    model_name: str
+    prompt_version: str
+    schema_version: str
+    status: str
+
+
+class EvidenceSpanArtifactResponse(BaseModel):
+    id: str
+    extraction_run_id: str | None = None
+    target_type: str
+    target_id: str | None = None
+    page_number: int | None = None
+    quote_text: str | None = None
+    section_id: str | None = None
+    chunk_id: str | None = None
+
+
+class PaperStructuredDataResponseData(BaseModel):
+    paper_id: str
+    datasets: list[StructuredNamedArtifactResponse]
+    methods: list[StructuredNamedArtifactResponse]
+    metrics: list[StructuredNamedArtifactResponse]
+    result_rows: list[ResultRowArtifactResponse]
+    glossary_terms: list[GlossaryTermArtifactResponse]
+    findings: list[FindingArtifactResponse]
+    engineering_tricks: list[EngineeringTrickArtifactResponse]
+    extraction_runs: list[ExtractionRunArtifactResponse]
+    evidence_spans: list[EvidenceSpanArtifactResponse]
+
+
+class PaperStructuredDataResponse(BaseModel):
+    data: PaperStructuredDataResponseData
+
+
 class CompareResultsRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
