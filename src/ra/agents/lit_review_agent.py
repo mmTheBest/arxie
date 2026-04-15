@@ -222,7 +222,27 @@ class LitReviewAgent:
         except Exception:
             return None
 
-    async def _search_papers_async(self, topic: str, *, max_papers: int) -> list[Paper]:
+    async def _search_papers_async(
+        self,
+        topic: str,
+        *,
+        max_papers: int,
+        collection_id: str | None = None,
+    ) -> list[Paper]:
+        if collection_id:
+            get_collection_papers = getattr(self.retriever, "get_collection_papers", None)
+            if callable(get_collection_papers):
+                try:
+                    papers = await get_collection_papers(
+                        collection_id,
+                        query=topic,
+                        limit=max_papers,
+                    )
+                    if papers:
+                        return papers[:max_papers]
+                except Exception:
+                    logger.exception("LitReviewAgent collection-scoped Paperbase lookup failed.")
+
         raw = await self._call_tool_async(
             "search_papers",
             query=topic,
@@ -574,7 +594,13 @@ class LitReviewAgent:
         ]
         return "\n".join(lines)
 
-    async def arun(self, topic: str, max_papers: int | None = None) -> str:
+    async def arun(
+        self,
+        topic: str,
+        max_papers: int | None = None,
+        *,
+        collection_id: str | None = None,
+    ) -> str:
         """Generate a structured literature review asynchronously."""
         try:
             topic = sanitize_user_text(topic, field_name="topic", max_length=1000)
@@ -582,7 +608,11 @@ class LitReviewAgent:
             return self._invalid_topic_response()
 
         limit = self._clamp_max_papers(max_papers, fallback=self.search_limit)
-        papers = await self._search_papers_async(topic, max_papers=limit)
+        papers = await self._search_papers_async(
+            topic,
+            max_papers=limit,
+            collection_id=collection_id,
+        )
         if not papers:
             return self._no_results_response(topic)
 
@@ -606,10 +636,22 @@ class LitReviewAgent:
             clusters=clusters,
         )
 
-    def run(self, topic: str, max_papers: int | None = None) -> str:
+    def run(
+        self,
+        topic: str,
+        max_papers: int | None = None,
+        *,
+        collection_id: str | None = None,
+    ) -> str:
         """Generate a structured literature review synchronously."""
         try:
-            return asyncio.run(self.arun(topic, max_papers=max_papers))
+            return asyncio.run(
+                self.arun(
+                    topic,
+                    max_papers=max_papers,
+                    collection_id=collection_id,
+                )
+            )
         except RuntimeError as exc:
             logger.warning("LitReviewAgent sync run failed: %s", exc)
             return self._invalid_topic_response()

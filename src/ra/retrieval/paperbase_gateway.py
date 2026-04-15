@@ -8,6 +8,7 @@ import logging
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from paperbase.db.models import CollectionPaper
 from paperbase.db.models import Paper as PaperRecord
 from paperbase.db.models import Section as PaperSectionRecord
 from paperbase.db.session import make_session_factory
@@ -51,11 +52,27 @@ def _pdf_url_from_metadata(raw_metadata: object) -> str | None:
     return None
 
 
-def _to_ra_paper(record: PaperRecord) -> Paper:
+def _abstract_from_sections(session: Session, paper_id: str) -> str | None:
+    section = session.execute(
+        select(PaperSectionRecord)
+        .where(
+            PaperSectionRecord.paper_id == paper_id,
+            func.lower(PaperSectionRecord.title).like("%abstract%"),
+        )
+        .order_by(PaperSectionRecord.ordinal.asc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if section is None:
+        return None
+    text = (section.text or "").strip()
+    return text or None
+
+
+def _to_ra_paper(record: PaperRecord, *, abstract_override: str | None = None) -> Paper:
     return Paper(
         id=record.id,
         title=record.canonical_title,
-        abstract=record.abstract,
+        abstract=abstract_override or record.abstract,
         authors=_authors_from_metadata(record.raw_metadata),
         year=record.publication_year,
         venue=record.venue,
@@ -142,6 +159,53 @@ class PaperbaseGateway:
                 )
                 for section in sections
             ]
+
+    async def get_collection_papers(
+        self,
+        collection_id: str,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> list[Paper]:
+        return await asyncio.to_thread(
+            self._get_collection_papers_sync,
+            collection_id,
+            query,
+            limit,
+        )
+
+    def _get_collection_papers_sync(
+        self,
+        collection_id: str,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> list[Paper]:
+        query_tokens = {
+            token
+            for token in str(query or "").lower().split()
+            if token
+        }
+        with self.session_factory() as session:
+            records = session.execute(
+                select(PaperRecord, CollectionPaper)
+                .join(CollectionPaper, CollectionPaper.paper_id == PaperRecord.id)
+                .where(CollectionPaper.collection_id == collection_id)
+                .order_by(CollectionPaper.position.asc(), PaperRecord.created_at.asc())
+            ).all()
+
+            ranked: list[tuple[int, int, Paper]] = []
+            for position, (record, membership) in enumerate(records):
+                abstract_override = None
+                if not record.abstract:
+                    abstract_override = _abstract_from_sections(session, record.id)
+                paper = _to_ra_paper(record, abstract_override=abstract_override)
+                haystack = f"{paper.title} {paper.abstract or ''}".lower()
+                score = sum(1 for token in query_tokens if token in haystack)
+                membership_position = membership.position if membership.position is not None else position
+                ranked.append((score, membership_position, paper))
+
+            ranked.sort(key=lambda item: (-item[0], item[1], item[2].title.lower()))
+            return [paper for _, _, paper in ranked[:limit]]
 
     async def close(self) -> None:
         return None

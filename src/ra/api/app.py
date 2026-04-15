@@ -1347,10 +1347,28 @@ def create_app(
         payload: ProposalEvidenceQueryRequest = Body(...),
     ) -> ProposalEvidenceQueryResponse:
         mapper = _get_or_create_evidence_mapper(app)
+        papers = [paper.to_domain() for paper in payload.papers]
+        if payload.paperbase_collection_id:
+            retriever = _get_or_create_shared_retriever(app)
+            collection_papers = await retriever.get_collection_papers(
+                payload.paperbase_collection_id,
+                query=payload.claim,
+                limit=50,
+            )
+            seen_ids = {paper.id for paper in papers}
+            papers.extend(paper for paper in collection_papers if paper.id not in seen_ids)
+
+        if not papers:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message="Provide papers or paperbase_collection_id for evidence mapping.",
+            )
+
         try:
             mapped = mapper.map_evidence(
                 payload.claim,
-                [paper.to_domain() for paper in payload.papers],
+                papers,
                 pinned_paper_ids=set(payload.pinned_paper_ids),
             )
         except ValueError as exc:

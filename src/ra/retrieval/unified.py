@@ -104,6 +104,14 @@ class PaperbaseGatewayProtocol(Protocol):
 
     async def get_stored_sections(self, identifier: str) -> list[Section]: ...
 
+    async def get_collection_papers(
+        self,
+        collection_id: str,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> list[Paper]: ...
+
     async def close(self) -> None: ...
 
 
@@ -243,6 +251,35 @@ class UnifiedRetriever:
             logger.debug(
                 "Paperbase section lookup failed for identifier=%r",
                 identifier,
+                exc_info=True,
+            )
+            return []
+
+    async def get_collection_papers(
+        self,
+        collection_id: str,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> list[Paper]:
+        if self.paperbase_gateway is None:
+            return []
+
+        try:
+            safe_collection_id = sanitize_identifier(
+                collection_id,
+                field_name="collection_id",
+                max_length=256,
+            )
+            return await self.paperbase_gateway.get_collection_papers(
+                safe_collection_id,
+                query=query,
+                limit=limit,
+            )
+        except Exception:
+            logger.debug(
+                "Paperbase collection lookup failed for collection_id=%r",
+                collection_id,
                 exc_info=True,
             )
             return []

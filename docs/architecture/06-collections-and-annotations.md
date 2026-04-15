@@ -17,6 +17,18 @@ Collections are single-user and local-first in v1.
 
 But collection and annotation records should still include ownership-friendly structure so the model can expand later.
 
+## Current Workflow Support
+
+Collections are now visible to the assistant layer through the Paperbase gateway.
+
+- proposal evidence queries can source papers from a `paperbase_collection_id`
+- literature reviews can be scoped to a specific Paperbase collection
+- full-text reads inside those workflows still reuse stored Paperbase sections before
+  any PDF download fallback
+
+This means curated field-specific corpora are no longer only a storage feature; they
+are part of the active Arxie workflow surface.
+
 ## Collection Scope
 
 A collection is a user-owned curated slice of the corpus.
@@ -50,4 +62,3 @@ Collections should support domain-specific extraction targets such as:
 - benchmark methods
 - engineering tricks
 - design of experiments
-
