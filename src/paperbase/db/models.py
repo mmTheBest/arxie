@@ -311,3 +311,17 @@ class Annotation(Base, TimestampMixin):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     tags_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     status: Mapped[str | None] = mapped_column(String(64))
+
+
+class BackgroundJob(Base, TimestampMixin):
+    __tablename__ = "background_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    job_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="pending", index=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)

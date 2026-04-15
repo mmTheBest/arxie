@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import String, cast, exists, func, not_, or_, select
 from sqlalchemy.orm import Session
 
@@ -18,20 +18,19 @@ from paperbase.db.models import (
     PaperTag,
     Tag,
 )
-from paperbase.db.repositories import PaperRepository
+from paperbase.db.repositories import BackgroundJobRepository, PaperRepository
 from paperbase.search.query_builder import build_search_query
-from paperbase.search.runtime import PaperbaseSearchReindexer
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
     PaperSummaryResponse,
     SearchPapersResponse,
-    SearchReindexResponse,
-    SearchReindexResponseData,
     SearchStatusResponse,
     SearchStatusResponseData,
+    SingleBackgroundJobResponse,
 )
+from services.paperbase_api.routes.jobs import background_job_to_response
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
 
@@ -52,28 +51,14 @@ def search_status(request: Request) -> SearchStatusResponse:
 
 @router.post(
     "/reindex",
-    response_model=SearchReindexResponse,
+    response_model=SingleBackgroundJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
-def search_reindex(request: Request) -> SearchReindexResponse:
-    search_backend = request.app.state.search_backend
-    if search_backend is None:
-        raise PaperbaseAPIError(
-            status_code=503,
-            error="search_backend_unavailable",
-            message="Search backend is not configured for reindexing.",
-        )
-
-    reindexer = PaperbaseSearchReindexer(
-        session_factory=request.app.state.session_factory,
-        backend=search_backend,
-    )
-    indexed = reindexer.reindex_all()
-    return SearchReindexResponse(
-        data=SearchReindexResponseData(
-            backend_type=search_backend.__class__.__name__,
-            indexed=indexed,
-        )
-    )
+def search_reindex(request: Request) -> SingleBackgroundJobResponse:
+    with request.app.state.session_factory() as session:
+        repository = BackgroundJobRepository(session)
+        job = repository.create(job_type="search_reindex", payload_json={})
+    return SingleBackgroundJobResponse(data=background_job_to_response(job))
 
 
 @router.get(

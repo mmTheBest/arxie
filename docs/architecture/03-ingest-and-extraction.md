@@ -37,7 +37,8 @@ The current ingest and parse modules are:
 - `src/paperbase/extract/client.py` — OpenAI-backed structured extraction client
 - `src/paperbase/extract/pipeline.py` — persistence of datasets, methods, metrics, result rows, findings, glossary terms, engineering tricks, and evidence spans
 - `src/paperbase/extract/runner.py` — collection-level orchestration for local-first extraction runs
-- `services/paperbase_api/routes/extraction.py` — API surface for extraction profiles and collection-level extraction runs
+- `services/paperbase_api/routes/extraction.py` — API surface for extraction profiles and queued collection extraction jobs
+- `services/paperbase_worker/runtime.py` — worker dispatcher for queued parse/extract/index jobs
 - `src/paperbase/profiles/` — built-in field-specific extraction profile presets such as `sc_regnet`
 
 These modules are intentionally local-first. They should keep the import and parse contracts stable while the worker service and richer extraction stack are still being built.
@@ -51,21 +52,27 @@ The first extraction pipeline should remain schema-constrained and replaceable:
 - parsed sections are the default extraction input for local-first corpora
 - extraction clients return a typed bundle rather than directly mutating the database
 - persistence is handled inside Paperbase so Arxie and future workers reuse the same storage contract
-- collection runners should execute profile-specific extraction over user-curated corpora without requiring the future worker stack
+- collection runners are the execution engine behind worker-dispatched extraction jobs
 - glossary terms are stored as first-class canonical entities because field-specific databases often need shared vocabulary and benchmark definitions alongside result rows
 
 ## Current API Surface
 
-Paperbase now exposes extraction profile and collection extraction endpoints:
+Paperbase now exposes extraction profile management plus queued collection extraction:
 
 - `GET /api/v1/extraction-profiles`
 - `POST /api/v1/extraction-profiles`
 - `POST /api/v1/collections/{collection_id}/extract`
+- `GET /api/v1/jobs/{job_id}`
 
-These endpoints make the local-first extraction stack operational for curated
-collections. A user can define a field-specific schema profile once, attach it to
-their collection workflow, and run a persisted extraction pass against the
-collection without waiting for the future worker service.
+The contract is now intentionally asynchronous:
+
+- the API validates the request and enqueues a `collection_extract` job
+- the worker claims that job and executes `CollectionExtractionRunner`
+- clients poll `GET /api/v1/jobs/{job_id}` to observe `pending`, `running`,
+  `completed`, or `failed`
+
+This keeps the current local-first extraction stack operational for curated
+collections without keeping long-running extraction work inside the API process.
 
 ## Current Local Corpus Status
 

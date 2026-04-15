@@ -46,13 +46,20 @@ class SearchStatusResponse(BaseModel):
     data: SearchStatusResponseData
 
 
-class SearchReindexResponseData(BaseModel):
-    backend_type: str
-    indexed: dict[str, int]
+class BackgroundJobResponse(BaseModel):
+    id: str
+    job_type: str
+    status: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] | None = None
+    error_message: str | None = None
+    created_at: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
 
 
-class SearchReindexResponse(BaseModel):
-    data: SearchReindexResponseData
+class SingleBackgroundJobResponse(BaseModel):
+    data: BackgroundJobResponse
 
 
 class SectionResponse(BaseModel):

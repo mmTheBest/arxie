@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from paperbase.db.bootstrap import initialize_database
 from paperbase.db.models import Chunk, ExtractionRun, Figure, PaperFile, Section
@@ -50,7 +53,7 @@ def test_search_status_reports_backend_configuration(tmp_path) -> None:
     }
 
 
-def test_search_reindex_indexes_documents_with_configured_backend(tmp_path) -> None:
+def test_search_reindex_enqueues_background_job_without_running_inline(tmp_path) -> None:
     database_path = tmp_path / "paperbase.sqlite3"
     initialize_database(f"sqlite:///{database_path}")
     session_factory = make_session_factory(f"sqlite:///{database_path}")
@@ -109,32 +112,20 @@ def test_search_reindex_indexes_documents_with_configured_backend(tmp_path) -> N
 
     response = client.post("/api/v1/search/reindex")
 
-    assert response.status_code == 200
-    assert response.json()["data"] == {
-        "backend_type": "FakeSearchBackend",
-        "indexed": {
-            "papers": 1,
-            "chunks": 1,
-            "figures": 1,
-        },
-    }
-    assert [call[0] for call in backend.index_calls] == [
-        "paperbase-papers",
-        "paperbase-chunks",
-        "paperbase-figures",
-    ]
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert payload["job_type"] == "search_reindex"
+    assert payload["status"] == "pending"
+    assert payload["result"] is None
+    assert payload["error_message"] is None
 
+    with session_factory() as session:
+        stored_job = session.execute(
+            text("select job_type, status, payload_json from background_jobs")
+        ).mappings().one()
 
-def test_search_reindex_returns_503_without_configured_backend(tmp_path) -> None:
-    database_path = tmp_path / "paperbase.sqlite3"
-    initialize_database(f"sqlite:///{database_path}")
-    session_factory = make_session_factory(f"sqlite:///{database_path}")
-    client = TestClient(create_app(session_factory=session_factory))
-
-    response = client.post("/api/v1/search/reindex")
-
-    assert response.status_code == 503
-    assert response.json() == {
-        "error": "search_backend_unavailable",
-        "message": "Search backend is not configured for reindexing.",
-    }
+    assert stored_job["job_type"] == "search_reindex"
+    assert stored_job["status"] == "pending"
+    assert json.loads(stored_job["payload_json"]) == {}
+    assert backend.index_calls == []
+    assert backend.bulk_calls == []

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import paperbase.db.models as db_models
+import paperbase.db.repositories as db_repositories
 from pathlib import Path
 
 from paperbase.db.bootstrap import initialize_database
@@ -124,3 +126,57 @@ def test_collection_and_annotation_repositories_support_curated_local_workflows(
         assert [item.id for item in notes] == [annotation.id]
         assert notes[0].collection_id == collection.id
         assert notes[0].tags_json == ["review", "experiment-design"]
+
+
+def test_background_job_repository_tracks_pending_running_completed_and_failed_jobs(
+    tmp_path: Path,
+) -> None:
+    background_job_model = getattr(db_models, "BackgroundJob", None)
+    background_job_repository_cls = getattr(db_repositories, "BackgroundJobRepository", None)
+
+    assert background_job_model is not None, "BackgroundJob model must be defined."
+    assert background_job_repository_cls is not None, "BackgroundJobRepository must be defined."
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        repository = background_job_repository_cls(session)
+        queued = repository.create(
+            job_type="search_reindex",
+            payload_json={"index_prefix": "paperbase"},
+        )
+
+        assert queued.status == "pending"
+        assert queued.attempt_count == 0
+
+        claimed = repository.claim_next()
+        assert claimed is not None
+        assert claimed.id == queued.id
+        assert claimed.status == "running"
+        assert claimed.attempt_count == 1
+
+        repository.mark_completed(
+            claimed.id,
+            result_json={"indexed": {"papers": 1, "chunks": 2, "figures": 0}},
+        )
+
+        completed = repository.get_by_id(claimed.id)
+        assert completed is not None
+        assert completed.status == "completed"
+        assert completed.result_json == {"indexed": {"papers": 1, "chunks": 2, "figures": 0}}
+        assert completed.finished_at is not None
+
+        failed = repository.create(
+            job_type="collection_extract",
+            payload_json={"collection_id": "collection-123"},
+        )
+        repository.claim_next()
+        repository.mark_failed(failed.id, error_message="backend unavailable")
+
+        stored_failed = repository.get_by_id(failed.id)
+        assert stored_failed is not None
+        assert stored_failed.status == "failed"
+        assert stored_failed.error_message == "backend unavailable"
+        assert stored_failed.finished_at is not None

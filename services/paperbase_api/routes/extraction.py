@@ -2,35 +2,32 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from fastapi import APIRouter, Depends, Path, Query, Request, status
 from sqlalchemy.orm import Session
 
-from paperbase.db.repositories import CollectionRepository, ExtractionProfileRepository
+from paperbase.db.repositories import (
+    BackgroundJobRepository,
+    CollectionRepository,
+    ExtractionProfileRepository,
+)
 from paperbase.extract.client import OpenAIExtractionClient
-from paperbase.extract.runner import CollectionExtractionRunner
 from paperbase.profiles import get_profile_preset, list_profile_presets
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
-    CollectionExtractionSummaryResponse,
     ExtractionProfileCreateRequest,
     ExtractionProfilePresetResponse,
     ExtractionProfilePresetsResponse,
     ExtractionProfileResponse,
     ExtractionProfilesResponse,
     RunCollectionExtractionRequest,
-    SingleCollectionExtractionSummaryResponse,
+    SingleBackgroundJobResponse,
     SingleExtractionProfileResponse,
 )
+from services.paperbase_api.routes.jobs import background_job_to_response
 
 router = APIRouter(tags=["extraction"])
-
-
-def get_extraction_client_factory(request: Request) -> Callable[[], object]:
-    return request.app.state.extraction_client_factory
 
 
 def _profile_to_response(profile) -> ExtractionProfileResponse:  # noqa: ANN001
@@ -125,15 +122,15 @@ def create_extraction_profile(
 
 @router.post(
     "/api/v1/collections/{collection_id}/extract",
-    response_model=SingleCollectionExtractionSummaryResponse,
+    response_model=SingleBackgroundJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def extract_collection(
     payload: RunCollectionExtractionRequest,
     request: Request,
     collection_id: str = Path(..., min_length=1, max_length=36),
     session: Session = Depends(get_session),
-    extraction_client_factory: Callable[[], object] = Depends(get_extraction_client_factory),
-) -> SingleCollectionExtractionSummaryResponse:
+) -> SingleBackgroundJobResponse:
     collection_repository = CollectionRepository(session)
     extraction_profile_repository = ExtractionProfileRepository(session)
 
@@ -171,26 +168,29 @@ def extract_collection(
             message="Provide schema_payload or extraction_profile_id with a stored schema.",
         )
 
-    session_factory = request.app.state.session_factory
-    runner = CollectionExtractionRunner(
-        session_factory=session_factory,
-        client=extraction_client_factory(),
-    )
-    summary = runner.extract_collection(
-        collection_id=safe_collection_id,
-        schema_payload=schema_payload,
-        prompt_version=sanitize_user_text(payload.prompt_version, field_name="prompt_version", max_length=64),
-        schema_version=sanitize_user_text(payload.schema_version, field_name="schema_version", max_length=64),
-        extraction_profile_id=extraction_profile_id,
-        limit=payload.limit,
-    )
-    return SingleCollectionExtractionSummaryResponse(
-        data=CollectionExtractionSummaryResponse(
-            collection_id=summary.collection_id,
-            extracted_paper_count=summary.extracted_paper_count,
-            extraction_run_ids=list(summary.extraction_run_ids),
-            skipped_paper_ids=list(summary.skipped_paper_ids),
+    with request.app.state.session_factory() as job_session:
+        job_repository = BackgroundJobRepository(job_session)
+        job = job_repository.create(
+            job_type="collection_extract",
+            payload_json={
+                "collection_id": safe_collection_id,
+                "schema_payload": schema_payload,
+                "prompt_version": sanitize_user_text(
+                    payload.prompt_version,
+                    field_name="prompt_version",
+                    max_length=64,
+                ),
+                "schema_version": sanitize_user_text(
+                    payload.schema_version,
+                    field_name="schema_version",
+                    max_length=64,
+                ),
+                "extraction_profile_id": extraction_profile_id,
+                "limit": payload.limit,
+            },
         )
+    return SingleBackgroundJobResponse(
+        data=background_job_to_response(job)
     )
 
 

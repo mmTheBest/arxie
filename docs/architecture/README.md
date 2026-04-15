@@ -33,3 +33,10 @@ Arxie is being evolved into:
 - an assistant layer that runs on top of that database
 
 The user experiences one product, but the code should keep those responsibilities separate.
+
+Operationally, the current Paperbase branch is now split three ways:
+
+- the canonical DB and domain logic live under `src/paperbase/`
+- the query/CRUD API contract lives under `services/paperbase_api/`
+- long-running extraction and reindex work is queued by the API and executed by
+  `services/paperbase_worker/`

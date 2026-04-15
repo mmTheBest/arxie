@@ -67,7 +67,57 @@ for paper_id in paper_ids:
 PY
 ```
 
-## 4. Run Structured Extraction
+## 4. Enqueue Structured Extraction
+
+```bash
+.venv/bin/python - <<'PY'
+from fastapi.testclient import TestClient
+
+from paperbase.db.session import make_session_factory
+from services.paperbase_api.app import create_app
+
+collection_id = "replace-with-collection-id"
+session_factory = make_session_factory("sqlite:///data/paperbase.db")
+client = TestClient(create_app(session_factory=session_factory))
+
+response = client.post(
+    f"/api/v1/collections/{collection_id}/extract",
+    json={
+        "schema_payload": {
+            "datasets": True,
+            "methods": True,
+            "metrics": True,
+            "results": True,
+            "engineering_tricks": True,
+        },
+        "prompt_version": "paperbase-v1",
+        "schema_version": "paperbase-v1",
+    },
+)
+print(response.json())
+PY
+```
+
+Record the returned `job_id`.
+
+## 5. Process The Extraction Job With The Worker
+
+```bash
+.venv/bin/python - <<'PY'
+from paperbase.db.session import make_session_factory
+from paperbase.extract.client import OpenAIExtractionClient
+from services.paperbase_worker.runtime import PaperbaseWorker
+
+session_factory = make_session_factory("sqlite:///data/paperbase.db")
+worker = PaperbaseWorker(
+    session_factory=session_factory,
+    extraction_client_factory=lambda: OpenAIExtractionClient(model="gpt-4o-mini"),
+)
+print(worker.process_next_job())
+PY
+```
+
+## 6. Run Structured Extraction Directly For Debugging
 
 ```bash
 .venv/bin/python - <<'PY'
@@ -99,7 +149,10 @@ print(summary)
 PY
 ```
 
-## 5. Verify The Collection
+Use the direct runner only when debugging extraction behavior. Normal product
+execution should go through the queued API + worker path.
+
+## 7. Verify The Collection
 
 Run the Paperbase suite:
 

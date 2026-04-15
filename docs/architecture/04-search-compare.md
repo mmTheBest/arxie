@@ -106,15 +106,18 @@ just as internal library code:
 
 - `GET /api/v1/search/status`
 - `POST /api/v1/search/reindex`
+- `GET /api/v1/jobs/{job_id}`
 
 This closes the gap between “the runtime classes exist” and “the platform can
-actually trigger and observe reindexing.” The current behavior is intentionally
-thin:
+actually trigger and observe reindexing.” The current behavior is now
+worker-backed rather than API-blocking:
 
 - report whether a backend is configured
-- run a full rebuild of paper, chunk, and figure read models through the
-  configured backend
-- return explicit `503` errors when the search backend is unavailable
+- enqueue a `search_reindex` background job from the API
+- execute the actual rebuild of paper, chunk, and figure read models inside the
+  Paperbase worker
+- expose job state through the jobs API for polling clients and the future UI
 
-This is still a local-first operator surface. It is not yet a full workerized
-index-management system.
+This is still a local-first operator surface. The queue is DB-backed today so it
+can grow later into Redis or a larger broker-backed worker topology without
+changing the product-facing job contract.

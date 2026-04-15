@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Select, delete, select
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from paperbase.db.models import (
     Annotation,
     Author,
+    BackgroundJob,
     Collection,
     CollectionPaper,
     ExtractionProfile,
@@ -39,6 +41,10 @@ def _dedupe_preserve_order(values: Sequence[str]) -> list[str]:
         seen.add(normalized)
         cleaned.append(stripped)
     return cleaned
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class PaperRepository:
@@ -389,6 +395,78 @@ class AnnotationRepository:
             .order_by(Annotation.created_at.asc())
         )
         return self.session.execute(statement).scalars().all()
+
+
+class BackgroundJobRepository:
+    """Persistence helpers for queued local-first background jobs."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self,
+        *,
+        job_type: str,
+        payload_json: dict[str, Any] | None = None,
+    ) -> BackgroundJob:
+        job = BackgroundJob(
+            job_type=job_type,
+            status="pending",
+            payload_json=payload_json or {},
+        )
+        self.session.add(job)
+        self.session.commit()
+        self.session.refresh(job)
+        return job
+
+    def get_by_id(self, job_id: str) -> BackgroundJob | None:
+        return self.session.get(BackgroundJob, job_id)
+
+    def claim_next(self, *, job_types: Sequence[str] | None = None) -> BackgroundJob | None:
+        statement: Select[tuple[BackgroundJob]] = (
+            select(BackgroundJob)
+            .where(BackgroundJob.status == "pending")
+            .order_by(BackgroundJob.created_at.asc())
+        )
+        if job_types is not None:
+            statement = statement.where(BackgroundJob.job_type.in_(job_types))
+        job = self.session.execute(statement).scalar_one_or_none()
+        if job is None:
+            return None
+
+        job.status = "running"
+        job.attempt_count += 1
+        job.started_at = _utc_now()
+        job.finished_at = None
+        job.error_message = None
+        self.session.commit()
+        self.session.refresh(job)
+        return job
+
+    def mark_completed(self, job_id: str, *, result_json: dict[str, Any] | None = None) -> BackgroundJob:
+        job = self.session.get(BackgroundJob, job_id)
+        if job is None:
+            raise ValueError(f"No background job found for id: {job_id}")
+
+        job.status = "completed"
+        job.result_json = result_json or {}
+        job.error_message = None
+        job.finished_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(job)
+        return job
+
+    def mark_failed(self, job_id: str, *, error_message: str) -> BackgroundJob:
+        job = self.session.get(BackgroundJob, job_id)
+        if job is None:
+            raise ValueError(f"No background job found for id: {job_id}")
+
+        job.status = "failed"
+        job.error_message = error_message
+        job.finished_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(job)
+        return job
 
 
 class PaperFileRepository:

@@ -121,11 +121,12 @@ def test_paperbase_api_creates_extraction_profile_and_runs_collection_extraction
             "schema_version": "schema-v1",
         },
     )
-    assert run_extraction.status_code == 200
+    assert run_extraction.status_code == 202
     payload = run_extraction.json()["data"]
-    assert payload["collection_id"] == collection_id
-    assert payload["extracted_paper_count"] == 1
-    assert len(payload["extraction_run_ids"]) == 1
+    assert payload["job_type"] == "collection_extract"
+    assert payload["status"] == "pending"
+    assert payload["payload"]["collection_id"] == collection_id
+    assert payload["payload"]["extraction_profile_id"] == profile_id
 
     with session_factory() as session:
         stored_collection = session.execute(
@@ -135,5 +136,5 @@ def test_paperbase_api_creates_extraction_profile_and_runs_collection_extraction
         extraction_runs = session.execute(select(ExtractionRun)).scalars().all()
 
     assert stored_collection.title == "SamplePapers"
-    assert [term.term for term in glossary_terms] == ["AUROC"]
-    assert [run.status for run in extraction_runs] == ["completed"]
+    assert glossary_terms == []
+    assert extraction_runs == []

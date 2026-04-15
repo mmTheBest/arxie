@@ -4,10 +4,10 @@
 
 Use this runbook to rebuild or validate the Paperbase search/read-model contract.
 
-Important current-state note: Paperbase search mappings and document builders exist,
-but the live indexing service is still scaffolded. Today this runbook is mainly for
-regenerating and validating index payload shapes so collaborators can evolve the
-search layer safely.
+Important current-state note: reindexing is now worker-backed. The API should
+enqueue a search job, and the worker should execute the actual index rebuild.
+This runbook keeps both the contract validation path and the local worker
+execution path explicit.
 
 ## 1. Validate Read-Model Contracts
 
@@ -21,7 +21,44 @@ This verifies:
 - document builders
 - hybrid query builder payloads
 
-## 2. Rebuild Documents From The Canonical Store
+## 2. Enqueue A Reindex Job
+
+```bash
+.venv/bin/python - <<'PY'
+from fastapi.testclient import TestClient
+
+from paperbase.db.session import make_session_factory
+from services.paperbase_api.app import create_app
+
+session_factory = make_session_factory("sqlite:///data/paperbase.db")
+client = TestClient(create_app(session_factory=session_factory))
+response = client.post("/api/v1/search/reindex")
+print(response.json())
+PY
+```
+
+Record the returned `job_id`.
+
+## 3. Process The Job With The Worker Runtime
+
+```bash
+.venv/bin/python - <<'PY'
+from paperbase.config import load_paperbase_config
+from paperbase.db.session import make_session_factory
+from paperbase.search.runtime import ElasticsearchSearchBackend
+from services.paperbase_worker.runtime import PaperbaseWorker
+
+config = load_paperbase_config()
+session_factory = make_session_factory("sqlite:///data/paperbase.db")
+worker = PaperbaseWorker(
+    session_factory=session_factory,
+    search_backend=ElasticsearchSearchBackend(base_url=config.elasticsearch_url),
+)
+print(worker.process_next_job())
+PY
+```
+
+## 4. Rebuild Documents From The Canonical Store
 
 Use a short Python task to regenerate the derived paper and chunk payloads from the
 current DB.
@@ -65,7 +102,7 @@ print({"paper_docs": len(paper_docs), "chunk_docs": len(chunk_docs)})
 PY
 ```
 
-## 3. Validate Query Payloads
+## 5. Validate Query Payloads
 
 ```bash
 .venv/bin/python - <<'PY'
@@ -83,11 +120,12 @@ PY
 Confirm the payload matches the current mappings before wiring it into any runtime
 search path.
 
-## 4. When Elasticsearch Is Live
+## 6. When Elasticsearch Is Live
 
-Once the actual indexing service exists, extend this runbook with the cluster-write
-steps. Until then, do not claim “reindex complete” unless both of these are true:
+Do not claim “reindex complete” unless all of these are true:
 
+- the API enqueued the job successfully
+- the worker processed the job to `completed`
 - the derived document payloads were rebuilt from the canonical DB
 - the read-model tests passed fresh
 
