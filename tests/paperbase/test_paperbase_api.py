@@ -16,6 +16,7 @@ from paperbase.db.models import (
     Method,
     Metric,
     ResultRow,
+    TableArtifact,
 )
 from paperbase.db.repositories import PaperFileRepository, PaperRepository
 from paperbase.db.session import make_session_factory
@@ -42,7 +43,7 @@ class FakePDFParser:
         ]
 
 
-def test_paperbase_api_exposes_search_fetch_fulltext_figures_and_compare(tmp_path: Path) -> None:
+def test_paperbase_api_exposes_search_fetch_fulltext_figures_tables_and_compare(tmp_path: Path) -> None:
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n%stub pdf\n")
     database_path = tmp_path / "paperbase.sqlite3"
@@ -81,6 +82,13 @@ def test_paperbase_api_exposes_search_fetch_fulltext_figures_and_compare(tmp_pat
                 method,
                 metric,
                 Figure(paper_id=paper_id, page_number=2, figure_label="Figure 1", caption="Model architecture."),
+                TableArtifact(
+                    paper_id=paper_id,
+                    page_number=3,
+                    table_label="Table 1",
+                    caption="Benchmark comparison.",
+                    structured_payload_json={"columns": ["Method", "AUROC"], "rows": 2},
+                ),
             ]
         )
         session.flush()
@@ -101,6 +109,7 @@ def test_paperbase_api_exposes_search_fetch_fulltext_figures_and_compare(tmp_pat
     paper_response = client.get(f"/api/v1/papers/{paper_id}")
     fulltext_response = client.get(f"/api/v1/papers/{paper_id}/fulltext")
     figures_response = client.get(f"/api/v1/papers/{paper_id}/figures")
+    tables_response = client.get(f"/api/v1/papers/{paper_id}/tables")
     compare_response = client.post(
         "/api/v1/compare/results",
         json={"dataset": "scRegNetBench", "metric": "AUROC"},
@@ -119,6 +128,8 @@ def test_paperbase_api_exposes_search_fetch_fulltext_figures_and_compare(tmp_pat
 
     assert figures_response.status_code == 200
     assert figures_response.json()["data"][0]["figure_label"] == "Figure 1"
+    assert tables_response.status_code == 200
+    assert tables_response.json()["data"][0]["table_label"] == "Table 1"
 
     assert compare_response.status_code == 200
     assert compare_response.json()["data"][0]["metric"] == "AUROC"
@@ -164,7 +175,20 @@ def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> No
             schema_version="schema-v1",
             status="completed",
         )
-        session.add_all([dataset, method, metric, glossary, finding, trick, extraction_run])
+        figure = Figure(
+            paper_id=paper.id,
+            page_number=2,
+            figure_label="Figure 1",
+            caption="Model architecture.",
+        )
+        table = TableArtifact(
+            paper_id=paper.id,
+            page_number=4,
+            table_label="Table 1",
+            caption="Benchmark comparison.",
+            structured_payload_json={"columns": ["Method", "AUROC"], "rows": 2},
+        )
+        session.add_all([dataset, method, metric, glossary, finding, trick, extraction_run, figure, table])
         session.flush()
         session.add(
             ResultRow(
@@ -201,6 +225,8 @@ def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> No
     assert payload["methods"][0]["display_name"] == "scLong"
     assert payload["metrics"][0]["display_name"] == "AUROC"
     assert payload["result_rows"][0]["value_numeric"] == 0.91
+    assert payload["figures"][0]["figure_label"] == "Figure 1"
+    assert payload["tables"][0]["table_label"] == "Table 1"
     assert payload["glossary_terms"][0]["term"] == "AUROC"
     assert payload["findings"][0]["statement"] == "scLong improves AUROC on scRegNetBench."
     assert payload["engineering_tricks"][0]["title"] == "Long-context token packing"

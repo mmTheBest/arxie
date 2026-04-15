@@ -37,6 +37,8 @@ The current ingest and parse modules are:
 - `src/paperbase/extract/client.py` — OpenAI-backed structured extraction client
 - `src/paperbase/extract/pipeline.py` — persistence of datasets, methods, metrics, result rows, findings, glossary terms, engineering tricks, and evidence spans
 - `src/paperbase/extract/runner.py` — collection-level orchestration for local-first extraction runs
+- `src/paperbase/figures/pipeline.py` — placeholder figure candidate extraction and persistence contracts
+- `src/paperbase/tables/pipeline.py` — placeholder table candidate extraction and persistence contracts
 - `services/paperbase_api/routes/extraction.py` — API surface for extraction profiles and queued collection extraction jobs
 - `services/paperbase_worker/runtime.py` — worker dispatcher for queued parse/extract/index jobs
 - `src/paperbase/profiles/` — built-in field-specific extraction profile presets such as `sc_regnet`
@@ -88,6 +90,22 @@ field database:
 This is an important local-first milestone because it proves the collection can
 already behave like a persistent field database rather than a PDF folder plus ad
 hoc prompts.
+
+## Artifact Contracts
+
+Paperbase now also stabilizes figure and table artifact storage even before
+heavier OCR or diagram extraction is added:
+
+- figure records preserve page number, figure label, caption, optional bounding
+  boxes, and storage URIs
+- table records preserve page number, table label, caption, optional bounding
+  boxes, storage URIs, and a lightweight JSON payload for structured table shape
+- paper and collection browse surfaces can expose those artifacts immediately,
+  while richer extraction continues to evolve behind the same storage contract
+
+This keeps figure and table work on the same architectural path as datasets,
+methods, metrics, and result rows: typed candidates first, canonical storage
+second, and browse/compare surfaces built on top.
 
 ## Built-In Field Presets
 

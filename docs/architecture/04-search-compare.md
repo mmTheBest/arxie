@@ -63,6 +63,8 @@ local-first database:
 - `POST /api/v1/compare/results`
 - `POST /api/v1/compare/methods`
 - `POST /api/v1/compare/engineering-tricks`
+- `POST /api/v1/compare/figures`
+- `POST /api/v1/compare/tables`
 
 These routes make comparison behave like a database query surface rather than a
 single agent prompt:
@@ -73,6 +75,10 @@ single agent prompt:
   returns the best observed row per method
 - engineering-trick comparison can summarize recurring tricks across a corpus or
   within a method family
+- figure comparison can filter artifact slices by collection and method family
+  so visual evidence is queryable instead of buried inside PDFs
+- table comparison can filter tabular artifact slices by collection and method
+  family so benchmark tables become database browse objects
 
 This is still DB-backed, not search-index-backed. It is the current local-first
 comparison layer while the richer read-model and Elasticsearch workflow are
@@ -89,15 +95,20 @@ The current API now supports that browse layer through:
 - `GET /api/v1/collections/{collection_id}/structured-summary`
 
 That endpoint returns the paper-level extracted datasets, methods, metrics,
-result rows, glossary terms, findings, engineering tricks, extraction runs, and
-evidence spans. It gives the local-first database a usable inspection surface
-before the future UI and richer search indexing layers are finished.
+result rows, glossary terms, findings, engineering tricks, extraction runs,
+evidence spans, figures, and tables. It gives the local-first database a usable
+inspection surface before the future UI and richer search indexing layers are
+finished.
 
 The collection structured summary endpoint now also normalizes obvious metric
 aliases such as long-form `Area Under the Receiver Operating Characteristic
 Curve` into `AUROC` and collapses duplicate summary entries. That keeps the
 local-first browse layer readable even before richer metric normalization and
 dedicated comparison tables are added.
+
+The same summary surface now exposes collection-level figure and table slices,
+which the local Paperbase Console uses to render an artifact panel alongside the
+existing structured entity summaries.
 
 ## Search Operations Surface
 
@@ -114,8 +125,8 @@ worker-backed rather than API-blocking:
 
 - report whether a backend is configured
 - enqueue a `search_reindex` background job from the API
-- execute the actual rebuild of paper, chunk, and figure read models inside the
-  Paperbase worker
+- execute the actual rebuild of paper, chunk, figure, and future table read
+  models inside the Paperbase worker
 - expose job state through the jobs API for polling clients and the future UI
 
 This is still a local-first operator surface. The queue is DB-backed today so it

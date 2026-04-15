@@ -19,6 +19,7 @@ from paperbase.db.models import (
     Paper,
     ResultRow,
     Section,
+    TableArtifact,
 )
 from paperbase.db.repositories import PaperRepository
 from ra.utils.security import sanitize_identifier
@@ -41,6 +42,8 @@ from services.paperbase_api.models import (
     SectionResponse,
     SinglePaperResponse,
     StructuredNamedArtifactResponse,
+    TableResponse,
+    TablesResponse,
 )
 
 router = APIRouter(prefix="/api/v1/papers", tags=["papers"])
@@ -164,6 +167,37 @@ def fetch_paper_figures(
 
 
 @router.get(
+    "/{paper_id}/tables",
+    response_model=TablesResponse,
+)
+def fetch_paper_tables(
+    paper_id: str = Path(..., min_length=1, max_length=36),
+    session: Session = Depends(get_session),
+) -> TablesResponse:
+    normalized_paper_id = sanitize_identifier(paper_id, field_name="paper_id", max_length=36)
+    _get_paper_or_404(session, normalized_paper_id)
+    tables = session.execute(
+        select(TableArtifact)
+        .where(TableArtifact.paper_id == normalized_paper_id)
+        .order_by(TableArtifact.page_number.asc(), TableArtifact.created_at.asc())
+    ).scalars().all()
+
+    return TablesResponse(
+        data=[
+            TableResponse(
+                id=table.id,
+                page_number=table.page_number,
+                table_label=table.table_label,
+                caption=table.caption,
+                storage_uri=table.storage_uri,
+                structured_payload=dict(table.structured_payload_json or {}),
+            )
+            for table in tables
+        ]
+    )
+
+
+@router.get(
     "/{paper_id}/structured-data",
     response_model=PaperStructuredDataResponse,
 )
@@ -214,6 +248,16 @@ def fetch_paper_structured_data(
         .where(EvidenceSpan.paper_id == normalized_paper_id)
         .order_by(EvidenceSpan.created_at.asc())
     ).scalars().all()
+    figures = session.execute(
+        select(Figure)
+        .where(Figure.paper_id == normalized_paper_id)
+        .order_by(Figure.page_number.asc(), Figure.created_at.asc())
+    ).scalars().all()
+    tables = session.execute(
+        select(TableArtifact)
+        .where(TableArtifact.paper_id == normalized_paper_id)
+        .order_by(TableArtifact.page_number.asc(), TableArtifact.created_at.asc())
+    ).scalars().all()
     result_rows = session.execute(
         select(ResultRow, Dataset, Method, Metric)
         .outerjoin(Dataset, Dataset.id == ResultRow.dataset_id)
@@ -226,6 +270,27 @@ def fetch_paper_structured_data(
     return PaperStructuredDataResponse(
         data=PaperStructuredDataResponseData(
             paper_id=normalized_paper_id,
+            figures=[
+                FigureResponse(
+                    id=figure.id,
+                    page_number=figure.page_number,
+                    figure_label=figure.figure_label,
+                    caption=figure.caption,
+                    storage_uri=figure.storage_uri,
+                )
+                for figure in figures
+            ],
+            tables=[
+                TableResponse(
+                    id=table.id,
+                    page_number=table.page_number,
+                    table_label=table.table_label,
+                    caption=table.caption,
+                    storage_uri=table.storage_uri,
+                    structured_payload=dict(table.structured_payload_json or {}),
+                )
+                for table in tables
+            ],
             datasets=[
                 StructuredNamedArtifactResponse(
                     id=dataset.id,

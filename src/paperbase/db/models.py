@@ -158,6 +158,19 @@ class Figure(Base, TimestampMixin):
     bbox_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
 
+class TableArtifact(Base, TimestampMixin):
+    __tablename__ = "tables"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    table_label: Mapped[str | None] = mapped_column(String(128))
+    caption: Mapped[str | None] = mapped_column(Text)
+    storage_uri: Mapped[str | None] = mapped_column(Text)
+    bbox_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    structured_payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
 class Dataset(Base, TimestampMixin):
     __tablename__ = "datasets"
 

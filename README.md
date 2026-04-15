@@ -28,7 +28,7 @@ Arxie is an AI research assistant that reads real papers (Semantic Scholar + arX
 - Cross-artifact sync when users revise hypotheses/assumptions
 - Paperbase persistent corpus with worker-backed parse, extract, and reindex jobs
 - Curated local collections with field-specific extraction profiles and annotations
-- Paperbase Console for browsing collections, structured paper data, and background jobs
+- Paperbase Console for browsing collections, structured paper data, figure/table artifacts, comparisons, and background jobs
 
 (See `docs/PRE-PRD-v0.2.md` for discussion draft.)
 
@@ -40,6 +40,7 @@ Most assistants stop at summaries. Arxie is designed for researchers who need a 
 
 - read full papers, not just abstracts
 - compare methods and contradictions across papers
+- inspect extracted figures, tables, and evidence-backed result rows
 - keep citations tied to claims
 - show confidence based on evidence landscape
 
@@ -90,6 +91,16 @@ curl -X POST http://localhost:8000/api/query \
   -H "Content-Type: application/json" \
   -d '{"query":"What are retrieval-augmented generation trade-offs?"}'
 ```
+
+Paperbase's local-first API is served separately from the legacy RA API in the
+feature branch. It now supports:
+
+- queued extraction and reindex jobs
+- structured paper browse for datasets, methods, metrics, evidence, figures,
+  and tables
+- collection summaries and comparison routes for results, methods,
+  engineering tricks, figures, and tables
+- a build-free local console at `/app`
 
 ---
 

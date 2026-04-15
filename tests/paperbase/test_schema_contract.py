@@ -15,6 +15,7 @@ def test_paperbase_metadata_contains_core_tables() -> None:
         "sections",
         "chunks",
         "figures",
+        "tables",
         "glossary_terms",
         "datasets",
         "methods",
@@ -41,6 +42,7 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     authors = Base.metadata.tables["authors"]
     paper_authors = Base.metadata.tables["paper_authors"]
     paper_tags = Base.metadata.tables["paper_tags"]
+    tables = Base.metadata.tables["tables"]
 
     assert "owner_id" in collections.c
     assert "scope_type" in collections.c
@@ -59,3 +61,5 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     assert "display_name" in authors.c
     assert "paper_id" in paper_authors.c
     assert "tag_id" in paper_tags.c
+    assert "caption" in tables.c
+    assert "structured_payload_json" in tables.c

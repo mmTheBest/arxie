@@ -105,6 +105,19 @@ class FiguresResponse(BaseModel):
     data: list[FigureResponse]
 
 
+class TableResponse(BaseModel):
+    id: str
+    page_number: int | None = None
+    table_label: str | None = None
+    caption: str | None = None
+    storage_uri: str | None = None
+    structured_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class TablesResponse(BaseModel):
+    data: list[TableResponse]
+
+
 class StructuredNamedArtifactResponse(BaseModel):
     id: str
     display_name: str
@@ -167,6 +180,8 @@ class EvidenceSpanArtifactResponse(BaseModel):
 
 class PaperStructuredDataResponseData(BaseModel):
     paper_id: str
+    figures: list[FigureResponse]
+    tables: list[TableResponse]
     datasets: list[StructuredNamedArtifactResponse]
     methods: list[StructuredNamedArtifactResponse]
     metrics: list[StructuredNamedArtifactResponse]
@@ -270,6 +285,43 @@ class CompareEngineeringTricksResponse(BaseModel):
     data: list[CompareEngineeringTrickItemResponse]
 
 
+class CompareFigureTableRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    collection_id: str | None = Field(None, min_length=1, max_length=36)
+    method: str | None = Field(None, min_length=1, max_length=255)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class CompareFigureItemResponse(BaseModel):
+    id: str
+    paper_id: str
+    paper_title: str
+    page_number: int | None = None
+    figure_label: str | None = None
+    caption: str | None = None
+    storage_uri: str | None = None
+
+
+class CompareFiguresResponse(BaseModel):
+    data: list[CompareFigureItemResponse]
+
+
+class CompareTableItemResponse(BaseModel):
+    id: str
+    paper_id: str
+    paper_title: str
+    page_number: int | None = None
+    table_label: str | None = None
+    caption: str | None = None
+    storage_uri: str | None = None
+    structured_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompareTablesResponse(BaseModel):
+    data: list[CompareTableItemResponse]
+
+
 class CollectionCreateRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -341,6 +393,20 @@ class CollectionSummaryEngineeringTrickResponse(BaseModel):
     description: str
 
 
+class CollectionSummaryFigureResponse(BaseModel):
+    id: str
+    page_number: int | None = None
+    figure_label: str | None = None
+    caption: str | None = None
+
+
+class CollectionSummaryTableResponse(BaseModel):
+    id: str
+    page_number: int | None = None
+    table_label: str | None = None
+    caption: str | None = None
+
+
 class CollectionSummaryResultRowResponse(BaseModel):
     id: str
     paper_id: str
@@ -359,6 +425,8 @@ class CollectionStructuredSummaryResponseData(BaseModel):
     datasets: list[CollectionSummaryNamedArtifactResponse]
     methods: list[CollectionSummaryNamedArtifactResponse]
     metrics: list[CollectionSummaryNamedArtifactResponse]
+    figures: list[CollectionSummaryFigureResponse]
+    tables: list[CollectionSummaryTableResponse]
     glossary_terms: list[CollectionSummaryGlossaryTermResponse]
     engineering_tricks: list[CollectionSummaryEngineeringTrickResponse]
     top_result_rows: list[CollectionSummaryResultRowResponse]

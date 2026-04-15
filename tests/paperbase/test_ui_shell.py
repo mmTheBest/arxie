@@ -24,6 +24,7 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="collections-panel"' in html
     assert 'id="papers-panel"' in html
     assert 'id="summary-panel"' in html
+    assert 'id="artifacts-panel"' in html
     assert 'id="jobs-panel"' in html
     assert "/ui/paperbase-ui.css" in html
     assert "/ui/paperbase-ui.js" in html
@@ -31,6 +32,10 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert script_response.status_code == 200
     assert "/api/v1/collections" in script_response.text
     assert "/api/v1/jobs" in script_response.text
+    assert "/api/v1/compare/figures" in script_response.text
+    assert "/api/v1/compare/tables" in script_response.text
+    assert "/api/v1/papers/" in script_response.text
+    assert "/tables" in script_response.text
 
     assert style_response.status_code == 200
     assert "--paperbase-bg" in style_response.text

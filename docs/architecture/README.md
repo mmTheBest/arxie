@@ -45,3 +45,7 @@ The first product UI is now also served from `services/paperbase_api/` as a
 build-free local console. That UI is intentionally thin: it sits directly on the
 collections, papers, search, and jobs APIs so the product can ship a real
 operator surface before a larger frontend stack is introduced.
+
+That console now also includes a dedicated artifact surface for figure and table
+browse and comparison, so collaborators can inspect visual evidence without
+dropping into raw PDFs or ad hoc scripts.

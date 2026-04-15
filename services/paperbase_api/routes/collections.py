@@ -11,11 +11,13 @@ from paperbase.db.models import (
     Dataset,
     EngineeringTrick,
     ExtractionRun,
+    Figure,
     GlossaryTerm,
     Method,
     Metric,
     Paper,
     ResultRow,
+    TableArtifact,
 )
 from paperbase.db.repositories import AnnotationRepository, CollectionRepository, PaperRepository
 from ra.utils.security import sanitize_identifier, sanitize_user_text
@@ -32,9 +34,11 @@ from services.paperbase_api.models import (
     CollectionStructuredSummaryResponse,
     CollectionStructuredSummaryResponseData,
     CollectionSummaryEngineeringTrickResponse,
+    CollectionSummaryFigureResponse,
     CollectionSummaryGlossaryTermResponse,
     CollectionSummaryNamedArtifactResponse,
     CollectionSummaryResultRowResponse,
+    CollectionSummaryTableResponse,
     CollectionsResponse,
     CollectionSummaryResponse,
     PaperSummaryResponse,
@@ -312,6 +316,18 @@ def fetch_collection_structured_summary(
         .where(Metric.paper_id.in_(member_paper_ids))
         .order_by(Metric.display_name.asc(), Metric.created_at.asc())
     ).scalars().all()
+    figures = session.execute(
+        select(Figure)
+        .where(Figure.paper_id.in_(member_paper_ids))
+        .order_by(Figure.page_number.asc(), Figure.created_at.asc())
+        .limit(12)
+    ).scalars().all()
+    tables = session.execute(
+        select(TableArtifact)
+        .where(TableArtifact.paper_id.in_(member_paper_ids))
+        .order_by(TableArtifact.page_number.asc(), TableArtifact.created_at.asc())
+        .limit(12)
+    ).scalars().all()
     glossary_terms = session.execute(
         select(GlossaryTerm)
         .where(GlossaryTerm.paper_id.in_(member_paper_ids))
@@ -341,6 +357,24 @@ def fetch_collection_structured_summary(
             datasets=_build_named_artifact_summary(datasets, artifact_type="dataset"),
             methods=_build_named_artifact_summary(methods, artifact_type="method"),
             metrics=_build_named_artifact_summary(metrics, artifact_type="metric"),
+            figures=[
+                CollectionSummaryFigureResponse(
+                    id=item.id,
+                    page_number=item.page_number,
+                    figure_label=item.figure_label,
+                    caption=item.caption,
+                )
+                for item in figures
+            ],
+            tables=[
+                CollectionSummaryTableResponse(
+                    id=item.id,
+                    page_number=item.page_number,
+                    table_label=item.table_label,
+                    caption=item.caption,
+                )
+                for item in tables
+            ],
             glossary_terms=[
                 CollectionSummaryGlossaryTermResponse(
                     id=item.id,

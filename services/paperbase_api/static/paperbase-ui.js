@@ -4,6 +4,8 @@
     jobs: "/api/v1/jobs",
     search: "/api/v1/search/papers",
     reindex: "/api/v1/search/reindex",
+    compareFigures: "/api/v1/compare/figures",
+    compareTables: "/api/v1/compare/tables",
   };
 
   const state = {
@@ -14,6 +16,8 @@
     selectedPaper: null,
     selectedPaperStructured: null,
     collectionSummary: null,
+    collectionFigures: [],
+    collectionTables: [],
     jobs: [],
     pollHandle: null,
   };
@@ -23,6 +27,7 @@
     paperList: document.getElementById("paper-list"),
     collectionSummary: document.getElementById("collection-summary"),
     paperDetail: document.getElementById("paper-detail"),
+    artifactSurface: document.getElementById("artifact-surface"),
     jobsList: document.getElementById("jobs-list"),
     searchForm: document.getElementById("search-form"),
     searchInput: document.getElementById("paper-search-input"),
@@ -69,16 +74,28 @@
   }
 
   async function loadCollectionSurface(collectionId) {
-    const [collectionPayload, papersPayload, summaryPayload] = await Promise.all([
+    const [collectionPayload, papersPayload, summaryPayload, figuresPayload, tablesPayload] = await Promise.all([
       fetchJson(`/api/v1/collections/${collectionId}`),
       fetchJson(`/api/v1/collections/${collectionId}/papers`),
       fetchJson(`/api/v1/collections/${collectionId}/structured-summary`),
+      fetchJson(endpoints.compareFigures, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collection_id: collectionId, limit: 8 }),
+      }),
+      fetchJson(endpoints.compareTables, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collection_id: collectionId, limit: 8 }),
+      }),
     ]);
 
     state.selectedCollection = collectionPayload.data;
     state.papers = papersPayload.data || [];
     state.searchResults = [];
     state.collectionSummary = summaryPayload.data;
+    state.collectionFigures = figuresPayload.data || [];
+    state.collectionTables = tablesPayload.data || [];
     state.selectedPaper = null;
     state.selectedPaperStructured = null;
 
@@ -86,6 +103,7 @@
     renderPapers();
     renderCollectionSummary();
     renderPaperDetail();
+    renderArtifactSurface();
     updateActionButtons();
   }
 
@@ -260,6 +278,8 @@
       { label: "Papers", value: summary.paper_count },
       { label: "Extracted", value: summary.extracted_paper_count },
       { label: "Methods", value: summary.methods.length },
+      { label: "Figures", value: summary.figures.length },
+      { label: "Tables", value: summary.tables.length },
     ];
 
     elements.collectionSummary.innerHTML = `
@@ -321,6 +341,8 @@
           <span class="pill">Metrics ${structured.metrics.length}</span>
           <span class="pill">Results ${structured.result_rows.length}</span>
           <span class="pill">Tricks ${structured.engineering_tricks.length}</span>
+          <span class="pill">Figures ${structured.figures.length}</span>
+          <span class="pill">Tables ${structured.tables.length}</span>
         </div>
       </div>
       <div class="detail-group">
@@ -336,6 +358,52 @@
             .slice(0, 4)
             .map((item) => `<li>${escapeHtml(item.title)} — ${escapeHtml(item.description)}</li>`)
             .join("") || "<li>No extracted engineering tricks.</li>"}
+        </ul>
+      </div>
+      <div class="detail-group">
+        <strong>Figures</strong>
+        <ul class="detail-list">
+          ${structured.figures
+            .slice(0, 4)
+            .map((item) => `<li>${escapeHtml(item.figure_label || "Figure")} — ${escapeHtml(item.caption || "No caption")}</li>`)
+            .join("") || "<li>No figure artifacts.</li>"}
+        </ul>
+      </div>
+      <div class="detail-group">
+        <strong>Tables</strong>
+        <ul class="detail-list">
+          ${structured.tables
+            .slice(0, 4)
+            .map((item) => `<li>${escapeHtml(item.table_label || "Table")} — ${escapeHtml(item.caption || "No caption")}</li>`)
+            .join("") || "<li>No table artifacts.</li>"}
+        </ul>
+      </div>
+    `;
+  }
+
+  function renderArtifactSurface() {
+    if (!state.selectedCollection) {
+      elements.artifactSurface.innerHTML = '<div class="summary-card muted">Select a collection to inspect figures and tables.</div>';
+      return;
+    }
+
+    elements.artifactSurface.innerHTML = `
+      <div class="summary-card">
+        <h3>Figures</h3>
+        <ul class="detail-list">
+          ${state.collectionFigures
+            .slice(0, 6)
+            .map((item) => `<li>${escapeHtml(item.paper_title)} — ${escapeHtml(item.figure_label || "Figure")} / ${escapeHtml(item.caption || "No caption")}</li>`)
+            .join("") || "<li>No figures in this slice.</li>"}
+        </ul>
+      </div>
+      <div class="summary-card">
+        <h3>Tables</h3>
+        <ul class="detail-list">
+          ${state.collectionTables
+            .slice(0, 6)
+            .map((item) => `<li>${escapeHtml(item.paper_title)} — ${escapeHtml(item.table_label || "Table")} / ${escapeHtml(item.caption || "No caption")}</li>`)
+            .join("") || "<li>No tables in this slice.</li>"}
         </ul>
       </div>
     `;
@@ -366,6 +434,7 @@
     elements.collectionSummary.innerHTML = '<div class="muted">Select a collection to inspect its structured surface.</div>';
     elements.paperList.innerHTML = '<div class="list-card muted">Select a collection to see its papers.</div>';
     elements.paperDetail.innerHTML = '<div class="muted">Select a paper to inspect its structured surface.</div>';
+    elements.artifactSurface.innerHTML = '<div class="summary-card muted">Select a collection to inspect figures and tables.</div>';
   }
 
   function updatePolling() {

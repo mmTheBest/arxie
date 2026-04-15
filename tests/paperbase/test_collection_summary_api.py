@@ -3,7 +3,17 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from paperbase.db.bootstrap import initialize_database
-from paperbase.db.models import Dataset, EngineeringTrick, ExtractionRun, GlossaryTerm, Method, Metric, ResultRow
+from paperbase.db.models import (
+    Dataset,
+    EngineeringTrick,
+    ExtractionRun,
+    Figure,
+    GlossaryTerm,
+    Method,
+    Metric,
+    ResultRow,
+    TableArtifact,
+)
 from paperbase.db.repositories import CollectionRepository, PaperRepository
 from paperbase.db.session import make_session_factory
 from services.paperbase_api.app import create_app
@@ -41,6 +51,19 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
                     paper_id=paper.id,
                     term="GRN",
                     definition="Gene regulatory network.",
+                ),
+                Figure(
+                    paper_id=paper.id,
+                    page_number=2,
+                    figure_label="Figure 1",
+                    caption="Model architecture.",
+                ),
+                TableArtifact(
+                    paper_id=paper.id,
+                    page_number=4,
+                    table_label="Table 1",
+                    caption="Benchmark comparison.",
+                    structured_payload_json={"columns": ["Method", "AUROC"], "rows": 1},
                 ),
                 EngineeringTrick(
                     paper_id=paper.id,
@@ -81,6 +104,8 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
     assert payload["datasets"][0]["display_name"] == "scRegNetBench"
     assert payload["methods"][0]["display_name"] == "scLong"
     assert payload["metrics"][0]["display_name"] == "AUROC"
+    assert payload["figures"][0]["figure_label"] == "Figure 1"
+    assert payload["tables"][0]["table_label"] == "Table 1"
     assert payload["glossary_terms"][0]["term"] == "GRN"
     assert payload["engineering_tricks"][0]["title"] == "Long-context packing"
     assert payload["top_result_rows"][0]["value_numeric"] == 0.91

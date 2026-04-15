@@ -14,10 +14,12 @@ from paperbase.db.models import (
     Dataset,
     EngineeringTrick,
     EvidenceSpan,
+    Figure,
     Method,
     Metric,
     Paper,
     ResultRow,
+    TableArtifact,
 )
 from paperbase.db.repositories import CollectionRepository
 from ra.utils.security import sanitize_identifier, sanitize_user_text
@@ -28,6 +30,9 @@ from services.paperbase_api.models import (
     CompareEngineeringTricksRequest,
     CompareEngineeringTricksResponse,
     CompareEvidenceSpanResponse,
+    CompareFigureItemResponse,
+    CompareFigureTableRequest,
+    CompareFiguresResponse,
     CompareMethodBestResultResponse,
     CompareMethodItemResponse,
     CompareMethodsRequest,
@@ -36,6 +41,8 @@ from services.paperbase_api.models import (
     CompareResultItemResponse,
     CompareResultsRequest,
     CompareResultsResponse,
+    CompareTableItemResponse,
+    CompareTablesResponse,
 )
 from services.paperbase_api.normalization import canonicalize_metric_display_name, normalize_summary_key
 
@@ -136,6 +143,17 @@ def _load_result_evidence(
             )
         )
     return evidence_by_result_row
+
+
+def _resolve_method_paper_ids(session: Session, method_name: str | None) -> set[str] | None:
+    if method_name is None:
+        return None
+    return {
+        paper_id
+        for paper_id in session.execute(
+            select(Method.paper_id).where(Method.display_name.ilike(method_name))
+        ).scalars()
+    }
 
 
 @router.post(
@@ -349,5 +367,94 @@ def compare_engineering_tricks(
                 papers=list(entry["papers"].values()),
             )
             for entry in items
+        ]
+    )
+
+
+@router.post(
+    "/figures",
+    response_model=CompareFiguresResponse,
+)
+def compare_figures(
+    payload: CompareFigureTableRequest,
+    session: Session = Depends(get_session),
+) -> CompareFiguresResponse:
+    collection_id = _resolve_collection_id(session, payload.collection_id)
+    method_name = (
+        sanitize_user_text(payload.method, field_name="method", max_length=255)
+        if payload.method is not None
+        else None
+    )
+
+    statement = select(Figure, Paper).join(Paper, Paper.id == Figure.paper_id)
+    if collection_id is not None:
+        statement = statement.join(
+            CollectionPaper,
+            CollectionPaper.paper_id == Figure.paper_id,
+        ).where(CollectionPaper.collection_id == collection_id)
+
+    rows = list(session.execute(statement).all())
+    allowed_paper_ids = _resolve_method_paper_ids(session, method_name)
+    if allowed_paper_ids is not None:
+        rows = [row for row in rows if row[1].id in allowed_paper_ids]
+
+    rows = rows[: payload.limit]
+    return CompareFiguresResponse(
+        data=[
+            CompareFigureItemResponse(
+                id=figure.id,
+                paper_id=paper.id,
+                paper_title=paper.canonical_title,
+                page_number=figure.page_number,
+                figure_label=figure.figure_label,
+                caption=figure.caption,
+                storage_uri=figure.storage_uri,
+            )
+            for figure, paper in rows
+        ]
+    )
+
+
+@router.post(
+    "/tables",
+    response_model=CompareTablesResponse,
+)
+def compare_tables(
+    payload: CompareFigureTableRequest,
+    session: Session = Depends(get_session),
+) -> CompareTablesResponse:
+    collection_id = _resolve_collection_id(session, payload.collection_id)
+    method_name = (
+        sanitize_user_text(payload.method, field_name="method", max_length=255)
+        if payload.method is not None
+        else None
+    )
+
+    statement = select(TableArtifact, Paper).join(Paper, Paper.id == TableArtifact.paper_id)
+    if collection_id is not None:
+        statement = statement.join(
+            CollectionPaper,
+            CollectionPaper.paper_id == TableArtifact.paper_id,
+        ).where(CollectionPaper.collection_id == collection_id)
+
+    rows = list(session.execute(statement).all())
+    allowed_paper_ids = _resolve_method_paper_ids(session, method_name)
+    if allowed_paper_ids is not None:
+        rows = [row for row in rows if row[1].id in allowed_paper_ids]
+
+    rows = rows[: payload.limit]
+    return CompareTablesResponse(
+        data=[
+            CompareTableItemResponse(
+                id=table.id,
+                paper_id=paper.id,
+                paper_title=paper.canonical_title,
+                page_number=table.page_number,
+                table_label=table.table_label,
+                caption=table.caption,
+                storage_uri=table.storage_uri,
+                structured_payload=dict(table.structured_payload_json or {}),
+            )
+            for table, paper in rows
         ]
     )
