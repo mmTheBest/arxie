@@ -14,6 +14,17 @@ Search scope should be explicit:
 - one collection
 - one field-specific curated database
 
+The current DB-backed Paperbase API now supports practical filtering on the
+existing paper search route for:
+
+- collection membership
+- publication year bounds
+- venue
+- dataset
+- method
+- metric
+- extraction state
+
 ## Current Module Map
 
 The first search/read-model layer should stay intentionally thin:
@@ -23,6 +34,10 @@ The first search/read-model layer should stay intentionally thin:
 - `src/paperbase/search/query_builder.py` — text, filter, and vector query composition
 
 This layer is a read-model scaffold, not a full search service. It should be reusable by the future Paperbase API, worker indexing jobs, and Arxie retrieval gateway.
+
+Even before live Elasticsearch-backed indexing is added, the Paperbase API should
+still expose enough structured filters for curated local-first databases to be
+usable through SQL-backed search.
 
 ## Comparison
 
