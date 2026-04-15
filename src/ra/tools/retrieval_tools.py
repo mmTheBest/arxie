@@ -318,6 +318,44 @@ def make_retrieval_tools(
                 paper_id=paper_id,
             )
 
+        get_stored_sections = getattr(retriever, "get_stored_sections", None)
+        stored_sections: list[Section] = []
+        if callable(get_stored_sections):
+            stored_sections = await get_stored_sections(paper.id)
+        if stored_sections:
+            payload = {
+                "paper_id": paper.id,
+                "title": (paper.title or "").strip() or None,
+                "abstract": _find_section_content(
+                    stored_sections,
+                    heading_aliases=("abstract",),
+                )
+                or (paper.abstract.strip() if isinstance(paper.abstract, str) and paper.abstract.strip() else None),
+                "methods": _find_section_content(
+                    stored_sections,
+                    heading_aliases=(
+                        "method",
+                        "methods",
+                        "methodology",
+                        "materials and methods",
+                        "experiment",
+                    ),
+                ),
+                "results": _find_section_content(
+                    stored_sections,
+                    heading_aliases=("results",),
+                ),
+                "discussion": _find_section_content(
+                    stored_sections,
+                    heading_aliases=("discussion",),
+                ),
+                "conclusion": _find_section_content(
+                    stored_sections,
+                    heading_aliases=("conclusion", "conclusions", "future work"),
+                ),
+            }
+            return json.dumps(payload, ensure_ascii=False)
+
         pdf_url = (paper.pdf_url or "").strip()
         if not pdf_url:
             return _tool_named_error_payload(

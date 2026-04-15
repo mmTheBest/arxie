@@ -12,6 +12,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
 from ra.utils.config import load_config
@@ -54,7 +55,7 @@ class LitReviewAgent:
     ) -> None:
         configure_logging_from_env()
         self.search_limit = max(1, min(int(search_limit), 50))
-        self.retriever = retriever or UnifiedRetriever()
+        self.retriever = retriever or build_runtime_retriever()
 
         if llm is None:
             config = load_config()

@@ -82,6 +82,7 @@ from ra.proposal import (
     SessionVersionConflictError,
     StageTransitionError,
 )
+from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.unified import UnifiedRetriever
 from ra.utils.logging_config import configure_logging_from_env
 
@@ -321,7 +322,7 @@ INTERNAL_ERROR_RESPONSE = _error_response_doc(
 
 
 def _default_retriever_factory() -> UnifiedRetriever:
-    return UnifiedRetriever()
+    return build_runtime_retriever()
 
 
 def _default_agent_factory(*, deep_search: bool = False) -> ResearchAgent:

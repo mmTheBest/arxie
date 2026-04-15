@@ -30,6 +30,7 @@ from ra.citation import (
     ClaimConfidenceScorer,
     annotate_claim_with_confidence,
 )
+from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
@@ -404,7 +405,7 @@ class ResearchAgent:
 
         self.llm = ChatOpenAI(model=self.model, api_key=config.openai_api_key, temperature=0)
 
-        self.retriever = UnifiedRetriever()
+        self.retriever = build_runtime_retriever()
         self.semantic_scholar = SemanticScholarClient(api_key=config.semantic_scholar_api_key)
         self.tools = make_retrieval_tools(
             retriever=self.retriever,
