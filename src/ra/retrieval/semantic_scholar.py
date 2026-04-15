@@ -97,6 +97,27 @@ class Paper:
 
         return f"{authors_str} {year_str}. {self.title}.{venue_str}"
 
+    def to_seed_payload(self) -> dict[str, Any]:
+        """Return a provider-normalized payload for Paperbase ingest."""
+        return {
+            "provider": "semantic_scholar",
+            "external_id": self.paper_id,
+            "canonical_title": self.title,
+            "abstract": self.abstract,
+            "publication_year": self.year,
+            "venue": self.venue,
+            "doi": self.doi,
+            "arxiv_id": self.arxiv_id,
+            "authors": [author.name for author in self.authors],
+            "source_payload": self.to_dict(),
+            "raw_metadata": {
+                "citation_count": self.citation_count,
+                "is_open_access": self.is_open_access,
+                "pdf_url": self.pdf_url,
+                "external_ids": dict(self.external_ids),
+            },
+        }
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {

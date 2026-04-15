@@ -252,6 +252,13 @@ class PaperFileRepository:
         )
         return self.session.execute(statement).scalar_one_or_none()
 
+    def list_for_paper(self, *, paper_id: str, file_kind: str | None = None) -> Sequence[PaperFile]:
+        statement = select(PaperFile).where(PaperFile.paper_id == paper_id)
+        if file_kind is not None:
+            statement = statement.where(PaperFile.file_kind == file_kind)
+        statement = statement.order_by(PaperFile.created_at.asc())
+        return self.session.execute(statement).scalars().all()
+
     def upsert(
         self,
         *,
