@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paperbase Console</title>
+    <link rel="stylesheet" href="/ui/paperbase-ui.css" />
+    <script defer src="/ui/paperbase-ui.js"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Arxie / Paperbase</p>
+          <h1>Paperbase Console</h1>
+          <p class="hero-text">
+            Operate a local-first research database, queue long-running jobs, and inspect
+            structured corpus state without dropping back to ad hoc scripts.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="reindex-button" class="action-button action-button-primary">
+            Queue Reindex
+          </button>
+          <p id="status-banner" class="status-banner">Loading collections and jobs…</p>
+        </div>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="panel panel-tall" id="collections-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Collections</p>
+              <h2>Curated databases</h2>
+            </div>
+            <button id="extract-button" class="action-button">Queue Extraction</button>
+          </div>
+          <div id="collections-list" class="stacked-list"></div>
+        </section>
+
+        <section class="panel panel-tall" id="papers-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Papers</p>
+              <h2>Browse and search</h2>
+            </div>
+            <form id="search-form" class="search-form">
+              <input
+                id="paper-search-input"
+                name="q"
+                type="search"
+                placeholder="Search title or abstract"
+                autocomplete="off"
+              />
+              <button type="submit" class="action-button">Search</button>
+            </form>
+          </div>
+          <div id="paper-list" class="stacked-list"></div>
+        </section>
+
+        <section class="panel panel-wide" id="summary-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Structured surface</p>
+              <h2>Collection and paper detail</h2>
+            </div>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <h3>Collection snapshot</h3>
+              <div id="collection-summary"></div>
+            </div>
+            <div class="summary-card">
+              <h3>Paper detail</h3>
+              <div id="paper-detail"></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel panel-jobs" id="jobs-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Jobs</p>
+              <h2>Background execution</h2>
+            </div>
+          </div>
+          <div id="jobs-list" class="stacked-list"></div>
+        </aside>
+      </main>
+    </div>
+  </body>
+</html>

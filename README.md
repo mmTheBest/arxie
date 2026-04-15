@@ -28,6 +28,7 @@ Arxie is an AI research assistant that reads real papers (Semantic Scholar + arX
 - Cross-artifact sync when users revise hypotheses/assumptions
 - Paperbase persistent corpus with worker-backed parse, extract, and reindex jobs
 - Curated local collections with field-specific extraction profiles and annotations
+- Paperbase Console for browsing collections, structured paper data, and background jobs
 
 (See `docs/PRE-PRD-v0.2.md` for discussion draft.)
 

@@ -422,6 +422,14 @@ class BackgroundJobRepository:
     def get_by_id(self, job_id: str) -> BackgroundJob | None:
         return self.session.get(BackgroundJob, job_id)
 
+    def list_recent(self, *, limit: int = 20) -> Sequence[BackgroundJob]:
+        statement: Select[tuple[BackgroundJob]] = (
+            select(BackgroundJob)
+            .order_by(BackgroundJob.created_at.desc())
+            .limit(max(1, limit))
+        )
+        return self.session.execute(statement).scalars().all()
+
     def claim_next(self, *, job_types: Sequence[str] | None = None) -> BackgroundJob | None:
         statement: Select[tuple[BackgroundJob]] = (
             select(BackgroundJob)

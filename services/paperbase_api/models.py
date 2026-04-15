@@ -62,6 +62,10 @@ class SingleBackgroundJobResponse(BaseModel):
     data: BackgroundJobResponse
 
 
+class BackgroundJobsResponse(BaseModel):
+    data: list[BackgroundJobResponse]
+
+
 class SectionResponse(BaseModel):
     id: str
     title: str

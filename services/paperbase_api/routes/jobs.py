@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from paperbase.db.models import BackgroundJob
@@ -10,7 +10,11 @@ from paperbase.db.repositories import BackgroundJobRepository
 from ra.utils.security import sanitize_identifier
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
-from services.paperbase_api.models import BackgroundJobResponse, SingleBackgroundJobResponse
+from services.paperbase_api.models import (
+    BackgroundJobResponse,
+    BackgroundJobsResponse,
+    SingleBackgroundJobResponse,
+)
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
@@ -33,6 +37,19 @@ def background_job_to_response(job: BackgroundJob) -> BackgroundJobResponse:
         started_at=_serialize_timestamp(job.started_at),
         finished_at=_serialize_timestamp(job.finished_at),
     )
+
+
+@router.get(
+    "",
+    response_model=BackgroundJobsResponse,
+)
+def list_background_jobs(
+    limit: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_session),
+) -> BackgroundJobsResponse:
+    repository = BackgroundJobRepository(session)
+    jobs = repository.list_recent(limit=limit)
+    return BackgroundJobsResponse(data=[background_job_to_response(job) for job in jobs])
 
 
 @router.get(

@@ -40,3 +40,8 @@ Operationally, the current Paperbase branch is now split three ways:
 - the query/CRUD API contract lives under `services/paperbase_api/`
 - long-running extraction and reindex work is queued by the API and executed by
   `services/paperbase_worker/`
+
+The first product UI is now also served from `services/paperbase_api/` as a
+build-free local console. That UI is intentionally thin: it sits directly on the
+collections, papers, search, and jobs APIs so the product can ship a real
+operator surface before a larger frontend stack is introduced.

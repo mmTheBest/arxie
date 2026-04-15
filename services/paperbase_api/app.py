@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.session import make_session_factory
@@ -20,6 +22,7 @@ from services.paperbase_api.routes.extraction import (
 from services.paperbase_api.routes.jobs import router as jobs_router
 from services.paperbase_api.routes.papers import router as papers_router
 from services.paperbase_api.routes.search import router as search_router
+from services.paperbase_api.routes.ui import STATIC_DIR, router as ui_router
 
 
 def create_app(
@@ -52,6 +55,7 @@ def create_app(
     app.state.search_backend = search_backend
 
     register_exception_handlers(app)
+    app.mount("/ui", StaticFiles(directory=Path(STATIC_DIR)), name="paperbase-ui")
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     def health() -> HealthResponse:
@@ -63,4 +67,5 @@ def create_app(
     app.include_router(collections_router)
     app.include_router(extraction_router)
     app.include_router(jobs_router)
+    app.include_router(ui_router)
     return app
