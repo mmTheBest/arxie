@@ -9,7 +9,7 @@ Arxie is an AI research workspace built for serious literature work. It does not
 ## Version status
 
 - **Current:** `v0.1.0` (released)
-- **Next:** `v0.2.0` (in planning)
+- **Next:** `v0.2.0` (active branch development)
 
 ### What v0.1.0 ships
 - Live paper retrieval and citation-grounded Q&A
@@ -21,14 +21,22 @@ Arxie is an AI research workspace built for serious literature work. It does not
 - Conversational mode (`ra chat`)
 - FastAPI + Docker support
 
-### Planned for v0.2.0
+### What is already implemented on the v0.2 branch
+- Paperbase canonical storage for papers, sources, files, sections, chunks, figures, tables, datasets, methods, metrics, results, findings, glossary terms, engineering tricks, evidence spans, collections, annotations, workspaces, and background jobs
+- Local-library ingest plus worker-backed parse, extraction, and reindex jobs
+- Paper/chunk/artifact search surfaces with SQL fallback and backend-aware indexing contracts
+- Collection summaries, comparison routes, and structured paper browse
+- Field-specific extraction profiles, including the current `sc_regnet` preset
+- Public Arxie homepage at `/` and a saved-workspace app at `/app`
+- Paperbase-first retrieval inside Arxie before live provider fallback
+
+### Still in progress for v0.2.0
 - Dashboard-based proposal workspace (not terminal-first)
 - Iterative research proposal co-creation workflow
 - Visual artifacts (mindmap, evidence map, logical tree, method pipeline, outcome matrix)
-- Cross-artifact sync when users revise hypotheses/assumptions
-- Paperbase persistent corpus with worker-backed parse, extract, and reindex jobs
-- Curated local collections with field-specific extraction profiles and annotations
-- Public Arxie homepage plus saved-workspace app for browsing collections, chunk/artifact search, structured paper data, figure/table artifacts, comparisons, and background jobs
+- Figure/table extraction beyond the current placeholder pipeline
+- Broader external scholarly sync and provider-backed corpus enrichment
+- Deeper assistant/workspace integration over saved context and structured comparison state
 
 (See `docs/PRE-PRD-v0.2.md` for discussion draft.)
 
@@ -93,7 +101,7 @@ curl -X POST http://localhost:8000/api/query \
 ```
 
 Paperbase's local-first API is served separately from the legacy RA API in the
-feature branch. It now supports:
+active feature branch. It now supports:
 
 - queued local-library ingest, parse, extraction, and reindex jobs
 - saved workspaces layered over collections, queries, focus notes, and pinned papers
@@ -104,6 +112,13 @@ feature branch. It now supports:
   engineering tricks, figures, and tables
 - a public homepage at `/`
 - a build-free workspace app at `/app`
+
+The current branch also includes:
+
+- saved research workspaces over curated collections
+- field-specific extraction profiles for custom local paper databases
+- workerized long-running jobs instead of inline parse/extract/reindex calls
+- comparison slices for results, methods, engineering tricks, figures, and tables
 
 ---
 
@@ -141,6 +156,17 @@ src/ra/
 ├── retrieval/   # Semantic Scholar + arXiv + cache
 ├── tools/       # tool interfaces for the agent loop
 └── utils/       # config, logging, rate limiting
+```
+
+```text
+src/paperbase/
+├── db/          # canonical schema, repositories, bootstrap, migrations
+├── ingest/      # local-library and provider-normalized ingest
+├── parsing/     # PDF parse pipeline and collection runners
+├── extract/     # structured extraction contracts and persistence
+├── search/      # indexing contracts, runtime, query building
+├── profiles/    # field-specific extraction presets
+└── tables/      # table artifact pipeline
 ```
 
 ---
