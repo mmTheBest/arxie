@@ -34,15 +34,27 @@ behave like structured corpus entries rather than title-only shells.
 
 The first search/read-model layer should stay intentionally thin:
 
-- `src/paperbase/search/index_templates.py` — Elasticsearch-style mappings for paper, chunk, and figure documents
-- `src/paperbase/search/indexer.py` — deterministic builders for paper, chunk, and figure documents
+- `src/paperbase/search/index_templates.py` — Elasticsearch-style mappings for paper, chunk, figure, and table documents
+- `src/paperbase/search/indexer.py` — deterministic builders for paper, chunk, figure, and table documents
 - `src/paperbase/search/query_builder.py` — text, filter, and vector query composition
+- `src/paperbase/search/embeddings.py` — deterministic local embedding generation for backend-assisted semantic search
+- `src/paperbase/search/runtime.py` — backend integration plus reindex orchestration across all read models
 
 This layer is a read-model scaffold, not a full search service. It should be reusable by the future Paperbase API, worker indexing jobs, and Arxie retrieval gateway.
 
 Even before live Elasticsearch-backed indexing is added, the Paperbase API should
 still expose enough structured filters for curated local-first databases to be
 usable through SQL-backed search.
+
+The current implementation now exposes three search surfaces:
+
+- `GET /api/v1/search/papers`
+- `GET /api/v1/search/chunks`
+- `GET /api/v1/search/artifacts`
+
+Those routes fall back to SQL when no backend is configured, and switch to
+backend-assisted queries with deterministic local embeddings when a search
+backend is available.
 
 ## Comparison
 
@@ -128,6 +140,12 @@ worker-backed rather than API-blocking:
 - execute the actual rebuild of paper, chunk, figure, and future table read
   models inside the Paperbase worker
 - expose job state through the jobs API for polling clients and the future UI
+
+The local Paperbase Console now uses these wider search surfaces directly:
+
+- paper search for the main browse list
+- chunk search for section-level query hits
+- artifact search for figure/table query hits
 
 This is still a local-first operator surface. The queue is DB-backed today so it
 can grow later into Redis or a larger broker-backed worker topology without

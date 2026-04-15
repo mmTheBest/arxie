@@ -125,11 +125,13 @@ def test_worker_executes_search_reindex_job(tmp_path: Path) -> None:
         "paperbase-papers",
         "paperbase-chunks",
         "paperbase-figures",
+        "paperbase-tables",
     ]
     assert backend.bulk_calls == [
         ("paperbase-papers", 1),
         ("paperbase-chunks", 1),
         ("paperbase-figures", 1),
+        ("paperbase-tables", 0),
     ]
 
     with session_factory() as session:
@@ -137,7 +139,7 @@ def test_worker_executes_search_reindex_job(tmp_path: Path) -> None:
 
     assert stored_job is not None
     assert stored_job.status == "completed"
-    assert stored_job.result_json == {"indexed": {"papers": 1, "chunks": 1, "figures": 1}}
+    assert stored_job.result_json == {"indexed": {"papers": 1, "chunks": 1, "figures": 1, "tables": 0}}
     assert stored_job.error_message is None
 
 
@@ -269,3 +271,121 @@ def test_worker_marks_job_failed_when_dependencies_are_missing(tmp_path: Path) -
     assert stored_job.status == "failed"
     assert stored_job.error_message is not None
     assert "search backend" in stored_job.error_message.lower()
+
+
+def test_worker_executes_local_library_ingest_job(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    source_dir = tmp_path / "library"
+    source_dir.mkdir()
+    (source_dir / "paper-one.pdf").write_bytes(b"%PDF-1.4\n%stub pdf\n")
+    (source_dir / "paper-two.pdf").write_bytes(b"%PDF-1.4\n%stub pdf\n")
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        job = background_job_model(
+            job_type="local_library_ingest",
+            payload_json={
+                "source_dir": str(source_dir),
+                "owner_id": "local-user",
+                "collection_title": "Sample Library",
+                "collection_description": "Imported papers.",
+            },
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    worker = worker_cls(session_factory=session_factory)
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        collections = CollectionRepository(session).list_collections()
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert stored_job.result_json == {
+        "collection_title": "Sample Library",
+        "total_pdf_files": 2,
+        "imported_papers": 2,
+        "reused_papers": 0,
+    }
+    assert len(collections) == 1
+    assert collections[0].title == "Sample Library"
+
+
+def test_worker_executes_collection_parse_job(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%stub pdf\n")
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(pdf_path),
+            canonical_title="scLong",
+        )
+        session.add(
+            PaperFile(
+                paper_id=paper.id,
+                storage_uri=pdf_path.resolve().as_uri(),
+                file_kind="pdf",
+                mime_type="application/pdf",
+                parser_status="pending",
+            )
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper.id)
+        job = background_job_model(
+            job_type="collection_parse",
+            payload_json={
+                "collection_id": collection.id,
+                "limit": None,
+            },
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        collection_id = collection.id
+
+    worker = worker_cls(
+        session_factory=session_factory,
+        parser_factory=lambda: FakePDFParser(),
+    )
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        sections = session.query(Section).all()
+        chunks = session.query(Chunk).all()
+        file_record = session.query(PaperFile).one()
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert stored_job.result_json == {
+        "collection_id": collection_id,
+        "parsed_paper_count": 1,
+        "skipped_paper_ids": [],
+        "section_count": 1,
+        "chunk_count": 1,
+    }
+    assert len(sections) == 1
+    assert len(chunks) == 1
+    assert file_record.parser_status == "parsed"

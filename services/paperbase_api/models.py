@@ -37,6 +37,33 @@ class SearchPapersResponse(BaseModel):
     data: list[PaperSummaryResponse]
 
 
+class SearchChunkHitResponse(BaseModel):
+    chunk_id: str
+    paper_id: str
+    paper_title: str
+    section_title: str | None = None
+    text: str
+
+
+class SearchChunksResponse(BaseModel):
+    data: list[SearchChunkHitResponse]
+
+
+class SearchArtifactHitResponse(BaseModel):
+    artifact_type: str
+    artifact_id: str
+    paper_id: str
+    paper_title: str
+    page_number: int | None = None
+    label: str | None = None
+    caption: str | None = None
+    structured_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class SearchArtifactsResponse(BaseModel):
+    data: list[SearchArtifactHitResponse]
+
+
 class SearchStatusResponseData(BaseModel):
     backend_configured: bool
     backend_type: str | None = None
@@ -517,6 +544,19 @@ class RunCollectionExtractionRequest(BaseModel):
     prompt_version: str = Field(..., min_length=1, max_length=64)
     schema_version: str = Field(..., min_length=1, max_length=64)
     limit: int | None = Field(None, ge=1)
+
+
+class RunCollectionParseRequest(BaseModel):
+    limit: int | None = Field(None, ge=1)
+
+
+class LocalLibraryIngestRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    source_dir: str = Field(..., min_length=1, max_length=4096)
+    owner_id: str = Field(default="local-user", min_length=1, max_length=128)
+    collection_title: str | None = Field(None, min_length=1, max_length=255)
+    collection_description: str | None = Field(None, max_length=5000)
 
 
 class CollectionExtractionSummaryResponse(BaseModel):

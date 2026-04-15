@@ -33,7 +33,10 @@
               <p class="panel-kicker">Collections</p>
               <h2>Curated databases</h2>
             </div>
-            <button id="extract-button" class="action-button">Queue Extraction</button>
+            <div class="button-row">
+              <button id="parse-button" class="action-button">Queue Parse</button>
+              <button id="extract-button" class="action-button">Queue Extraction</button>
+            </div>
           </div>
           <div id="collections-list" class="stacked-list"></div>
         </section>
@@ -73,6 +76,25 @@
             <div class="summary-card">
               <h3>Paper detail</h3>
               <div id="paper-detail"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel-wide" id="search-surfaces-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Hybrid search</p>
+              <h2>Chunks and artifact hits</h2>
+            </div>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <h3>Chunk hits</h3>
+              <div id="chunk-search-surface"></div>
+            </div>
+            <div class="summary-card">
+              <h3>Artifact hits</h3>
+              <div id="artifact-search-surface"></div>
             </div>
           </div>
         </section>

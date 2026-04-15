@@ -3,6 +3,8 @@
     collections: "/api/v1/collections",
     jobs: "/api/v1/jobs",
     search: "/api/v1/search/papers",
+    searchChunks: "/api/v1/search/chunks",
+    searchArtifacts: "/api/v1/search/artifacts",
     reindex: "/api/v1/search/reindex",
     compareFigures: "/api/v1/compare/figures",
     compareTables: "/api/v1/compare/tables",
@@ -18,6 +20,8 @@
     collectionSummary: null,
     collectionFigures: [],
     collectionTables: [],
+    chunkSearchHits: [],
+    artifactSearchHits: [],
     jobs: [],
     pollHandle: null,
   };
@@ -28,10 +32,13 @@
     collectionSummary: document.getElementById("collection-summary"),
     paperDetail: document.getElementById("paper-detail"),
     artifactSurface: document.getElementById("artifact-surface"),
+    chunkSearchSurface: document.getElementById("chunk-search-surface"),
+    artifactSearchSurface: document.getElementById("artifact-search-surface"),
     jobsList: document.getElementById("jobs-list"),
     searchForm: document.getElementById("search-form"),
     searchInput: document.getElementById("paper-search-input"),
     extractButton: document.getElementById("extract-button"),
+    parseButton: document.getElementById("parse-button"),
     reindexButton: document.getElementById("reindex-button"),
     statusBanner: document.getElementById("status-banner"),
   };
@@ -110,7 +117,10 @@
   async function searchPapers(query) {
     if (!query.trim()) {
       state.searchResults = [];
+      state.chunkSearchHits = [];
+      state.artifactSearchHits = [];
       renderPapers();
+      renderSearchSurfaces();
       return;
     }
 
@@ -118,9 +128,16 @@
     if (state.selectedCollection) {
       params.set("collection_id", state.selectedCollection.id);
     }
-    const payload = await fetchJson(`${endpoints.search}?${params.toString()}`);
-    state.searchResults = payload.data || [];
+    const [paperPayload, chunkPayload, artifactPayload] = await Promise.all([
+      fetchJson(`${endpoints.search}?${params.toString()}`),
+      fetchJson(`${endpoints.searchChunks}?${params.toString()}`),
+      fetchJson(`${endpoints.searchArtifacts}?${params.toString()}&kind=all`),
+    ]);
+    state.searchResults = paperPayload.data || [];
+    state.chunkSearchHits = chunkPayload.data || [];
+    state.artifactSearchHits = artifactPayload.data || [];
     renderPapers();
+    renderSearchSurfaces();
   }
 
   async function loadPaperDetail(paperId) {
@@ -185,8 +202,28 @@
     setStatus(`Queued extraction for ${state.selectedCollection.title}.`);
   }
 
+  async function queueParse() {
+    if (!state.selectedCollection) {
+      return;
+    }
+
+    const payload = await fetchJson(
+      `/api/v1/collections/${state.selectedCollection.id}/parse`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    state.jobs.unshift(payload.data);
+    renderJobs();
+    updatePolling();
+    setStatus(`Queued parse for ${state.selectedCollection.title}.`);
+  }
+
   function updateActionButtons() {
     elements.extractButton.disabled = !state.selectedCollection;
+    elements.parseButton.disabled = !state.selectedCollection;
   }
 
   function renderCollections() {
@@ -409,6 +446,30 @@
     `;
   }
 
+  function renderSearchSurfaces() {
+    elements.chunkSearchSurface.innerHTML = state.chunkSearchHits.length > 0
+      ? `
+        <ul class="detail-list">
+          ${state.chunkSearchHits
+            .slice(0, 6)
+            .map((item) => `<li>${escapeHtml(item.paper_title)}${item.section_title ? ` / ${escapeHtml(item.section_title)}` : ""} — ${escapeHtml(item.text)}</li>`)
+            .join("")}
+        </ul>
+      `
+      : '<div class="muted">Run a paper search to inspect chunk-level hits.</div>';
+
+    elements.artifactSearchSurface.innerHTML = state.artifactSearchHits.length > 0
+      ? `
+        <ul class="detail-list">
+          ${state.artifactSearchHits
+            .slice(0, 6)
+            .map((item) => `<li>${escapeHtml(item.paper_title)} — ${escapeHtml(item.artifact_type)} / ${escapeHtml(item.label || "Untitled")} / ${escapeHtml(item.caption || "No caption")}</li>`)
+            .join("")}
+        </ul>
+      `
+      : '<div class="muted">Run a paper search to inspect figure and table hits.</div>';
+  }
+
   function renderJobs() {
     if (state.jobs.length === 0) {
       elements.jobsList.innerHTML = '<div class="list-card muted">No jobs queued yet.</div>';
@@ -435,6 +496,8 @@
     elements.paperList.innerHTML = '<div class="list-card muted">Select a collection to see its papers.</div>';
     elements.paperDetail.innerHTML = '<div class="muted">Select a paper to inspect its structured surface.</div>';
     elements.artifactSurface.innerHTML = '<div class="summary-card muted">Select a collection to inspect figures and tables.</div>';
+    elements.chunkSearchSurface.innerHTML = '<div class="muted">Run a paper search to inspect chunk-level hits.</div>';
+    elements.artifactSearchSurface.innerHTML = '<div class="muted">Run a paper search to inspect figure and table hits.</div>';
   }
 
   function updatePolling() {
@@ -486,6 +549,14 @@
   elements.extractButton.addEventListener("click", async () => {
     try {
       await queueExtraction();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.parseButton.addEventListener("click", async () => {
+    try {
+      await queueParse();
     } catch (error) {
       setStatus(error.message);
     }

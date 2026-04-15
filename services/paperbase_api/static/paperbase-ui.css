@@ -143,6 +143,13 @@ h3 {
   margin-bottom: 1rem;
 }
 
+.button-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .search-form {
   display: flex;
   gap: 0.6rem;
@@ -340,6 +347,15 @@ input:focus {
     width: 100%;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .button-row {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .button-row .action-button {
+    width: 100%;
   }
 
   .search-form input {

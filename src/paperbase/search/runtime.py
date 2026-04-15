@@ -10,17 +10,20 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from paperbase.db.models import Chunk, Dataset, ExtractionRun, Figure, Method, Metric, Paper, Section
+from paperbase.db.models import Chunk, Dataset, ExtractionRun, Figure, Method, Metric, Paper, Section, TableArtifact
 from paperbase.db.repositories import PaperRepository
+from paperbase.search.embeddings import embed_text_deterministic
 from paperbase.search.index_templates import (
     chunk_index_template,
     figure_index_template,
     paper_index_template,
+    table_index_template,
 )
 from paperbase.search.indexer import (
     build_chunk_document,
     build_figure_document,
     build_paper_document,
+    build_table_document,
 )
 
 
@@ -97,24 +100,29 @@ class PaperbaseSearchReindexer:
         self.paper_index_name = f"{index_prefix}-papers"
         self.chunk_index_name = f"{index_prefix}-chunks"
         self.figure_index_name = f"{index_prefix}-figures"
+        self.table_index_name = f"{index_prefix}-tables"
 
     def reindex_all(self) -> dict[str, int]:
         paper_documents = self._build_paper_documents()
         chunk_documents = self._build_chunk_documents()
         figure_documents = self._build_figure_documents()
+        table_documents = self._build_table_documents()
 
         self.backend.ensure_index(self.paper_index_name, paper_index_template())
         self.backend.ensure_index(self.chunk_index_name, chunk_index_template())
         self.backend.ensure_index(self.figure_index_name, figure_index_template())
+        self.backend.ensure_index(self.table_index_name, table_index_template())
 
         self.backend.bulk_index(self.paper_index_name, paper_documents)
         self.backend.bulk_index(self.chunk_index_name, chunk_documents)
         self.backend.bulk_index(self.figure_index_name, figure_documents)
+        self.backend.bulk_index(self.table_index_name, table_documents)
 
         return {
             "papers": len(paper_documents),
             "chunks": len(chunk_documents),
             "figures": len(figure_documents),
+            "tables": len(table_documents),
         }
 
     def _build_paper_documents(self) -> list[dict[str, object]]:
@@ -150,6 +158,22 @@ class PaperbaseSearchReindexer:
                 methods=methods_by_paper_id.get(paper.id, []),
                 metrics=metrics_by_paper_id.get(paper.id, []),
                 extraction_state="extracted" if paper.id in extracted_paper_ids else "unextracted",
+                embedding_vector=embed_text_deterministic(
+                    " ".join(
+                        filter(
+                            None,
+                            [
+                                paper.canonical_title,
+                                paper.abstract or "",
+                                " ".join(authors_by_paper_id.get(paper.id, [])),
+                                " ".join(tags_by_paper_id.get(paper.id, [])),
+                                " ".join(datasets_by_paper_id.get(paper.id, [])),
+                                " ".join(methods_by_paper_id.get(paper.id, [])),
+                                " ".join(metrics_by_paper_id.get(paper.id, [])),
+                            ],
+                        )
+                    )
+                ),
             )
             for paper in papers
         ]
@@ -170,6 +194,18 @@ class PaperbaseSearchReindexer:
                 title=paper.canonical_title,
                 section_title=section.title if section is not None else None,
                 text=chunk.text,
+                embedding_vector=embed_text_deterministic(
+                    " ".join(
+                        filter(
+                            None,
+                            [
+                                paper.canonical_title,
+                                section.title if section is not None else "",
+                                chunk.text,
+                            ],
+                        )
+                    )
+                ),
             )
             for chunk, paper, section in rows
         ]
@@ -189,8 +225,44 @@ class PaperbaseSearchReindexer:
                 title=paper.canonical_title,
                 figure_label=figure.figure_label,
                 caption=figure.caption,
+                embedding_vector=embed_text_deterministic(
+                    " ".join(filter(None, [paper.canonical_title, figure.figure_label, figure.caption]))
+                ),
             )
             for figure, paper in rows
+        ]
+
+    def _build_table_documents(self) -> list[dict[str, object]]:
+        with self.session_factory() as session:
+            rows = session.execute(
+                select(TableArtifact, Paper)
+                .join(Paper, Paper.id == TableArtifact.paper_id)
+                .order_by(TableArtifact.created_at.asc())
+            ).all()
+
+        return [
+            build_table_document(
+                table_id=table.id,
+                paper_id=paper.id,
+                title=paper.canonical_title,
+                table_label=table.table_label,
+                caption=table.caption,
+                structured_payload=dict(table.structured_payload_json or {}),
+                embedding_vector=embed_text_deterministic(
+                    " ".join(
+                        filter(
+                            None,
+                            [
+                                paper.canonical_title,
+                                table.table_label,
+                                table.caption,
+                                json.dumps(table.structured_payload_json or {}, sort_keys=True),
+                            ],
+                        )
+                    )
+                ),
+            )
+            for table, paper in rows
         ]
 
     @staticmethod

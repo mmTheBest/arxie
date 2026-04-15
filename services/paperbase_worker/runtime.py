@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.repositories import BackgroundJobRepository
 from paperbase.extract.runner import CollectionExtractionRunner
+from paperbase.ingest.local_library import import_local_pdf_directory
+from paperbase.parsing.runner import CollectionParseRunner
 from paperbase.search.runtime import PaperbaseSearchReindexer
 
 
@@ -21,10 +24,12 @@ class PaperbaseWorker:
         session_factory: sessionmaker[Session],
         search_backend: object | None = None,
         extraction_client_factory: Callable[[], object] | None = None,
+        parser_factory: Callable[[], object] | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.search_backend = search_backend
         self.extraction_client_factory = extraction_client_factory
+        self.parser_factory = parser_factory
 
     def process_next_job(self) -> str | None:
         with self.session_factory() as session:
@@ -54,6 +59,10 @@ class PaperbaseWorker:
             return self._execute_search_reindex()
         if job_type == "collection_extract":
             return self._execute_collection_extract(payload)
+        if job_type == "local_library_ingest":
+            return self._execute_local_library_ingest(payload)
+        if job_type == "collection_parse":
+            return self._execute_collection_parse(payload)
         raise RuntimeError(f"Unsupported background job type: {job_type}")
 
     def _execute_search_reindex(self) -> dict[str, Any]:
@@ -87,4 +96,35 @@ class PaperbaseWorker:
             "collection_id": summary.collection_id,
             "extracted_paper_count": summary.extracted_paper_count,
             "skipped_paper_ids": list(summary.skipped_paper_ids),
+        }
+
+    def _execute_local_library_ingest(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = import_local_pdf_directory(
+            source_dir=Path(str(payload["source_dir"])),
+            session_factory=self.session_factory,
+            owner_id=str(payload.get("owner_id") or "local-user"),
+            collection_title=payload.get("collection_title"),
+            collection_description=payload.get("collection_description"),
+        )
+        return {
+            "collection_title": result.collection_title,
+            "total_pdf_files": result.total_pdf_files,
+            "imported_papers": result.imported_papers,
+            "reused_papers": result.reused_papers,
+        }
+
+    def _execute_collection_parse(self, payload: dict[str, Any]) -> dict[str, Any]:
+        summary = CollectionParseRunner(
+            session_factory=self.session_factory,
+            parser_factory=self.parser_factory,
+        ).parse_collection(
+            collection_id=str(payload["collection_id"]),
+            limit=payload.get("limit"),
+        )
+        return {
+            "collection_id": summary.collection_id,
+            "parsed_paper_count": summary.parsed_paper_count,
+            "skipped_paper_ids": list(summary.skipped_paper_ids),
+            "section_count": summary.section_count,
+            "chunk_count": summary.chunk_count,
         }

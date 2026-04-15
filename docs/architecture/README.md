@@ -38,13 +38,13 @@ Operationally, the current Paperbase branch is now split three ways:
 
 - the canonical DB and domain logic live under `src/paperbase/`
 - the query/CRUD API contract lives under `services/paperbase_api/`
-- long-running extraction and reindex work is queued by the API and executed by
-  `services/paperbase_worker/`
+- long-running ingest, parse, extraction, and reindex work is queued by the API
+  and executed by `services/paperbase_worker/`
 
 The first product UI is now also served from `services/paperbase_api/` as a
 build-free local console. That UI is intentionally thin: it sits directly on the
-collections, papers, search, and jobs APIs so the product can ship a real
-operator surface before a larger frontend stack is introduced.
+collections, papers, chunk/artifact search, and jobs APIs so the product can
+ship a real operator surface before a larger frontend stack is introduced.
 
 That console now also includes a dedicated artifact surface for figure and table
 browse and comparison, so collaborators can inspect visual evidence without

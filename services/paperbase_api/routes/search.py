@@ -8,23 +8,32 @@ from sqlalchemy.orm import Session
 
 from paperbase.db.models import (
     Author,
+    Chunk,
     CollectionPaper,
     Dataset,
     ExtractionRun,
+    Figure,
     Method,
     Metric,
     Paper,
     PaperAuthor,
     PaperTag,
+    Section,
+    TableArtifact,
     Tag,
 )
 from paperbase.db.repositories import BackgroundJobRepository, PaperRepository
+from paperbase.search.embeddings import embed_text_deterministic
 from paperbase.search.query_builder import build_search_query
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
     PaperSummaryResponse,
+    SearchArtifactHitResponse,
+    SearchArtifactsResponse,
+    SearchChunkHitResponse,
+    SearchChunksResponse,
     SearchPapersResponse,
     SearchStatusResponse,
     SearchStatusResponseData,
@@ -33,6 +42,17 @@ from services.paperbase_api.models import (
 from services.paperbase_api.routes.jobs import background_job_to_response
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
+
+
+def _search_backend_query(query_text: str | None, *, filters: dict[str, object] | None = None) -> dict[str, object]:
+    embedding_vector = None
+    if query_text:
+        embedding_vector = embed_text_deterministic(query_text)
+    return build_search_query(
+        query_text=query_text,
+        filters=filters,
+        embedding_vector=embedding_vector,
+    )
 
 
 @router.get(
@@ -239,7 +259,7 @@ def search_papers(
         }
         documents = search_backend.search(
             "paperbase-papers",
-            build_search_query(query_text=safe_query, filters=backend_filters),
+            _search_backend_query(safe_query, filters=backend_filters),
             limit,
         )
         return SearchPapersResponse(
@@ -290,3 +310,199 @@ def search_papers(
             for paper in papers
         ]
     )
+
+
+@router.get(
+    "/chunks",
+    response_model=SearchChunksResponse,
+)
+def search_chunks(
+    request: Request,
+    q: str = Query(..., min_length=1, max_length=1000),
+    limit: int = Query(10, ge=1, le=100),
+    collection_id: str | None = Query(None, min_length=1, max_length=36),
+    session: Session = Depends(get_session),
+) -> SearchChunksResponse:
+    safe_query = sanitize_user_text(q, field_name="q", max_length=1000)
+    safe_collection_id = (
+        sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+        if collection_id is not None
+        else None
+    )
+    search_backend = request.app.state.search_backend
+
+    if search_backend is not None and safe_collection_id is None:
+        documents = search_backend.search(
+            "paperbase-chunks",
+            _search_backend_query(safe_query),
+            limit,
+        )
+        return SearchChunksResponse(
+            data=[
+                SearchChunkHitResponse(
+                    chunk_id=str(document.get("chunk_id", "")),
+                    paper_id=str(document.get("paper_id", "")),
+                    paper_title=str(document.get("title", "")),
+                    section_title=(str(document.get("section_title")) if document.get("section_title") else None),
+                    text=str(document.get("text", "")),
+                )
+                for document in documents
+            ]
+        )
+
+    pattern = f"%{safe_query.lower()}%"
+    statement = (
+        select(Chunk, Paper, Section)
+        .join(Paper, Paper.id == Chunk.paper_id)
+        .outerjoin(Section, Section.id == Chunk.section_id)
+        .where(
+            or_(
+                func.lower(cast(func.coalesce(Chunk.text, ""), String)).like(pattern),
+                func.lower(cast(func.coalesce(Paper.canonical_title, ""), String)).like(pattern),
+                func.lower(cast(func.coalesce(Section.title, ""), String)).like(pattern),
+            )
+        )
+        .order_by(Chunk.created_at.asc())
+    )
+    if safe_collection_id is not None:
+        statement = statement.join(
+            CollectionPaper,
+            CollectionPaper.paper_id == Chunk.paper_id,
+        ).where(CollectionPaper.collection_id == safe_collection_id)
+    statement = statement.limit(limit)
+
+    rows = session.execute(statement).all()
+    return SearchChunksResponse(
+        data=[
+            SearchChunkHitResponse(
+                chunk_id=chunk.id,
+                paper_id=paper.id,
+                paper_title=paper.canonical_title,
+                section_title=section.title if section is not None else None,
+                text=chunk.text,
+            )
+            for chunk, paper, section in rows
+        ]
+    )
+
+
+@router.get(
+    "/artifacts",
+    response_model=SearchArtifactsResponse,
+)
+def search_artifacts(
+    request: Request,
+    q: str = Query(..., min_length=1, max_length=1000),
+    kind: str = Query("all", pattern="^(all|figure|table)$"),
+    limit: int = Query(10, ge=1, le=100),
+    collection_id: str | None = Query(None, min_length=1, max_length=36),
+    session: Session = Depends(get_session),
+) -> SearchArtifactsResponse:
+    safe_query = sanitize_user_text(q, field_name="q", max_length=1000)
+    safe_kind = sanitize_user_text(kind, field_name="kind", max_length=16).lower()
+    safe_collection_id = (
+        sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+        if collection_id is not None
+        else None
+    )
+    search_backend = request.app.state.search_backend
+
+    if search_backend is not None and safe_collection_id is None:
+        documents: list[SearchArtifactHitResponse] = []
+        query = _search_backend_query(safe_query)
+        if safe_kind in {"all", "figure"}:
+            for document in search_backend.search("paperbase-figures", query, limit):
+                documents.append(
+                    SearchArtifactHitResponse(
+                        artifact_type="figure",
+                        artifact_id=str(document.get("figure_id", "")),
+                        paper_id=str(document.get("paper_id", "")),
+                        paper_title=str(document.get("title", "")),
+                        label=(str(document.get("figure_label")) if document.get("figure_label") else None),
+                        caption=(str(document.get("caption")) if document.get("caption") else None),
+                    )
+                )
+        if safe_kind in {"all", "table"}:
+            for document in search_backend.search("paperbase-tables", query, limit):
+                documents.append(
+                    SearchArtifactHitResponse(
+                        artifact_type="table",
+                        artifact_id=str(document.get("table_id", "")),
+                        paper_id=str(document.get("paper_id", "")),
+                        paper_title=str(document.get("title", "")),
+                        label=(str(document.get("table_label")) if document.get("table_label") else None),
+                        caption=(str(document.get("caption")) if document.get("caption") else None),
+                        structured_payload=dict(document.get("structured_payload") or {}),
+                    )
+                )
+        return SearchArtifactsResponse(data=documents[:limit])
+
+    pattern = f"%{safe_query.lower()}%"
+    items: list[SearchArtifactHitResponse] = []
+
+    if safe_kind in {"all", "figure"}:
+        figure_statement = (
+            select(Figure, Paper)
+            .join(Paper, Paper.id == Figure.paper_id)
+            .where(
+                or_(
+                    func.lower(cast(func.coalesce(Figure.caption, ""), String)).like(pattern),
+                    func.lower(cast(func.coalesce(Figure.figure_label, ""), String)).like(pattern),
+                    func.lower(cast(func.coalesce(Paper.canonical_title, ""), String)).like(pattern),
+                )
+            )
+            .order_by(Figure.created_at.asc())
+        )
+        if safe_collection_id is not None:
+            figure_statement = figure_statement.join(
+                CollectionPaper,
+                CollectionPaper.paper_id == Figure.paper_id,
+            ).where(CollectionPaper.collection_id == safe_collection_id)
+        figure_statement = figure_statement.limit(limit)
+        items.extend(
+            SearchArtifactHitResponse(
+                artifact_type="figure",
+                artifact_id=figure.id,
+                paper_id=paper.id,
+                paper_title=paper.canonical_title,
+                page_number=figure.page_number,
+                label=figure.figure_label,
+                caption=figure.caption,
+            )
+            for figure, paper in session.execute(figure_statement).all()
+        )
+
+    if safe_kind in {"all", "table"}:
+        table_statement = (
+            select(TableArtifact, Paper)
+            .join(Paper, Paper.id == TableArtifact.paper_id)
+            .where(
+                or_(
+                    func.lower(cast(func.coalesce(TableArtifact.caption, ""), String)).like(pattern),
+                    func.lower(cast(func.coalesce(TableArtifact.table_label, ""), String)).like(pattern),
+                    func.lower(cast(func.coalesce(Paper.canonical_title, ""), String)).like(pattern),
+                )
+            )
+            .order_by(TableArtifact.created_at.asc())
+        )
+        if safe_collection_id is not None:
+            table_statement = table_statement.join(
+                CollectionPaper,
+                CollectionPaper.paper_id == TableArtifact.paper_id,
+            ).where(CollectionPaper.collection_id == safe_collection_id)
+        table_statement = table_statement.limit(limit)
+        items.extend(
+            SearchArtifactHitResponse(
+                artifact_type="table",
+                artifact_id=table.id,
+                paper_id=paper.id,
+                paper_title=paper.canonical_title,
+                page_number=table.page_number,
+                label=table.table_label,
+                caption=table.caption,
+                structured_payload=dict(table.structured_payload_json or {}),
+            )
+            for table, paper in session.execute(table_statement).all()
+        )
+
+    return SearchArtifactsResponse(data=items[:limit])

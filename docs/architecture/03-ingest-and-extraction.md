@@ -30,6 +30,7 @@ The current ingest and parse modules are:
 - `src/paperbase/ingest/openalex.py` and `src/paperbase/ingest/crossref.py` — raw-provider payload normalization
 - `src/paperbase/ingest/local_library.py` — local PDF directory import into canonical paper/file/collection records
 - `src/paperbase/parsing/pipeline.py` — stored-PDF parse orchestration
+- `src/paperbase/parsing/runner.py` — collection-level parse orchestration for queued worker execution
 - `src/paperbase/parsing/store.py` — persistence of sections and chunks
 - `src/paperbase/parsing/chunker.py` — deterministic section chunking
 - `src/paperbase/extract/contracts.py` — typed bundle contract for structured LLM extraction outputs
@@ -40,6 +41,7 @@ The current ingest and parse modules are:
 - `src/paperbase/figures/pipeline.py` — placeholder figure candidate extraction and persistence contracts
 - `src/paperbase/tables/pipeline.py` — placeholder table candidate extraction and persistence contracts
 - `services/paperbase_api/routes/extraction.py` — API surface for extraction profiles and queued collection extraction jobs
+- `services/paperbase_api/routes/ingest.py` — API surface for queued local-library ingest jobs
 - `services/paperbase_worker/runtime.py` — worker dispatcher for queued parse/extract/index jobs
 - `src/paperbase/profiles/` — built-in field-specific extraction profile presets such as `sc_regnet`
 
@@ -59,22 +61,31 @@ The first extraction pipeline should remain schema-constrained and replaceable:
 
 ## Current API Surface
 
-Paperbase now exposes extraction profile management plus queued collection extraction:
+Paperbase now exposes local pipeline operations as queued jobs:
 
+- `POST /api/v1/ingest/local-library`
+- `POST /api/v1/collections/{collection_id}/parse`
+
+- `POST /api/v1/collections/{collection_id}/extract`
 - `GET /api/v1/extraction-profiles`
 - `POST /api/v1/extraction-profiles`
-- `POST /api/v1/collections/{collection_id}/extract`
 - `GET /api/v1/jobs/{job_id}`
 
 The contract is now intentionally asynchronous:
 
+- the API can enqueue `local_library_ingest` to register a filesystem paper set
+  as a curated collection
+- the API can enqueue `collection_parse` to persist sections and chunks for an
+  existing collection
 - the API validates the request and enqueues a `collection_extract` job
-- the worker claims that job and executes `CollectionExtractionRunner`
+- the worker claims those jobs and executes the local import, parse, or
+  extraction runners
 - clients poll `GET /api/v1/jobs/{job_id}` to observe `pending`, `running`,
   `completed`, or `failed`
 
 This keeps the current local-first extraction stack operational for curated
-collections without keeping long-running extraction work inside the API process.
+collections without keeping long-running ingest, parse, or extraction work
+inside the API process.
 
 ## Current Local Corpus Status
 

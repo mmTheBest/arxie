@@ -22,7 +22,10 @@ def build_search_query(
                     "fields": [
                         "title^3",
                         "abstract^2",
+                        "section_title^2",
                         "text",
+                        "figure_label^2",
+                        "table_label^2",
                         "caption",
                         "authors",
                         "tags",

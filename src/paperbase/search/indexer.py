@@ -78,3 +78,24 @@ def build_figure_document(
         "caption": caption or "",
         "embedding": embedding_vector or [],
     }
+
+
+def build_table_document(
+    *,
+    table_id: str,
+    paper_id: str,
+    title: str,
+    table_label: str | None,
+    caption: str | None,
+    structured_payload: dict[str, object] | None = None,
+    embedding_vector: list[float] | None = None,
+) -> dict[str, object]:
+    return {
+        "table_id": table_id,
+        "paper_id": paper_id,
+        "title": title,
+        "table_label": table_label or "",
+        "caption": caption or "",
+        "structured_payload": structured_payload or {},
+        "embedding": embedding_vector or [],
+    }

@@ -68,3 +68,20 @@ def figure_index_template() -> dict[str, object]:
             }
         },
     }
+
+
+def table_index_template() -> dict[str, object]:
+    return {
+        "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+        "mappings": {
+            "properties": {
+                "table_id": {"type": "keyword"},
+                "paper_id": {"type": "keyword"},
+                "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "table_label": {"type": "keyword"},
+                "caption": {"type": "text"},
+                "structured_payload": {"type": "object", "enabled": False},
+                "embedding": _dense_vector_property(),
+            }
+        },
+    }

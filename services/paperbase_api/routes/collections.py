@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, Path, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -19,7 +19,12 @@ from paperbase.db.models import (
     ResultRow,
     TableArtifact,
 )
-from paperbase.db.repositories import AnnotationRepository, CollectionRepository, PaperRepository
+from paperbase.db.repositories import (
+    AnnotationRepository,
+    BackgroundJobRepository,
+    CollectionRepository,
+    PaperRepository,
+)
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
@@ -42,10 +47,13 @@ from services.paperbase_api.models import (
     CollectionsResponse,
     CollectionSummaryResponse,
     PaperSummaryResponse,
+    RunCollectionParseRequest,
     SingleAnnotationResponse,
+    SingleBackgroundJobResponse,
     SingleCollectionPaperResponse,
     SingleCollectionResponse,
 )
+from services.paperbase_api.routes.jobs import background_job_to_response
 from services.paperbase_api.normalization import (
     canonicalize_metric_display_name,
     normalize_summary_key,
@@ -410,6 +418,39 @@ def fetch_collection_structured_summary(
             ],
         )
     )
+
+
+@router.post(
+    "/api/v1/collections/{collection_id}/parse",
+    response_model=SingleBackgroundJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def parse_collection(
+    payload: RunCollectionParseRequest,
+    request: Request,
+    collection_id: str = Path(..., min_length=1, max_length=36),
+    session: Session = Depends(get_session),
+) -> SingleBackgroundJobResponse:
+    collection_repository = CollectionRepository(session)
+    safe_collection_id = sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+    collection = collection_repository.get_by_id(safe_collection_id)
+    if collection is None:
+        raise PaperbaseAPIError(
+            status_code=404,
+            error="collection_not_found",
+            message=f"No collection found for id: {safe_collection_id}",
+        )
+
+    with request.app.state.session_factory() as job_session:
+        job = BackgroundJobRepository(job_session).create(
+            job_type="collection_parse",
+            payload_json={
+                "collection_id": safe_collection_id,
+                "limit": payload.limit,
+            },
+        )
+
+    return SingleBackgroundJobResponse(data=background_job_to_response(job))
 
 
 @router.post(

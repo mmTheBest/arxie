@@ -19,6 +19,7 @@ from services.paperbase_api.routes.extraction import (
     default_extraction_client_factory,
     router as extraction_router,
 )
+from services.paperbase_api.routes.ingest import router as ingest_router
 from services.paperbase_api.routes.jobs import router as jobs_router
 from services.paperbase_api.routes.papers import router as papers_router
 from services.paperbase_api.routes.search import router as search_router
@@ -65,6 +66,7 @@ def create_app(
     app.include_router(papers_router)
     app.include_router(compare_router)
     app.include_router(collections_router)
+    app.include_router(ingest_router)
     app.include_router(extraction_router)
     app.include_router(jobs_router)
     app.include_router(ui_router)
