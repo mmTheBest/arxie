@@ -1,0 +1,64 @@
+"""Document builders for Paperbase search/read models."""
+
+from __future__ import annotations
+
+
+def build_paper_document(
+    *,
+    paper_id: str,
+    title: str,
+    abstract: str | None = None,
+    year: int | None = None,
+    venue: str | None = None,
+    authors: list[str] | None = None,
+    tags: list[str] | None = None,
+    embedding_vector: list[float] | None = None,
+) -> dict[str, object]:
+    return {
+        "paper_id": paper_id,
+        "title": title,
+        "abstract": abstract or "",
+        "publication_year": year,
+        "venue": venue,
+        "authors": authors or [],
+        "tags": tags or [],
+        "embedding": embedding_vector or [],
+    }
+
+
+def build_chunk_document(
+    *,
+    chunk_id: str,
+    paper_id: str,
+    title: str,
+    section_title: str | None,
+    text: str,
+    embedding_vector: list[float] | None = None,
+) -> dict[str, object]:
+    return {
+        "chunk_id": chunk_id,
+        "paper_id": paper_id,
+        "title": title,
+        "section_title": section_title or "",
+        "text": text,
+        "embedding": embedding_vector or [],
+    }
+
+
+def build_figure_document(
+    *,
+    figure_id: str,
+    paper_id: str,
+    title: str,
+    figure_label: str | None,
+    caption: str | None,
+    embedding_vector: list[float] | None = None,
+) -> dict[str, object]:
+    return {
+        "figure_id": figure_id,
+        "paper_id": paper_id,
+        "title": title,
+        "figure_label": figure_label or "",
+        "caption": caption or "",
+        "embedding": embedding_vector or [],
+    }

@@ -19,8 +19,9 @@ class ChunkDraft:
 class SimpleSectionChunker:
     """Split parsed sections into small text chunks."""
 
-    def __init__(self, max_words: int = 120) -> None:
-        self.max_words = max(1, max_words)
+    def __init__(self, max_characters: int = 1200, overlap_characters: int = 120) -> None:
+        self.max_characters = max(1, max_characters)
+        self.overlap_characters = max(0, min(overlap_characters, self.max_characters - 1))
 
     def chunk_sections(self, sections: Sequence[ParsedSection]) -> list[ChunkDraft]:
         chunks: list[ChunkDraft] = []
@@ -31,21 +32,24 @@ class SimpleSectionChunker:
                 continue
             paragraphs = [part.strip() for part in content.split("\n\n") if part.strip()] or [content]
             for paragraph in paragraphs:
-                words = paragraph.split()
-                if not words:
+                if not paragraph:
                     continue
-                for start in range(0, len(words), self.max_words):
-                    window = words[start : start + self.max_words]
-                    text = " ".join(window).strip()
+                start = 0
+                while start < len(paragraph):
+                    end = min(len(paragraph), start + self.max_characters)
+                    text = paragraph[start:end].strip()
                     if not text:
-                        continue
+                        break
                     chunks.append(
                         ChunkDraft(
                             section_ordinal=section_index,
                             ordinal=ordinal,
                             text=text,
-                            token_count=len(window),
+                            token_count=len(text.split()),
                         )
                     )
                     ordinal += 1
+                    if end >= len(paragraph):
+                        break
+                    start = max(end - self.overlap_characters, start + 1)
         return chunks

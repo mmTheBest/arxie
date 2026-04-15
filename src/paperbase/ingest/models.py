@@ -16,6 +16,7 @@ class CanonicalPaperSeed:
     venue: str | None = None
     doi: str | None = None
     arxiv_id: str | None = None
+    pdf_url: str | None = None
     authors: list[str] = field(default_factory=list)
     source_payload: dict[str, Any] = field(default_factory=dict)
     raw_metadata: dict[str, Any] = field(default_factory=dict)

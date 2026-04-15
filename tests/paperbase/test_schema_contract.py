@@ -11,6 +11,7 @@ def test_paperbase_metadata_contains_core_tables() -> None:
         "sections",
         "chunks",
         "figures",
+        "glossary_terms",
         "datasets",
         "methods",
         "metrics",

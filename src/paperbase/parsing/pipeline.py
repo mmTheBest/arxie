@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.models import PaperFile
@@ -39,14 +40,19 @@ class PaperParsePipeline:
         session_factory: sessionmaker[Session],
         parser: PDFParser | None = None,
         chunker: SimpleSectionChunker | None = None,
+        max_chunk_characters: int = 1200,
+        chunk_overlap_characters: int = 120,
     ) -> None:
         self.session_factory = session_factory
         self.parser = parser or PDFParser()
-        self.chunker = chunker or SimpleSectionChunker()
+        self.chunker = chunker or SimpleSectionChunker(
+            max_characters=max_chunk_characters,
+            overlap_characters=chunk_overlap_characters,
+        )
 
-    def parse_paper(self, paper_id: str) -> PaperParseResult:
+    def parse_paper(self, paper_id: str, paper_file_id: str | None = None) -> PaperParseResult:
         with self.session_factory() as session:
-            file_record = self._get_primary_pdf_file(session, paper_id)
+            file_record = self._get_pdf_file(session, paper_id, paper_file_id)
 
         pdf_path = _path_from_storage_uri(file_record.storage_uri)
         document = self.parser.parse(pdf_path)
@@ -68,7 +74,17 @@ class PaperParsePipeline:
             chunk_count=chunk_count,
         )
 
-    def _get_primary_pdf_file(self, session: Session, paper_id: str) -> PaperFile:
+    def _get_pdf_file(self, session: Session, paper_id: str, paper_file_id: str | None) -> PaperFile:
+        if paper_file_id is not None:
+            statement = select(PaperFile).where(
+                PaperFile.id == paper_file_id,
+                PaperFile.paper_id == paper_id,
+            )
+            file_record = session.execute(statement).scalar_one_or_none()
+            if file_record is None:
+                raise ValueError(f"No PDF file found for paper_id={paper_id} and paper_file_id={paper_file_id}")
+            return file_record
+
         file_records = PaperFileRepository(session).list_for_paper(paper_id=paper_id, file_kind="pdf")
         if not file_records:
             raise ValueError(f"No PDF file registered for paper_id={paper_id}")

@@ -43,6 +43,12 @@ def seed_from_crossref_work(payload: dict[str, Any]) -> CanonicalPaperSeed:
     title = ((payload.get("title") or [""])[0] or "").strip()
     venue = ((payload.get("container-title") or [""])[0] or "").strip() or None
     doi = str(payload.get("DOI") or "").strip() or None
+    links = payload.get("link") or []
+    pdf_url = None
+    for link in links:
+        if str(link.get("content-type") or "").lower() == "application/pdf":
+            pdf_url = str(link.get("URL") or "").strip() or None
+            break
     authors = [
         name
         for name in (_author_name(author) for author in (payload.get("author") or []))
@@ -57,6 +63,7 @@ def seed_from_crossref_work(payload: dict[str, Any]) -> CanonicalPaperSeed:
         publication_year=_extract_year(payload),
         venue=venue,
         doi=doi,
+        pdf_url=pdf_url,
         authors=authors,
         source_payload=payload,
         raw_metadata={

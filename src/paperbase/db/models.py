@@ -166,6 +166,16 @@ class ResultRow(Base, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
+class GlossaryTerm(Base, TimestampMixin):
+    __tablename__ = "glossary_terms"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
+    term: Mapped[str] = mapped_column(String(255), nullable=False)
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
 class Finding(Base, TimestampMixin):
     __tablename__ = "findings"
 

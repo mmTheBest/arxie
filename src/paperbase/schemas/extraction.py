@@ -51,6 +51,13 @@ class FindingExtraction(BaseModel):
     evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)
 
 
+class GlossaryTermExtraction(BaseModel):
+    term: str
+    definition: str
+    metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
+    evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)
+
+
 class EngineeringTrickExtraction(BaseModel):
     title: str
     description: str

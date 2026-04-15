@@ -49,6 +49,7 @@ def seed_from_openalex_work(payload: dict[str, Any]) -> CanonicalPaperSeed:
         publication_year=payload.get("publication_year"),
         venue=source.get("display_name"),
         doi=_normalize_doi(ids.get("doi")),
+        pdf_url=primary_location.get("pdf_url"),
         authors=[
             authorship.get("author", {}).get("display_name", "")
             for authorship in authorships
