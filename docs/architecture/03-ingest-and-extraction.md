@@ -67,6 +67,21 @@ collections. A user can define a field-specific schema profile once, attach it t
 their collection workflow, and run a persisted extraction pass against the
 collection without waiting for the future worker service.
 
+## Current Local Corpus Status
+
+The `SamplePapers` scRegNet collection is now fully operational as a local-first
+field database:
+
+- all `11` imported papers have a latest `completed` extraction run
+- the extraction contract now tolerates malformed scalar fragments inside entity
+  lists from function-calling outputs, instead of failing the entire paper run
+- the built-in `sc_regnet` preset is attached to the collection and can be
+  rerun locally without the future worker stack
+
+This is an important local-first milestone because it proves the collection can
+already behave like a persistent field database rather than a PDF folder plus ad
+hoc prompts.
+
 ## Built-In Field Presets
 
 Paperbase now includes a built-in `sc_regnet` preset derived from the local

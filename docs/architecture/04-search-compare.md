@@ -58,8 +58,15 @@ run, users also need to inspect the extracted artifacts for a specific paper.
 The current API now supports that browse layer through:
 
 - `GET /api/v1/papers/{paper_id}/structured-data`
+- `GET /api/v1/collections/{collection_id}/structured-summary`
 
 That endpoint returns the paper-level extracted datasets, methods, metrics,
 result rows, glossary terms, findings, engineering tricks, extraction runs, and
 evidence spans. It gives the local-first database a usable inspection surface
 before the future UI and richer search indexing layers are finished.
+
+The collection structured summary endpoint now also normalizes obvious metric
+aliases such as long-form `Area Under the Receiver Operating Characteristic
+Curve` into `AUROC` and collapses duplicate summary entries. That keeps the
+local-first browse layer readable even before richer metric normalization and
+dedicated comparison tables are added.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, Path, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -44,6 +46,51 @@ from services.paperbase_api.models import (
 )
 
 router = APIRouter(tags=["collections"])
+
+_METRIC_NAME_ALIASES = {
+    "adjusted rand index": "ARI",
+    "ari": "ARI",
+    "area under the precision recall curve": "AUPRC",
+    "area under the receiver operating characteristic curve": "AUROC",
+    "aupr": "AUPRC",
+    "auprc": "AUPRC",
+    "auroc": "AUROC",
+    "jsd": "JSD",
+    "mean squared error": "MSE",
+    "mse": "MSE",
+    "pcc": "PCC",
+    "pearson correlation": "PCC",
+    "pearson correlation coefficient": "PCC",
+    "pearson correlation coefficient pcc": "PCC",
+}
+
+
+def _normalize_summary_key(value: str) -> str:
+    collapsed = re.sub(r"[^0-9A-Za-z]+", " ", value)
+    return re.sub(r"\s+", " ", collapsed).strip().casefold()
+
+
+def _canonicalize_metric_display_name(value: str) -> str:
+    display_name = value.strip()
+    return _METRIC_NAME_ALIASES.get(_normalize_summary_key(display_name), display_name)
+
+
+def _canonicalize_artifact_display_name(value: str, *, artifact_type: str) -> str:
+    if artifact_type == "metric":
+        return _canonicalize_metric_display_name(value)
+    return value.strip()
+
+
+def _build_named_artifact_summary(items, *, artifact_type: str) -> list[CollectionSummaryNamedArtifactResponse]:  # noqa: ANN001
+    summarized: dict[str, CollectionSummaryNamedArtifactResponse] = {}
+    for item in items:
+        display_name = _canonicalize_artifact_display_name(item.display_name, artifact_type=artifact_type)
+        key = _normalize_summary_key(display_name)
+        summarized.setdefault(
+            key,
+            CollectionSummaryNamedArtifactResponse(id=item.id, display_name=display_name),
+        )
+    return list(summarized.values())
 
 
 def _paper_to_response(paper) -> PaperSummaryResponse:  # noqa: ANN001
@@ -305,18 +352,9 @@ def fetch_collection_structured_summary(
             collection_id=safe_collection_id,
             paper_count=paper_count,
             extracted_paper_count=extracted_paper_count,
-            datasets=[
-                CollectionSummaryNamedArtifactResponse(id=item.id, display_name=item.display_name)
-                for item in datasets
-            ],
-            methods=[
-                CollectionSummaryNamedArtifactResponse(id=item.id, display_name=item.display_name)
-                for item in methods
-            ],
-            metrics=[
-                CollectionSummaryNamedArtifactResponse(id=item.id, display_name=item.display_name)
-                for item in metrics
-            ],
+            datasets=_build_named_artifact_summary(datasets, artifact_type="dataset"),
+            methods=_build_named_artifact_summary(methods, artifact_type="method"),
+            metrics=_build_named_artifact_summary(metrics, artifact_type="metric"),
             glossary_terms=[
                 CollectionSummaryGlossaryTermResponse(
                     id=item.id,
@@ -338,9 +376,13 @@ def fetch_collection_structured_summary(
                     id=result_row.id,
                     paper_id=paper.id,
                     paper_title=paper.canonical_title,
-                    dataset=dataset.display_name if dataset is not None else None,
-                    method=method.display_name if method is not None else None,
-                    metric=metric.display_name if metric is not None else None,
+                    dataset=dataset.display_name.strip() if dataset is not None else None,
+                    method=method.display_name.strip() if method is not None else None,
+                    metric=(
+                        _canonicalize_metric_display_name(metric.display_name)
+                        if metric is not None
+                        else None
+                    ),
                     value_numeric=result_row.value_numeric,
                     value_text=result_row.value_text,
                 )
