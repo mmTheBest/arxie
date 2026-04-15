@@ -28,6 +28,7 @@ def test_paperbase_metadata_contains_core_tables() -> None:
         "extraction_profiles",
         "collections",
         "collection_papers",
+        "workspaces",
         "annotations",
     }
 
@@ -36,6 +37,7 @@ def test_paperbase_metadata_contains_core_tables() -> None:
 
 def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     collections = Base.metadata.tables["collections"]
+    workspaces = Base.metadata.tables["workspaces"]
     extraction_runs = Base.metadata.tables["extraction_runs"]
     annotations = Base.metadata.tables["annotations"]
     papers = Base.metadata.tables["papers"]
@@ -46,6 +48,12 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
 
     assert "owner_id" in collections.c
     assert "scope_type" in collections.c
+    assert "owner_id" in workspaces.c
+    assert "collection_id" in workspaces.c
+    assert "saved_query" in workspaces.c
+    assert "focus_note" in workspaces.c
+    assert "active_filters_json" in workspaces.c
+    assert "pinned_paper_ids_json" in workspaces.c
 
     assert "provider" in papers.c
     assert "external_id" in papers.c

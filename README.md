@@ -1,8 +1,8 @@
 # Arxie
 
-*Research moves faster when evidence is easy to trust.*
+*Research moves faster when papers are searchable, structured, and grounded.*
 
-Arxie is an AI research assistant that reads real papers (Semantic Scholar + arXiv), reasons across sources, and writes citation-grounded outputs you can verify.
+Arxie is an AI research workspace built for serious literature work. It does not just answer questions about papers. It builds a living paperbase behind every answer so you can search a corpus, inspect figures, compare methods, trace evidence, and return to the same research context later.
 
 ---
 
@@ -28,7 +28,7 @@ Arxie is an AI research assistant that reads real papers (Semantic Scholar + arX
 - Cross-artifact sync when users revise hypotheses/assumptions
 - Paperbase persistent corpus with worker-backed parse, extract, and reindex jobs
 - Curated local collections with field-specific extraction profiles and annotations
-- Paperbase Console for browsing collections, chunk/artifact search, structured paper data, figure/table artifacts, comparisons, and background jobs
+- Public Arxie homepage plus saved-workspace app for browsing collections, chunk/artifact search, structured paper data, figure/table artifacts, comparisons, and background jobs
 
 (See `docs/PRE-PRD-v0.2.md` for discussion draft.)
 
@@ -96,12 +96,14 @@ Paperbase's local-first API is served separately from the legacy RA API in the
 feature branch. It now supports:
 
 - queued local-library ingest, parse, extraction, and reindex jobs
+- saved workspaces layered over collections, queries, focus notes, and pinned papers
 - paper, chunk, and artifact search surfaces with SQL fallback
 - structured paper browse for datasets, methods, metrics, evidence, figures,
   and tables
 - collection summaries and comparison routes for results, methods,
   engineering tricks, figures, and tables
-- a build-free local console at `/app`
+- a public homepage at `/`
+- a build-free workspace app at `/app`
 
 ---
 

@@ -21,6 +21,7 @@ from paperbase.db.models import (
     PaperFile,
     PaperTag,
     Tag,
+    Workspace,
 )
 
 
@@ -395,6 +396,89 @@ class AnnotationRepository:
             .order_by(Annotation.created_at.asc())
         )
         return self.session.execute(statement).scalars().all()
+
+
+class WorkspaceRepository:
+    """Persistence helpers for durable research workspaces."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_by_owner_title(self, owner_id: str, title: str) -> Workspace | None:
+        statement: Select[tuple[Workspace]] = select(Workspace).where(
+            Workspace.owner_id == owner_id,
+            Workspace.title == title,
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def get_by_id(self, workspace_id: str) -> Workspace | None:
+        return self.session.get(Workspace, workspace_id)
+
+    def list_workspaces(self, *, owner_id: str | None = None) -> Sequence[Workspace]:
+        statement = select(Workspace)
+        if owner_id is not None:
+            statement = statement.where(Workspace.owner_id == owner_id)
+        statement = statement.order_by(Workspace.created_at.asc(), Workspace.title.asc())
+        return self.session.execute(statement).scalars().all()
+
+    def create(
+        self,
+        *,
+        owner_id: str,
+        title: str,
+        description: str | None = None,
+        collection_id: str | None = None,
+        saved_query: str | None = None,
+        focus_note: str | None = None,
+        active_filters: dict[str, Any] | None = None,
+        pinned_paper_ids: Sequence[str] | None = None,
+    ) -> Workspace:
+        workspace = Workspace(
+            owner_id=owner_id,
+            title=title,
+            description=description,
+            collection_id=collection_id,
+            saved_query=saved_query,
+            focus_note=focus_note,
+            active_filters_json=active_filters or {},
+            pinned_paper_ids_json=list(pinned_paper_ids or []),
+        )
+        self.session.add(workspace)
+        self.session.commit()
+        self.session.refresh(workspace)
+        return workspace
+
+    def update(
+        self,
+        workspace_id: str,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        collection_id: str | None = None,
+        saved_query: str | None = None,
+        focus_note: str | None = None,
+        active_filters: dict[str, Any] | None = None,
+        pinned_paper_ids: Sequence[str] | None = None,
+    ) -> Workspace:
+        workspace = self.get_by_id(workspace_id)
+        if workspace is None:
+            raise ValueError(f"No workspace found for id: {workspace_id}")
+
+        if title is not None:
+            workspace.title = title
+        if description is not None:
+            workspace.description = description
+        workspace.collection_id = collection_id
+        workspace.saved_query = saved_query
+        workspace.focus_note = focus_note
+        if active_filters is not None:
+            workspace.active_filters_json = dict(active_filters)
+        if pinned_paper_ids is not None:
+            workspace.pinned_paper_ids_json = list(pinned_paper_ids)
+
+        self.session.commit()
+        self.session.refresh(workspace)
+        return workspace
 
 
 class BackgroundJobRepository:

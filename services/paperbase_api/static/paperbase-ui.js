@@ -1,5 +1,6 @@
 (function () {
   const endpoints = {
+    workspaces: "/api/v1/workspaces",
     collections: "/api/v1/collections",
     jobs: "/api/v1/jobs",
     search: "/api/v1/search/papers",
@@ -11,6 +12,8 @@
   };
 
   const state = {
+    workspaces: [],
+    selectedWorkspace: null,
     collections: [],
     selectedCollection: null,
     papers: [],
@@ -27,8 +30,12 @@
   };
 
   const elements = {
+    workspacesList: document.getElementById("workspaces-list"),
     collectionsList: document.getElementById("collections-list"),
     paperList: document.getElementById("paper-list"),
+    workspaceTitleInput: document.getElementById("workspace-title-input"),
+    workspaceFocusInput: document.getElementById("workspace-focus-input"),
+    workspaceMeta: document.getElementById("workspace-meta"),
     collectionSummary: document.getElementById("collection-summary"),
     paperDetail: document.getElementById("paper-detail"),
     artifactSurface: document.getElementById("artifact-surface"),
@@ -37,6 +44,7 @@
     jobsList: document.getElementById("jobs-list"),
     searchForm: document.getElementById("search-form"),
     searchInput: document.getElementById("paper-search-input"),
+    saveWorkspaceButton: document.getElementById("save-workspace-button"),
     extractButton: document.getElementById("extract-button"),
     parseButton: document.getElementById("parse-button"),
     reindexButton: document.getElementById("reindex-button"),
@@ -78,6 +86,50 @@
       renderEmptyCollectionState();
     }
     renderCollections();
+  }
+
+  async function loadWorkspaces(preferredWorkspaceId) {
+    const payload = await fetchJson(endpoints.workspaces);
+    state.workspaces = payload.data || [];
+
+    const workspaceId = preferredWorkspaceId
+      || (state.selectedWorkspace && state.selectedWorkspace.id)
+      || (state.workspaces[0] && state.workspaces[0].id);
+
+    renderWorkspaces();
+    if (workspaceId) {
+      await loadWorkspace(workspaceId);
+      return;
+    }
+    renderWorkspaceDetail();
+  }
+
+  async function loadWorkspace(workspaceId) {
+    const payload = await fetchJson(`${endpoints.workspaces}/${workspaceId}`);
+    state.selectedWorkspace = payload.data;
+    renderWorkspaces();
+    renderWorkspaceDetail();
+
+    if (state.selectedWorkspace.collection_id) {
+      await loadCollectionSurface(state.selectedWorkspace.collection_id);
+    }
+
+    elements.searchInput.value = state.selectedWorkspace.saved_query || "";
+    if (state.selectedWorkspace.saved_query) {
+      await searchPapers(state.selectedWorkspace.saved_query);
+    } else {
+      state.searchResults = [];
+      state.chunkSearchHits = [];
+      state.artifactSearchHits = [];
+      renderPapers();
+      renderSearchSurfaces();
+    }
+
+    if (state.selectedWorkspace.pinned_papers && state.selectedWorkspace.pinned_papers.length > 0) {
+      await loadPaperDetail(state.selectedWorkspace.pinned_papers[0].id);
+    }
+
+    renderWorkspaceDetail();
   }
 
   async function loadCollectionSurface(collectionId) {
@@ -221,6 +273,39 @@
     setStatus(`Queued parse for ${state.selectedCollection.title}.`);
   }
 
+  async function saveWorkspace() {
+    const title = elements.workspaceTitleInput.value.trim()
+      || (state.selectedCollection ? `${state.selectedCollection.title} workspace` : "Arxie workspace");
+    const body = {
+      title,
+      description: state.selectedWorkspace ? state.selectedWorkspace.description : null,
+      collection_id: state.selectedCollection ? state.selectedCollection.id : null,
+      saved_query: elements.searchInput.value.trim() || null,
+      focus_note: elements.workspaceFocusInput.value.trim() || null,
+      active_filters: state.selectedWorkspace ? (state.selectedWorkspace.active_filters || {}) : {},
+      pinned_paper_ids: state.selectedPaper ? [state.selectedPaper.id] : [],
+    };
+
+    if (state.selectedWorkspace) {
+      await fetchJson(`${endpoints.workspaces}/${state.selectedWorkspace.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      await loadWorkspaces(state.selectedWorkspace.id);
+      setStatus(`Updated workspace ${title}.`);
+      return;
+    }
+
+    const payload = await fetchJson(endpoints.workspaces, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    await loadWorkspaces(payload.data.id);
+    setStatus(`Saved workspace ${title}.`);
+  }
+
   function updateActionButtons() {
     elements.extractButton.disabled = !state.selectedCollection;
     elements.parseButton.disabled = !state.selectedCollection;
@@ -263,6 +348,80 @@
       });
     });
     updateActionButtons();
+  }
+
+  function renderWorkspaces() {
+    if (state.workspaces.length === 0) {
+      elements.workspacesList.innerHTML = '<div class="list-card muted">No saved workspaces yet. Search a collection and save the current context.</div>';
+      return;
+    }
+
+    elements.workspacesList.innerHTML = state.workspaces
+      .map((workspace) => {
+        const active = state.selectedWorkspace && state.selectedWorkspace.id === workspace.id;
+        return `
+          <div class="list-card" data-active="${active ? "true" : "false"}">
+            <button type="button" data-workspace-id="${workspace.id}">
+              <div class="list-title">${escapeHtml(workspace.title)}</div>
+              <div class="muted">${escapeHtml(workspace.saved_query || workspace.description || "Saved research context")}</div>
+            </button>
+          </div>
+        `;
+      })
+      .join("");
+
+    elements.workspacesList.querySelectorAll("[data-workspace-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const workspaceId = button.getAttribute("data-workspace-id");
+        if (!workspaceId) {
+          return;
+        }
+        setStatus("Loading workspace…");
+        await loadWorkspace(workspaceId);
+        setStatus(`Loaded ${state.selectedWorkspace.title}.`);
+      });
+    });
+  }
+
+  function renderWorkspaceDetail() {
+    if (!elements.workspaceTitleInput || !elements.workspaceFocusInput || !elements.workspaceMeta) {
+      return;
+    }
+
+    if (state.selectedWorkspace) {
+      elements.workspaceTitleInput.value = state.selectedWorkspace.title || "";
+      elements.workspaceFocusInput.value = state.selectedWorkspace.focus_note || "";
+      elements.workspaceMeta.innerHTML = `
+        <div class="detail-group">
+          <strong>Collection</strong>
+          <div class="muted">${escapeHtml((state.selectedWorkspace.collection && state.selectedWorkspace.collection.title) || (state.selectedCollection && state.selectedCollection.title) || "No collection linked")}</div>
+        </div>
+        <div class="detail-group">
+          <strong>Saved query</strong>
+          <div class="muted">${escapeHtml(state.selectedWorkspace.saved_query || "No saved query yet")}</div>
+        </div>
+        <div class="detail-group">
+          <strong>Pinned papers</strong>
+          <div class="pill-row">
+            ${(state.selectedWorkspace.pinned_papers || []).map((paper) => `<span class="pill">${escapeHtml(paper.title)}</span>`).join("") || '<span class="muted">No pinned papers yet.</span>'}
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    elements.workspaceTitleInput.value = state.selectedCollection ? `${state.selectedCollection.title} workspace` : "";
+    elements.workspaceFocusInput.value = "";
+    elements.workspaceMeta.innerHTML = `
+      <div class="detail-group">
+        <strong>Collection</strong>
+        <div class="muted">${escapeHtml((state.selectedCollection && state.selectedCollection.title) || "Choose a collection to start a workspace")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Saved query</strong>
+        <div class="muted">Run a search, open a paper, then save the current research context.</div>
+      </div>
+    `;
   }
 
   function renderPapers() {
@@ -517,11 +676,14 @@
 
   async function initialize() {
     try {
-      setStatus("Loading Paperbase Console…");
-      await Promise.all([loadCollections(), loadJobs()]);
+      setStatus("Loading Arxie workspace…");
+      await loadCollections();
+      await loadWorkspaces();
+      await loadJobs();
       renderPaperDetail();
+      renderWorkspaceDetail();
       updateActionButtons();
-      setStatus("Paperbase Console ready.");
+      setStatus("Arxie workspace ready.");
     } catch (error) {
       setStatus(error.message);
     }
@@ -557,6 +719,14 @@
   elements.parseButton.addEventListener("click", async () => {
     try {
       await queueParse();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.saveWorkspaceButton.addEventListener("click", async () => {
+    try {
+      await saveWorkspace();
     } catch (error) {
       setStatus(error.message);
     }

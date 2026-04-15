@@ -24,6 +24,7 @@ from services.paperbase_api.routes.jobs import router as jobs_router
 from services.paperbase_api.routes.papers import router as papers_router
 from services.paperbase_api.routes.search import router as search_router
 from services.paperbase_api.routes.ui import STATIC_DIR, router as ui_router
+from services.paperbase_api.routes.workspaces import router as workspaces_router
 
 
 def create_app(
@@ -66,6 +67,7 @@ def create_app(
     app.include_router(papers_router)
     app.include_router(compare_router)
     app.include_router(collections_router)
+    app.include_router(workspaces_router)
     app.include_router(ingest_router)
     app.include_router(extraction_router)
     app.include_router(jobs_router)

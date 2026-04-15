@@ -34,6 +34,48 @@ body {
   padding: 1.25rem 0 2rem;
 }
 
+.landing-shell {
+  width: min(1180px, calc(100vw - 2rem));
+  margin: 0 auto;
+  padding: 1.5rem 0 2.5rem;
+}
+
+.landing-hero,
+.landing-card {
+  backdrop-filter: blur(18px);
+  background: var(--paperbase-panel);
+  border: 1px solid var(--paperbase-line);
+  box-shadow: var(--paperbase-shadow);
+}
+
+.landing-hero {
+  border-radius: 1.8rem;
+  padding: 2rem;
+}
+
+.landing-copy {
+  max-width: 46rem;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--paperbase-muted);
+}
+
+.landing-actions {
+  margin-top: 1.25rem;
+}
+
+.landing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.landing-card {
+  border-radius: 1.35rem;
+  padding: 1.2rem;
+}
+
 .hero,
 .panel {
   backdrop-filter: blur(18px);
@@ -161,11 +203,13 @@ h3 {
 }
 
 input,
+textarea,
 button {
   font: inherit;
 }
 
-input {
+input,
+textarea {
   border-radius: 999px;
   border: 1px solid rgba(93, 74, 53, 0.18);
   background: rgba(255, 255, 255, 0.82);
@@ -173,9 +217,27 @@ input {
   color: var(--paperbase-ink);
 }
 
-input:focus {
+textarea {
+  width: 100%;
+  min-height: 7.5rem;
+  resize: vertical;
+  border-radius: 1rem;
+}
+
+input:focus,
+textarea:focus {
   outline: 2px solid rgba(212, 91, 50, 0.3);
   outline-offset: 1px;
+}
+
+.field-label {
+  display: block;
+  margin: 0.85rem 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--paperbase-accent-deep);
 }
 
 .action-button {
@@ -318,6 +380,7 @@ input:focus {
 .job-status[data-status="failed"] { color: #a5372e; }
 
 @media (max-width: 1120px) {
+  .landing-grid,
   .dashboard-grid {
     grid-template-columns: 1fr;
   }

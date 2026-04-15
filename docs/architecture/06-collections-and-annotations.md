@@ -7,6 +7,7 @@ Users must be able to maintain custom paper databases for a field of study.
 In practice that means:
 
 - curate a collection of selected papers
+- save workspace state over that collection
 - run analysis against that collection
 - attach manual annotations and tags
 - apply field-specific extraction profiles
@@ -47,6 +48,15 @@ collection through the API surface instead of only through internal runners.
 Paperbase now also exposes a collection structured-summary endpoint so curated
 field databases can surface the extracted datasets, methods, metrics, glossary
 terms, engineering tricks, and top result rows at the collection level.
+
+Paperbase now also exposes saved workspaces:
+
+- a workspace can point at a collection
+- it can persist a saved query and a focus note
+- it can pin specific papers as the current investigation set
+
+This is the first durable user-facing state above the collection layer and is
+the product bridge between the raw paperbase and the Arxie research workspace UI.
 
 ## Collection Scope
 

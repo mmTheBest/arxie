@@ -378,6 +378,56 @@ class CollectionsResponse(BaseModel):
     data: list[CollectionSummaryResponse]
 
 
+class WorkspaceCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(None, max_length=5000)
+    owner_id: str = Field(default="local-user", min_length=1, max_length=128)
+    collection_id: str | None = Field(None, min_length=1, max_length=36)
+    saved_query: str | None = Field(None, max_length=1000)
+    focus_note: str | None = Field(None, max_length=10000)
+    active_filters: dict[str, Any] = Field(default_factory=dict)
+    pinned_paper_ids: list[str] = Field(default_factory=list)
+
+
+class WorkspaceUpdateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = Field(None, max_length=5000)
+    collection_id: str | None = Field(None, min_length=1, max_length=36)
+    saved_query: str | None = Field(None, max_length=1000)
+    focus_note: str | None = Field(None, max_length=10000)
+    active_filters: dict[str, Any] | None = None
+    pinned_paper_ids: list[str] | None = None
+
+
+class WorkspaceSummaryResponse(BaseModel):
+    id: str
+    owner_id: str
+    title: str
+    description: str | None = None
+    collection_id: str | None = None
+    saved_query: str | None = None
+    focus_note: str | None = None
+    active_filters: dict[str, Any] = Field(default_factory=dict)
+    pinned_paper_ids: list[str] = Field(default_factory=list)
+
+
+class WorkspaceDetailResponse(WorkspaceSummaryResponse):
+    collection: CollectionSummaryResponse | None = None
+    pinned_papers: list[PaperSummaryResponse] = Field(default_factory=list)
+
+
+class SingleWorkspaceResponse(BaseModel):
+    data: WorkspaceDetailResponse
+
+
+class WorkspacesResponse(BaseModel):
+    data: list[WorkspaceSummaryResponse]
+
+
 class CollectionPaperCreateRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 

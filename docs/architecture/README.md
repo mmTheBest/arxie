@@ -42,10 +42,15 @@ Operationally, the current Paperbase branch is now split three ways:
   and executed by `services/paperbase_worker/`
 
 The first product UI is now also served from `services/paperbase_api/` as a
-build-free local console. That UI is intentionally thin: it sits directly on the
-collections, papers, chunk/artifact search, and jobs APIs so the product can
-ship a real operator surface before a larger frontend stack is introduced.
+build-free web surface:
 
-That console now also includes a dedicated artifact surface for figure and table
-browse and comparison, so collaborators can inspect visual evidence without
-dropping into raw PDFs or ad hoc scripts.
+- `/` is the public Arxie homepage
+- `/app` is the saved-workspace UI over the local Paperbase APIs
+
+That UI is still intentionally thin: it sits directly on the workspaces,
+collections, papers, chunk/artifact search, and jobs APIs so the product can
+ship a real research workspace before a larger frontend stack is introduced.
+
+The workspace app also includes figure and table browse/comparison surfaces, so
+collaborators can inspect visual evidence without dropping into raw PDFs or ad
+hoc scripts.

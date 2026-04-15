@@ -313,6 +313,21 @@ class CollectionPaper(Base, TimestampMixin):
     membership_note: Mapped[str | None] = mapped_column(Text)
 
 
+class Workspace(Base, TimestampMixin):
+    __tablename__ = "workspaces"
+    __table_args__ = (UniqueConstraint("owner_id", "title", name="uq_workspaces_owner_title"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False, default="local-user")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    collection_id: Mapped[str | None] = mapped_column(ForeignKey("collections.id"))
+    saved_query: Mapped[str | None] = mapped_column(Text)
+    focus_note: Mapped[str | None] = mapped_column(Text)
+    active_filters_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    pinned_paper_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+
 class Annotation(Base, TimestampMixin):
     __tablename__ = "annotations"
 

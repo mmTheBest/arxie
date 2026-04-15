@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Paperbase Console</title>
+    <title>Arxie Workspace</title>
     <link rel="stylesheet" href="/ui/paperbase-ui.css" />
     <script defer src="/ui/paperbase-ui.js"></script>
   </head>
@@ -11,11 +11,11 @@
     <div class="page-shell">
       <header class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Arxie / Paperbase</p>
-          <h1>Paperbase Console</h1>
+          <p class="eyebrow">Arxie</p>
+          <h1>Arxie Workspace</h1>
           <p class="hero-text">
-            Operate a local-first research database, queue long-running jobs, and inspect
-            structured corpus state without dropping back to ad hoc scripts.
+            Work across a durable paperbase instead of starting from scratch each session.
+            Save a research context, search a field, inspect evidence, and queue long-running corpus jobs.
           </p>
         </div>
         <div class="hero-actions">
@@ -27,6 +27,16 @@
       </header>
 
       <main class="dashboard-grid">
+        <section class="panel panel-tall" id="workspaces-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Workspaces</p>
+              <h2>Saved research contexts</h2>
+            </div>
+          </div>
+          <div id="workspaces-list" class="stacked-list"></div>
+        </section>
+
         <section class="panel panel-tall" id="collections-panel">
           <div class="panel-header">
             <div>
@@ -64,11 +74,22 @@
         <section class="panel panel-wide" id="summary-panel">
           <div class="panel-header">
             <div>
-              <p class="panel-kicker">Structured surface</p>
-              <h2>Collection and paper detail</h2>
+              <p class="panel-kicker">Workspace surface</p>
+              <h2>Research context and paper detail</h2>
             </div>
           </div>
           <div class="summary-grid">
+            <div class="summary-card" id="workspace-detail-panel">
+              <h3>Workspace context</h3>
+              <label class="field-label" for="workspace-title-input">Workspace title</label>
+              <input id="workspace-title-input" type="text" placeholder="e.g. scRegNet benchmark review" />
+              <label class="field-label" for="workspace-focus-input">Focus note</label>
+              <textarea id="workspace-focus-input" rows="5" placeholder="What is this workspace trying to answer?"></textarea>
+              <div id="workspace-meta" class="detail-group"></div>
+              <button id="save-workspace-button" class="action-button action-button-primary">
+                Save Workspace
+              </button>
+            </div>
             <div class="summary-card">
               <h3>Collection snapshot</h3>
               <div id="collection-summary"></div>

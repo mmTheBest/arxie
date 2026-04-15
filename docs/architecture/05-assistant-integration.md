@@ -41,3 +41,14 @@ Task 11 covers retrieval and fulltext access. The next integration layer is Task
 - proposal evidence queries should consume Paperbase-backed structured facts
 - lit-review synthesis should explicitly use Paperbase collections, annotations, and
   extraction profiles instead of only the generic retrieval tools
+
+## Workspace Implication
+
+The new saved-workspace UI is intentionally a product layer, not a second assistant
+stack.
+
+- workspaces store durable research context over Paperbase collections
+- the assistant layer should eventually read that context directly when a user asks
+  Arxie to continue a prior investigation
+- pinned papers, saved queries, and focus notes are now part of the expected
+  user-facing state model even though the CLI/agent layer does not consume them yet

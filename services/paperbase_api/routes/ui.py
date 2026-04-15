@@ -15,3 +15,8 @@ router = APIRouter(tags=["ui"])
 @router.get("/app", include_in_schema=False)
 def paperbase_console() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@router.get("/", include_in_schema=False)
+def arxie_homepage() -> FileResponse:
+    return FileResponse(STATIC_DIR / "landing.html")
