@@ -74,6 +74,7 @@ class PaperSource(Base, TimestampMixin):
 
 class PaperFile(Base, TimestampMixin):
     __tablename__ = "paper_files"
+    __table_args__ = (UniqueConstraint("paper_id", "storage_uri", name="uq_paper_files_paper_storage"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
@@ -228,6 +229,7 @@ class EvidenceSpan(Base, TimestampMixin):
 
 class Collection(Base, TimestampMixin):
     __tablename__ = "collections"
+    __table_args__ = (UniqueConstraint("owner_id", "title", name="uq_collections_owner_title"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     owner_id: Mapped[str] = mapped_column(String(128), nullable=False, default="local-user")

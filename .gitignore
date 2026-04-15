@@ -49,6 +49,7 @@ logs/
 
 # Cache
 data/cache/
+data/*.db
 .chroma/
 
 # Local development

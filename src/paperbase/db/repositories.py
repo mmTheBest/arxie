@@ -8,7 +8,14 @@ from typing import Any
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from paperbase.db.models import Annotation, Collection, CollectionPaper, ExtractionProfile, Paper
+from paperbase.db.models import (
+    Annotation,
+    Collection,
+    CollectionPaper,
+    ExtractionProfile,
+    Paper,
+    PaperFile,
+)
 
 
 class PaperRepository:
@@ -101,6 +108,13 @@ class CollectionRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def get_by_owner_title(self, owner_id: str, title: str) -> Collection | None:
+        statement: Select[tuple[Collection]] = select(Collection).where(
+            Collection.owner_id == owner_id,
+            Collection.title == title,
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
     def create(
         self,
         *,
@@ -123,6 +137,29 @@ class CollectionRepository:
         self.session.commit()
         self.session.refresh(collection)
         return collection
+
+    def create_or_get(
+        self,
+        *,
+        owner_id: str,
+        title: str,
+        description: str | None = None,
+        scope_type: str = "private",
+        tags: list[str] | None = None,
+        extraction_profile_id: str | None = None,
+    ) -> Collection:
+        collection = self.get_by_owner_title(owner_id, title)
+        if collection is not None:
+            return collection
+
+        return self.create(
+            owner_id=owner_id,
+            title=title,
+            description=description,
+            scope_type=scope_type,
+            tags=tags,
+            extraction_profile_id=extraction_profile_id,
+        )
 
     def add_paper(
         self,
@@ -200,3 +237,48 @@ class AnnotationRepository:
             .order_by(Annotation.created_at.asc())
         )
         return self.session.execute(statement).scalars().all()
+
+
+class PaperFileRepository:
+    """Persistence helpers for local and remote paper file records."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_by_storage_uri(self, *, paper_id: str, storage_uri: str) -> PaperFile | None:
+        statement: Select[tuple[PaperFile]] = select(PaperFile).where(
+            PaperFile.paper_id == paper_id,
+            PaperFile.storage_uri == storage_uri,
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def upsert(
+        self,
+        *,
+        paper_id: str,
+        storage_uri: str,
+        file_kind: str = "pdf",
+        content_hash: str | None = None,
+        mime_type: str | None = None,
+        parser_status: str | None = None,
+    ) -> PaperFile:
+        file_record = self.get_by_storage_uri(paper_id=paper_id, storage_uri=storage_uri)
+        if file_record is None:
+            file_record = PaperFile(
+                paper_id=paper_id,
+                storage_uri=storage_uri,
+                file_kind=file_kind,
+                content_hash=content_hash,
+                mime_type=mime_type,
+                parser_status=parser_status,
+            )
+            self.session.add(file_record)
+        else:
+            file_record.file_kind = file_kind
+            file_record.content_hash = content_hash
+            file_record.mime_type = mime_type
+            file_record.parser_status = parser_status
+
+        self.session.commit()
+        self.session.refresh(file_record)
+        return file_record
