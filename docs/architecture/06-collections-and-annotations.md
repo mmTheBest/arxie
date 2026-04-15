@@ -44,6 +44,10 @@ Paperbase also now exposes extraction profile and collection extraction endpoint
 so users can store a field-specific schema once and execute it over a curated
 collection through the API surface instead of only through internal runners.
 
+Paperbase now also exposes a collection structured-summary endpoint so curated
+field databases can surface the extracted datasets, methods, metrics, glossary
+terms, engineering tricks, and top result rows at the collection level.
+
 ## Collection Scope
 
 A collection is a user-owned curated slice of the corpus.

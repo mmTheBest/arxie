@@ -38,6 +38,7 @@ The current ingest and parse modules are:
 - `src/paperbase/extract/pipeline.py` — persistence of datasets, methods, metrics, result rows, findings, glossary terms, engineering tricks, and evidence spans
 - `src/paperbase/extract/runner.py` — collection-level orchestration for local-first extraction runs
 - `services/paperbase_api/routes/extraction.py` — API surface for extraction profiles and collection-level extraction runs
+- `src/paperbase/profiles/` — built-in field-specific extraction profile presets such as `sc_regnet`
 
 These modules are intentionally local-first. They should keep the import and parse contracts stable while the worker service and richer extraction stack are still being built.
 
@@ -65,3 +66,18 @@ These endpoints make the local-first extraction stack operational for curated
 collections. A user can define a field-specific schema profile once, attach it to
 their collection workflow, and run a persisted extraction pass against the
 collection without waiting for the future worker service.
+
+## Built-In Field Presets
+
+Paperbase now includes a built-in `sc_regnet` preset derived from the local
+`SamplePapers` corpus. It encodes the current field model for single-cell gene
+regulatory network inference:
+
+- task families around GRN link prediction and regulatory graph reconstruction
+- modalities such as `scRNA-seq`, `scATAC-seq`, and `multiome`
+- benchmarks such as `BEELINE` and related single-cell evaluation settings
+- prior-knowledge sources, relation types, and split strategies that materially
+  change how papers in this field should be compared
+
+This keeps the extraction pipeline generic while still giving local-first users a
+real domain-specific schema for their curated collection.

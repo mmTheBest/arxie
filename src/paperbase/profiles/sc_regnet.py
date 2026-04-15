@@ -1,0 +1,263 @@
+"""Built-in extraction profile preset for single-cell GRN modeling corpora."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+SC_REGNET_PRESET_NAME = "sc_regnet"
+
+
+def sc_regnet_schema_payload() -> dict[str, Any]:
+    return {
+        "domain": "single-cell-grn",
+        "focus": "single-cell gene regulatory network inference and link prediction",
+        "Study": {
+            "required": [
+                "title",
+                "year",
+                "paper_type",
+                "task_family",
+                "primary_modality",
+                "organism",
+            ],
+            "optional": [
+                "venue",
+                "doi",
+                "url",
+                "code_url",
+                "abstract",
+                "limitations",
+                "corpus_role",
+            ],
+        },
+        "Method": {
+            "required": [
+                "canonical_name",
+                "model_family",
+                "target_task",
+                "input_modalities",
+                "output_type",
+            ],
+            "optional": [
+                "backbone_model",
+                "prior_knowledge_sources",
+                "interpretability_method",
+                "training_objective",
+                "pretraining_corpus",
+                "hyperparameters",
+                "ablation_notes",
+            ],
+        },
+        "Dataset": {
+            "required": [
+                "dataset_name",
+                "benchmark_role",
+                "modality",
+                "organism",
+                "cell_context",
+                "ground_truth_source",
+            ],
+            "optional": [
+                "tissue",
+                "cell_type",
+                "cell_state",
+                "condition",
+                "disease",
+                "developmental_stage",
+                "sample_count",
+                "cell_count",
+                "gene_count",
+                "peak_count",
+                "public_accession",
+                "split_strategy",
+            ],
+        },
+        "RegulatoryEntity": {
+            "required": [
+                "source_entity",
+                "target_entity",
+                "relation_type",
+                "cell_context",
+                "evidence_type",
+            ],
+            "optional": [
+                "directionality",
+                "confidence_score",
+                "motif",
+                "peak_id",
+                "genomic_locus",
+                "prior_database",
+                "condition",
+                "disease",
+                "replicate_id",
+            ],
+        },
+        "PriorKnowledgeSource": {
+            "required": [
+                "source_type",
+                "source_name",
+                "representation",
+                "confidence_level",
+            ],
+            "optional": [
+                "organism",
+                "tissue",
+                "cell_type",
+                "version",
+                "provenance",
+                "mapping_rule",
+            ],
+        },
+        "Benchmark": {
+            "required": [
+                "benchmark_name",
+                "task",
+                "dataset_name",
+                "metric_name",
+                "metric_value",
+                "comparison_baseline",
+            ],
+            "optional": [
+                "std_or_ci",
+                "rank",
+                "improvement_vs_baseline",
+                "noise_level",
+                "run_count",
+                "held_out_axis",
+                "notes",
+            ],
+        },
+        "ExperimentProtocol": {
+            "required": [
+                "train_test_scheme",
+                "validation_scheme",
+                "negative_sampling",
+                "evaluation_axis",
+            ],
+            "optional": [
+                "cross_validation_folds",
+                "leave_out_strategy",
+                "noise_perturbation",
+                "ablation_setting",
+                "seed_policy",
+            ],
+        },
+        "ValidationEvidence": {
+            "required": [
+                "validation_type",
+                "supporting_resource",
+                "result_summary",
+            ],
+            "optional": [
+                "p_value",
+                "fdr",
+                "enrichment_term",
+                "independent_dataset",
+                "replication_status",
+                "cell_type_specificity",
+            ],
+        },
+        "GlossaryTerm": {
+            "required": ["term", "canonical_form", "definition"],
+            "optional": ["aliases", "units", "scope", "preferred_abbreviation"],
+        },
+        "controlled_vocabularies": {
+            "assays": [
+                "scRNA-seq",
+                "scATAC-seq",
+                "multiome",
+                "snATAC-seq",
+                "spatial transcriptomics",
+                "PPI",
+                "ChIP-seq",
+            ],
+            "relation_types": [
+                "TF->TG",
+                "TF->RE",
+                "RE->TG",
+                "TF->TF",
+                "gene-gene",
+                "cell-type classification",
+                "condition classification",
+            ],
+            "metrics": [
+                "AUPRC",
+                "AUROC",
+                "ARI",
+                "Pearson r",
+                "Spearman r",
+                "Accuracy",
+                "kBET",
+                "GC",
+                "FDR",
+            ],
+            "benchmarks": [
+                "BEELINE",
+                "DREAM5",
+                "PBMC",
+                "BMMC",
+                "Human cortex",
+                "AD DLPFC",
+                "human fetal lung",
+                "adult hematopoietic differentiation",
+                "cellxgene",
+                "ChIP-seq Atlas",
+                "ROSMAP",
+            ],
+            "model_aliases": [
+                "scRegNet",
+                "scMultiomeGRN",
+                "scGRIP",
+                "scPRINT",
+                "Geneformer",
+                "scBERT",
+                "scFoundation",
+                "scGPT",
+                "GENELink",
+                "GNNLink",
+                "GRNBoost2",
+                "GENIE3",
+                "DeepTFni",
+                "scMTNI",
+                "SCRIP",
+                "LINGER",
+                "GLUE",
+                "scGLUE",
+                "CellOracle",
+                "SCENIC+",
+                "Inferelator 3.0",
+                "Pando",
+                "FigR",
+                "scMEGA",
+                "scNET",
+            ],
+            "entity_aliases": {
+                "TF": "transcription_factor",
+                "TG": "target_gene",
+                "RE": "regulatory_element",
+                "CRE": "cis_regulatory_element",
+            },
+            "split_axes": [
+                "per-TF split",
+                "hold-out edges",
+                "leave-one-cell-type-out",
+                "leave-one-chromosome-out",
+                "10-fold adjacency split",
+                "noise-corrupted training",
+            ],
+        },
+    }
+
+
+def sc_regnet_preset() -> dict[str, Any]:
+    return {
+        "name": SC_REGNET_PRESET_NAME,
+        "title": "scRegNet single-cell GRN profile",
+        "domain": "single-cell-grn",
+        "description": (
+            "Field-specific extraction profile for single-cell gene regulatory "
+            "network inference, multiome integration, and scRegNet-style link prediction."
+        ),
+        "schema_payload": sc_regnet_schema_payload(),
+    }

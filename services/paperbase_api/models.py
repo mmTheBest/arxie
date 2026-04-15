@@ -229,6 +229,50 @@ class SingleCollectionPaperResponse(BaseModel):
     data: CollectionPaperMembershipResponse
 
 
+class CollectionSummaryNamedArtifactResponse(BaseModel):
+    id: str
+    display_name: str
+
+
+class CollectionSummaryGlossaryTermResponse(BaseModel):
+    id: str
+    term: str
+    definition: str
+
+
+class CollectionSummaryEngineeringTrickResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+
+
+class CollectionSummaryResultRowResponse(BaseModel):
+    id: str
+    paper_id: str
+    paper_title: str
+    dataset: str | None = None
+    method: str | None = None
+    metric: str | None = None
+    value_numeric: float | None = None
+    value_text: str | None = None
+
+
+class CollectionStructuredSummaryResponseData(BaseModel):
+    collection_id: str
+    paper_count: int
+    extracted_paper_count: int
+    datasets: list[CollectionSummaryNamedArtifactResponse]
+    methods: list[CollectionSummaryNamedArtifactResponse]
+    metrics: list[CollectionSummaryNamedArtifactResponse]
+    glossary_terms: list[CollectionSummaryGlossaryTermResponse]
+    engineering_tricks: list[CollectionSummaryEngineeringTrickResponse]
+    top_result_rows: list[CollectionSummaryResultRowResponse]
+
+
+class CollectionStructuredSummaryResponse(BaseModel):
+    data: CollectionStructuredSummaryResponseData
+
+
 class AnnotationCreateRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -267,6 +311,7 @@ class ExtractionProfileCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(None, max_length=5000)
     scope_type: str = Field(default="private", min_length=1, max_length=64)
+    preset_name: str | None = Field(None, min_length=1, max_length=128)
     schema_payload: dict[str, Any] = Field(default_factory=dict)
     active: bool = True
 
@@ -287,6 +332,18 @@ class SingleExtractionProfileResponse(BaseModel):
 
 class ExtractionProfilesResponse(BaseModel):
     data: list[ExtractionProfileResponse]
+
+
+class ExtractionProfilePresetResponse(BaseModel):
+    name: str
+    title: str
+    domain: str
+    description: str
+    schema_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExtractionProfilePresetsResponse(BaseModel):
+    data: list[ExtractionProfilePresetResponse]
 
 
 class RunCollectionExtractionRequest(BaseModel):

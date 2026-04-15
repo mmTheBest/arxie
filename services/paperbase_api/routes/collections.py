@@ -3,8 +3,20 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Path, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from paperbase.db.models import (
+    CollectionPaper,
+    Dataset,
+    EngineeringTrick,
+    ExtractionRun,
+    GlossaryTerm,
+    Method,
+    Metric,
+    Paper,
+    ResultRow,
+)
 from paperbase.db.repositories import AnnotationRepository, CollectionRepository, PaperRepository
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.dependencies import get_session
@@ -17,6 +29,12 @@ from services.paperbase_api.models import (
     CollectionPaperCreateRequest,
     CollectionPaperMembershipResponse,
     CollectionPapersResponse,
+    CollectionStructuredSummaryResponse,
+    CollectionStructuredSummaryResponseData,
+    CollectionSummaryEngineeringTrickResponse,
+    CollectionSummaryGlossaryTermResponse,
+    CollectionSummaryNamedArtifactResponse,
+    CollectionSummaryResultRowResponse,
     CollectionsResponse,
     CollectionSummaryResponse,
     PaperSummaryResponse,
@@ -213,6 +231,123 @@ def list_collection_papers(
             )
         )
     return CollectionPapersResponse(data=data)
+
+
+@router.get(
+    "/api/v1/collections/{collection_id}/structured-summary",
+    response_model=CollectionStructuredSummaryResponse,
+)
+def fetch_collection_structured_summary(
+    collection_id: str = Path(..., min_length=1, max_length=36),
+    session: Session = Depends(get_session),
+) -> CollectionStructuredSummaryResponse:
+    collection_repository = CollectionRepository(session)
+    safe_collection_id = sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+    collection = collection_repository.get_by_id(safe_collection_id)
+    if collection is None:
+        raise PaperbaseAPIError(
+            status_code=404,
+            error="collection_not_found",
+            message=f"No collection found for id: {safe_collection_id}",
+        )
+
+    member_paper_ids = select(CollectionPaper.paper_id).where(CollectionPaper.collection_id == safe_collection_id)
+
+    paper_count = session.execute(
+        select(func.count()).select_from(CollectionPaper).where(CollectionPaper.collection_id == safe_collection_id)
+    ).scalar_one()
+    extracted_paper_count = session.execute(
+        select(func.count(func.distinct(ExtractionRun.paper_id)))
+        .where(
+            ExtractionRun.paper_id.in_(member_paper_ids),
+            ExtractionRun.status == "completed",
+        )
+    ).scalar_one()
+
+    datasets = session.execute(
+        select(Dataset)
+        .where(Dataset.paper_id.in_(member_paper_ids))
+        .order_by(Dataset.display_name.asc(), Dataset.created_at.asc())
+    ).scalars().all()
+    methods = session.execute(
+        select(Method)
+        .where(Method.paper_id.in_(member_paper_ids))
+        .order_by(Method.display_name.asc(), Method.created_at.asc())
+    ).scalars().all()
+    metrics = session.execute(
+        select(Metric)
+        .where(Metric.paper_id.in_(member_paper_ids))
+        .order_by(Metric.display_name.asc(), Metric.created_at.asc())
+    ).scalars().all()
+    glossary_terms = session.execute(
+        select(GlossaryTerm)
+        .where(GlossaryTerm.paper_id.in_(member_paper_ids))
+        .order_by(GlossaryTerm.term.asc(), GlossaryTerm.created_at.asc())
+    ).scalars().all()
+    engineering_tricks = session.execute(
+        select(EngineeringTrick)
+        .where(EngineeringTrick.paper_id.in_(member_paper_ids))
+        .order_by(EngineeringTrick.title.asc(), EngineeringTrick.created_at.asc())
+    ).scalars().all()
+    result_rows = session.execute(
+        select(ResultRow, Paper, Dataset, Method, Metric)
+        .join(Paper, Paper.id == ResultRow.paper_id)
+        .outerjoin(Dataset, Dataset.id == ResultRow.dataset_id)
+        .outerjoin(Method, Method.id == ResultRow.method_id)
+        .outerjoin(Metric, Metric.id == ResultRow.metric_id)
+        .where(ResultRow.paper_id.in_(member_paper_ids))
+        .order_by(ResultRow.value_numeric.desc().nullslast(), ResultRow.created_at.asc())
+        .limit(10)
+    ).all()
+
+    return CollectionStructuredSummaryResponse(
+        data=CollectionStructuredSummaryResponseData(
+            collection_id=safe_collection_id,
+            paper_count=paper_count,
+            extracted_paper_count=extracted_paper_count,
+            datasets=[
+                CollectionSummaryNamedArtifactResponse(id=item.id, display_name=item.display_name)
+                for item in datasets
+            ],
+            methods=[
+                CollectionSummaryNamedArtifactResponse(id=item.id, display_name=item.display_name)
+                for item in methods
+            ],
+            metrics=[
+                CollectionSummaryNamedArtifactResponse(id=item.id, display_name=item.display_name)
+                for item in metrics
+            ],
+            glossary_terms=[
+                CollectionSummaryGlossaryTermResponse(
+                    id=item.id,
+                    term=item.term,
+                    definition=item.definition,
+                )
+                for item in glossary_terms
+            ],
+            engineering_tricks=[
+                CollectionSummaryEngineeringTrickResponse(
+                    id=item.id,
+                    title=item.title,
+                    description=item.description,
+                )
+                for item in engineering_tricks
+            ],
+            top_result_rows=[
+                CollectionSummaryResultRowResponse(
+                    id=result_row.id,
+                    paper_id=paper.id,
+                    paper_title=paper.canonical_title,
+                    dataset=dataset.display_name if dataset is not None else None,
+                    method=method.display_name if method is not None else None,
+                    metric=metric.display_name if metric is not None else None,
+                    value_numeric=result_row.value_numeric,
+                    value_text=result_row.value_text,
+                )
+                for result_row, paper, dataset, method, metric in result_rows
+            ],
+        )
+    )
 
 
 @router.post(

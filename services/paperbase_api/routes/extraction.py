@@ -10,12 +10,15 @@ from sqlalchemy.orm import Session
 from paperbase.db.repositories import CollectionRepository, ExtractionProfileRepository
 from paperbase.extract.client import OpenAIExtractionClient
 from paperbase.extract.runner import CollectionExtractionRunner
+from paperbase.profiles import get_profile_preset, list_profile_presets
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
     CollectionExtractionSummaryResponse,
     ExtractionProfileCreateRequest,
+    ExtractionProfilePresetResponse,
+    ExtractionProfilePresetsResponse,
     ExtractionProfileResponse,
     ExtractionProfilesResponse,
     RunCollectionExtractionRequest,
@@ -39,6 +42,26 @@ def _profile_to_response(profile) -> ExtractionProfileResponse:  # noqa: ANN001
         scope_type=profile.scope_type,
         schema_payload=dict(profile.schema_payload or {}),
         active=profile.active,
+    )
+
+
+@router.get(
+    "/api/v1/extraction-profile-presets",
+    response_model=ExtractionProfilePresetsResponse,
+)
+def list_extraction_profile_presets() -> ExtractionProfilePresetsResponse:
+    presets = list_profile_presets()
+    return ExtractionProfilePresetsResponse(
+        data=[
+            ExtractionProfilePresetResponse(
+                name=preset["name"],
+                title=preset["title"],
+                domain=preset["domain"],
+                description=preset["description"],
+                schema_payload=dict(preset["schema_payload"]),
+            )
+            for preset in presets
+        ]
     )
 
 
@@ -67,12 +90,34 @@ def create_extraction_profile(
     session: Session = Depends(get_session),
 ) -> SingleExtractionProfileResponse:
     repository = ExtractionProfileRepository(session)
+    schema_payload = dict(payload.schema_payload)
+    if payload.preset_name is not None:
+        preset_name = sanitize_identifier(
+            payload.preset_name,
+            field_name="preset_name",
+            max_length=128,
+        )
+        preset = get_profile_preset(preset_name)
+        if preset is None:
+            raise PaperbaseAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=f"Unknown extraction profile preset: {preset_name}",
+            )
+        if not schema_payload:
+            schema_payload = dict(preset["schema_payload"])
+    if not schema_payload:
+        raise PaperbaseAPIError(
+            status_code=400,
+            error="invalid_input",
+            message="Provide schema_payload or a valid preset_name.",
+        )
     profile = repository.create(
         owner_id=sanitize_user_text(payload.owner_id, field_name="owner_id", max_length=128),
         name=sanitize_user_text(payload.name, field_name="name", max_length=255),
         description=payload.description,
         scope_type=payload.scope_type,
-        schema_payload=dict(payload.schema_payload),
+        schema_payload=schema_payload,
         active=payload.active,
     )
     return SingleExtractionProfileResponse(data=_profile_to_response(profile))
