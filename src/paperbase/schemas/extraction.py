@@ -2,7 +2,37 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, model_validator
+
+
+def _normalize_named_artifact_payload(
+    raw: object,
+    *,
+    aliases: tuple[str, ...],
+) -> object:
+    if not isinstance(raw, dict):
+        return raw
+
+    data = dict(raw)
+    if "display_name" not in data:
+        for alias in aliases:
+            alias_value = data.get(alias)
+            if isinstance(alias_value, str) and alias_value.strip():
+                data["display_name"] = alias_value.strip()
+                break
+
+    metadata = dict(data.get("metadata") or {})
+    reserved_keys = {"display_name", "normalized_name", "metadata", "evidence_spans", *aliases}
+    for key, value in list(data.items()):
+        if key in reserved_keys:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            metadata.setdefault(key, value)
+    if metadata:
+        data["metadata"] = metadata
+    return data
 
 
 class EvidenceSpanPayload(BaseModel):
@@ -19,6 +49,11 @@ class DatasetExtraction(BaseModel):
     metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
     evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_aliases(cls, data: object) -> object:
+        return _normalize_named_artifact_payload(data, aliases=("dataset_name", "name"))
+
 
 class MethodExtraction(BaseModel):
     display_name: str
@@ -26,12 +61,25 @@ class MethodExtraction(BaseModel):
     metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
     evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_aliases(cls, data: object) -> object:
+        return _normalize_named_artifact_payload(
+            data,
+            aliases=("canonical_name", "method_name", "name"),
+        )
+
 
 class MetricExtraction(BaseModel):
     display_name: str
     normalized_name: str | None = None
     metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
     evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_aliases(cls, data: object) -> object:
+        return _normalize_named_artifact_payload(data, aliases=("metric_name", "name"))
 
 
 class ResultExtraction(BaseModel):
