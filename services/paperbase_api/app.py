@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi import FastAPI
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -11,6 +13,10 @@ from services.paperbase_api.errors import register_exception_handlers
 from services.paperbase_api.models import HealthResponse
 from services.paperbase_api.routes.compare import router as compare_router
 from services.paperbase_api.routes.collections import router as collections_router
+from services.paperbase_api.routes.extraction import (
+    default_extraction_client_factory,
+    router as extraction_router,
+)
 from services.paperbase_api.routes.papers import router as papers_router
 from services.paperbase_api.routes.search import router as search_router
 
@@ -18,11 +24,15 @@ from services.paperbase_api.routes.search import router as search_router
 def create_app(
     *,
     session_factory: sessionmaker[Session] | None = None,
+    extraction_client_factory: Callable[[], object] | None = None,
 ) -> FastAPI:
     """Create the Paperbase API application."""
 
     configure_logging_from_env()
     resolved_session_factory = session_factory or make_session_factory()
+    resolved_extraction_client_factory = (
+        extraction_client_factory or default_extraction_client_factory
+    )
 
     app = FastAPI(
         title="Paperbase API",
@@ -36,6 +46,7 @@ def create_app(
         version="0.1.0",
     )
     app.state.session_factory = resolved_session_factory
+    app.state.extraction_client_factory = resolved_extraction_client_factory
 
     register_exception_handlers(app)
 
@@ -47,4 +58,5 @@ def create_app(
     app.include_router(papers_router)
     app.include_router(compare_router)
     app.include_router(collections_router)
+    app.include_router(extraction_router)
     return app

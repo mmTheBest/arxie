@@ -40,6 +40,10 @@ Paperbase now exposes first-class collection and annotation endpoints:
 This is still local-first and single-user by default, but the API and schema keep
 ownership fields so the system can expand later without rewriting the core model.
 
+Paperbase also now exposes extraction profile and collection extraction endpoints,
+so users can store a field-specific schema once and execute it over a curated
+collection through the API surface instead of only through internal runners.
+
 ## Collection Scope
 
 A collection is a user-owned curated slice of the corpus.

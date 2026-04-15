@@ -181,3 +181,53 @@ class SingleAnnotationResponse(BaseModel):
 
 class AnnotationsResponse(BaseModel):
     data: list[AnnotationResponse]
+
+
+class ExtractionProfileCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    owner_id: str = Field(default="local-user", min_length=1, max_length=128)
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(None, max_length=5000)
+    scope_type: str = Field(default="private", min_length=1, max_length=64)
+    schema_payload: dict[str, Any] = Field(default_factory=dict)
+    active: bool = True
+
+
+class ExtractionProfileResponse(BaseModel):
+    id: str
+    owner_id: str
+    name: str
+    description: str | None = None
+    scope_type: str
+    schema_payload: dict[str, Any] = Field(default_factory=dict)
+    active: bool
+
+
+class SingleExtractionProfileResponse(BaseModel):
+    data: ExtractionProfileResponse
+
+
+class ExtractionProfilesResponse(BaseModel):
+    data: list[ExtractionProfileResponse]
+
+
+class RunCollectionExtractionRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    extraction_profile_id: str | None = Field(None, min_length=1, max_length=36)
+    schema_payload: dict[str, Any] = Field(default_factory=dict)
+    prompt_version: str = Field(..., min_length=1, max_length=64)
+    schema_version: str = Field(..., min_length=1, max_length=64)
+    limit: int | None = Field(None, ge=1)
+
+
+class CollectionExtractionSummaryResponse(BaseModel):
+    collection_id: str
+    extracted_paper_count: int
+    extraction_run_ids: list[str]
+    skipped_paper_ids: list[str]
+
+
+class SingleCollectionExtractionSummaryResponse(BaseModel):
+    data: CollectionExtractionSummaryResponse

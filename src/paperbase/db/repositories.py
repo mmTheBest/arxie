@@ -104,6 +104,16 @@ class ExtractionProfileRepository:
         self.session.refresh(profile)
         return profile
 
+    def get_by_id(self, profile_id: str) -> ExtractionProfile | None:
+        return self.session.get(ExtractionProfile, profile_id)
+
+    def list_profiles(self, *, owner_id: str | None = None) -> Sequence[ExtractionProfile]:
+        statement = select(ExtractionProfile)
+        if owner_id is not None:
+            statement = statement.where(ExtractionProfile.owner_id == owner_id)
+        statement = statement.order_by(ExtractionProfile.created_at.asc(), ExtractionProfile.name.asc())
+        return self.session.execute(statement).scalars().all()
+
 
 class CollectionRepository:
     """Persistence helpers for curated local-first paper collections."""
