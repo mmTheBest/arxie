@@ -50,6 +50,29 @@ The database should be able to return normalized comparison slices such as:
 - engineering tricks across a collection
 - figures or captions tied to evidence
 
+## Current Comparison Surface
+
+The Paperbase API now exposes three comparison workflows directly on top of the
+local-first database:
+
+- `POST /api/v1/compare/results`
+- `POST /api/v1/compare/methods`
+- `POST /api/v1/compare/engineering-tricks`
+
+These routes make comparison behave like a database query surface rather than a
+single agent prompt:
+
+- result comparison can filter within a collection and optionally return evidence
+  spans for each result row
+- method comparison summarizes result slices by method across a paper set and
+  returns the best observed row per method
+- engineering-trick comparison can summarize recurring tricks across a corpus or
+  within a method family
+
+This is still DB-backed, not search-index-backed. It is the current local-first
+comparison layer while the richer read-model and Elasticsearch workflow are
+still open.
+
 ## Structured Browse Surface
 
 Search and comparison are not enough on their own. After a collection extraction

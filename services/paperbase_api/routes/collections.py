@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from fastapi import APIRouter, Depends, Path, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -44,40 +42,17 @@ from services.paperbase_api.models import (
     SingleCollectionPaperResponse,
     SingleCollectionResponse,
 )
+from services.paperbase_api.normalization import (
+    canonicalize_metric_display_name,
+    normalize_summary_key,
+)
 
 router = APIRouter(tags=["collections"])
-
-_METRIC_NAME_ALIASES = {
-    "adjusted rand index": "ARI",
-    "ari": "ARI",
-    "area under the precision recall curve": "AUPRC",
-    "area under the receiver operating characteristic curve": "AUROC",
-    "aupr": "AUPRC",
-    "auprc": "AUPRC",
-    "auroc": "AUROC",
-    "jsd": "JSD",
-    "mean squared error": "MSE",
-    "mse": "MSE",
-    "pcc": "PCC",
-    "pearson correlation": "PCC",
-    "pearson correlation coefficient": "PCC",
-    "pearson correlation coefficient pcc": "PCC",
-}
-
-
-def _normalize_summary_key(value: str) -> str:
-    collapsed = re.sub(r"[^0-9A-Za-z]+", " ", value)
-    return re.sub(r"\s+", " ", collapsed).strip().casefold()
-
-
-def _canonicalize_metric_display_name(value: str) -> str:
-    display_name = value.strip()
-    return _METRIC_NAME_ALIASES.get(_normalize_summary_key(display_name), display_name)
 
 
 def _canonicalize_artifact_display_name(value: str, *, artifact_type: str) -> str:
     if artifact_type == "metric":
-        return _canonicalize_metric_display_name(value)
+        return canonicalize_metric_display_name(value)
     return value.strip()
 
 
@@ -85,7 +60,7 @@ def _build_named_artifact_summary(items, *, artifact_type: str) -> list[Collecti
     summarized: dict[str, CollectionSummaryNamedArtifactResponse] = {}
     for item in items:
         display_name = _canonicalize_artifact_display_name(item.display_name, artifact_type=artifact_type)
-        key = _normalize_summary_key(display_name)
+        key = normalize_summary_key(display_name)
         summarized.setdefault(
             key,
             CollectionSummaryNamedArtifactResponse(id=item.id, display_name=display_name),
@@ -379,7 +354,7 @@ def fetch_collection_structured_summary(
                     dataset=dataset.display_name.strip() if dataset is not None else None,
                     method=method.display_name.strip() if method is not None else None,
                     metric=(
-                        _canonicalize_metric_display_name(metric.display_name)
+                        canonicalize_metric_display_name(metric.display_name)
                         if metric is not None
                         else None
                     ),

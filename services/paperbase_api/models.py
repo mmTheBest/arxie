@@ -157,9 +157,17 @@ class CompareResultsRequest(BaseModel):
     dataset: str = Field(..., min_length=1, max_length=255)
     metric: str = Field(..., min_length=1, max_length=255)
     collection_id: str | None = Field(None, min_length=1, max_length=36)
+    include_evidence: bool = False
+
+
+class CompareEvidenceSpanResponse(BaseModel):
+    id: str
+    page_number: int | None = None
+    quote_text: str | None = None
 
 
 class CompareResultItemResponse(BaseModel):
+    result_row_id: str
     paper_id: str
     paper_title: str
     dataset: str
@@ -169,10 +177,66 @@ class CompareResultItemResponse(BaseModel):
     value_text: str | None = None
     comparator_text: str | None = None
     notes: str | None = None
+    evidence_spans: list[CompareEvidenceSpanResponse] = Field(default_factory=list)
 
 
 class CompareResultsResponse(BaseModel):
     data: list[CompareResultItemResponse]
+
+
+class CompareMethodsRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    collection_id: str | None = Field(None, min_length=1, max_length=36)
+    dataset: str | None = Field(None, min_length=1, max_length=255)
+    metric: str | None = Field(None, min_length=1, max_length=255)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class CompareMethodBestResultResponse(BaseModel):
+    paper_id: str
+    paper_title: str
+    dataset: str | None = None
+    metric: str | None = None
+    value_numeric: float | None = None
+    value_text: str | None = None
+
+
+class CompareMethodItemResponse(BaseModel):
+    method: str
+    paper_count: int
+    result_count: int
+    datasets: list[str] = Field(default_factory=list)
+    metrics: list[str] = Field(default_factory=list)
+    best_result: CompareMethodBestResultResponse | None = None
+
+
+class CompareMethodsResponse(BaseModel):
+    data: list[CompareMethodItemResponse]
+
+
+class CompareEngineeringTricksRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    collection_id: str | None = Field(None, min_length=1, max_length=36)
+    method: str | None = Field(None, min_length=1, max_length=255)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class ComparePaperReferenceResponse(BaseModel):
+    paper_id: str
+    paper_title: str
+
+
+class CompareEngineeringTrickItemResponse(BaseModel):
+    title: str
+    description: str
+    paper_count: int
+    papers: list[ComparePaperReferenceResponse] = Field(default_factory=list)
+
+
+class CompareEngineeringTricksResponse(BaseModel):
+    data: list[CompareEngineeringTrickItemResponse]
 
 
 class CollectionCreateRequest(BaseModel):
