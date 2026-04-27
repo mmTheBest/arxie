@@ -184,6 +184,8 @@ class ProposalEvidenceQueryRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "claim": "Transformers improve machine translation quality.",
+                "paperbase_collection_id": "collection-1",
+                "workspace_id": "workspace-1",
                 "pinned_paper_ids": ["p1"],
                 "papers": [
                     {
@@ -198,7 +200,19 @@ class ProposalEvidenceQueryRequest(BaseModel):
     )
 
     claim: str = Field(..., min_length=1, max_length=4000)
-    papers: list[ProposalEvidencePaperInput] = Field(..., min_length=1)
+    papers: list[ProposalEvidencePaperInput] = Field(default_factory=list)
+    paperbase_collection_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=256,
+        description="Optional Paperbase collection id to source evidence papers from.",
+    )
+    workspace_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=36,
+        description="Optional saved workspace id to reuse collection and pinned-paper context.",
+    )
     pinned_paper_ids: list[str] = Field(default_factory=list)
 
 

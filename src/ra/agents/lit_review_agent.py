@@ -12,6 +12,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
 from ra.utils.config import load_config
@@ -54,7 +55,7 @@ class LitReviewAgent:
     ) -> None:
         configure_logging_from_env()
         self.search_limit = max(1, min(int(search_limit), 50))
-        self.retriever = retriever or UnifiedRetriever()
+        self.retriever = retriever or build_runtime_retriever()
 
         if llm is None:
             config = load_config()
@@ -87,6 +88,27 @@ class LitReviewAgent:
         if max_papers is None:
             return fallback
         return max(1, min(int(max_papers), 50))
+
+    @staticmethod
+    def _dedupe_papers(papers: list[Paper], *, limit: int) -> list[Paper]:
+        ordered: list[Paper] = []
+        seen_ids: set[str] = set()
+        seen_titles: set[str] = set()
+        for paper in papers:
+            paper_id = paper.id.strip()
+            title_key = " ".join((paper.title or "").lower().split())
+            if paper_id and paper_id in seen_ids:
+                continue
+            if not paper_id and title_key and title_key in seen_titles:
+                continue
+            if paper_id:
+                seen_ids.add(paper_id)
+            if title_key:
+                seen_titles.add(title_key)
+            ordered.append(paper)
+            if len(ordered) >= limit:
+                break
+        return ordered
 
     @staticmethod
     def _response_to_text(response: Any) -> str:
@@ -221,7 +243,37 @@ class LitReviewAgent:
         except Exception:
             return None
 
-    async def _search_papers_async(self, topic: str, *, max_papers: int) -> list[Paper]:
+    async def _search_papers_async(
+        self,
+        topic: str,
+        *,
+        max_papers: int,
+        collection_id: str | None = None,
+        pinned_paper_ids: list[str] | None = None,
+    ) -> list[Paper]:
+        seeded_papers: list[Paper] = []
+        if pinned_paper_ids:
+            get_papers_by_ids = getattr(self.retriever, "get_papers_by_ids", None)
+            if callable(get_papers_by_ids):
+                try:
+                    seeded_papers = await get_papers_by_ids(list(pinned_paper_ids))
+                except Exception:
+                    logger.exception("LitReviewAgent pinned-paper lookup failed.")
+
+        if collection_id:
+            get_collection_papers = getattr(self.retriever, "get_collection_papers", None)
+            if callable(get_collection_papers):
+                try:
+                    papers = await get_collection_papers(
+                        collection_id,
+                        query=topic,
+                        limit=max_papers,
+                    )
+                    if papers:
+                        return self._dedupe_papers(seeded_papers + papers, limit=max_papers)
+                except Exception:
+                    logger.exception("LitReviewAgent collection-scoped Paperbase lookup failed.")
+
         raw = await self._call_tool_async(
             "search_papers",
             query=topic,
@@ -240,7 +292,7 @@ class LitReviewAgent:
                     papers.append(paper)
 
         if papers:
-            return papers[:max_papers]
+            return self._dedupe_papers(seeded_papers + papers, limit=max_papers)
 
         try:
             fallback = await self.retriever.search(
@@ -248,10 +300,10 @@ class LitReviewAgent:
                 limit=max_papers,
                 sources=("semantic_scholar", "arxiv"),
             )
-            return fallback[:max_papers]
+            return self._dedupe_papers(seeded_papers + fallback, limit=max_papers)
         except Exception:
             logger.exception("LitReviewAgent fallback search failed.")
-            return []
+            return self._dedupe_papers(seeded_papers, limit=max_papers)
 
     async def _read_top_fulltexts_async(
         self,
@@ -573,7 +625,14 @@ class LitReviewAgent:
         ]
         return "\n".join(lines)
 
-    async def arun(self, topic: str, max_papers: int | None = None) -> str:
+    async def arun(
+        self,
+        topic: str,
+        max_papers: int | None = None,
+        *,
+        collection_id: str | None = None,
+        pinned_paper_ids: list[str] | None = None,
+    ) -> str:
         """Generate a structured literature review asynchronously."""
         try:
             topic = sanitize_user_text(topic, field_name="topic", max_length=1000)
@@ -581,7 +640,12 @@ class LitReviewAgent:
             return self._invalid_topic_response()
 
         limit = self._clamp_max_papers(max_papers, fallback=self.search_limit)
-        papers = await self._search_papers_async(topic, max_papers=limit)
+        papers = await self._search_papers_async(
+            topic,
+            max_papers=limit,
+            collection_id=collection_id,
+            pinned_paper_ids=list(pinned_paper_ids or []),
+        )
         if not papers:
             return self._no_results_response(topic)
 
@@ -605,10 +669,24 @@ class LitReviewAgent:
             clusters=clusters,
         )
 
-    def run(self, topic: str, max_papers: int | None = None) -> str:
+    def run(
+        self,
+        topic: str,
+        max_papers: int | None = None,
+        *,
+        collection_id: str | None = None,
+        pinned_paper_ids: list[str] | None = None,
+    ) -> str:
         """Generate a structured literature review synchronously."""
         try:
-            return asyncio.run(self.arun(topic, max_papers=max_papers))
+            return asyncio.run(
+                self.arun(
+                    topic,
+                    max_papers=max_papers,
+                    collection_id=collection_id,
+                    pinned_paper_ids=pinned_paper_ids,
+                )
+            )
         except RuntimeError as exc:
             logger.warning("LitReviewAgent sync run failed: %s", exc)
             return self._invalid_topic_response()

@@ -3,6 +3,8 @@
 .venv/
 venv/
 env/
+!infra/env/
+!infra/env/*.env
 
 # Python
 __pycache__/
@@ -49,6 +51,7 @@ logs/
 
 # Cache
 data/cache/
+data/*.db
 .chroma/
 
 # Local development
@@ -65,6 +68,14 @@ TODO.md
 CLAUDE.md
 DEVLOG.md
 docs/
+!docs/
+docs/*
+!docs/architecture/
+!docs/plans/
+docs/architecture/*
+!docs/architecture/*.md
+docs/plans/*
+!docs/plans/*.md
 results/
 remotion/
 tests/eval/dataset.json

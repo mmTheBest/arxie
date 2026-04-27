@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arxie Workspace</title>
+    <link rel="stylesheet" href="/ui/paperbase-ui.css" />
+    <script defer src="/ui/paperbase-ui.js"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Arxie</p>
+          <h1>Arxie Workspace</h1>
+          <p class="hero-text">
+            Work across a durable paperbase instead of starting from scratch each session.
+            Save a research context, search a field, inspect evidence, and queue long-running corpus jobs.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="reindex-button" class="action-button action-button-primary">
+            Queue Reindex
+          </button>
+          <p id="status-banner" class="status-banner">Loading collections and jobs…</p>
+        </div>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="panel panel-tall" id="workspaces-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Workspaces</p>
+              <h2>Saved research contexts</h2>
+            </div>
+          </div>
+          <div id="workspaces-list" class="stacked-list"></div>
+        </section>
+
+        <section class="panel panel-tall" id="collections-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Collections</p>
+              <h2>Curated databases</h2>
+            </div>
+            <div class="button-row">
+              <button id="parse-button" class="action-button">Queue Parse</button>
+              <button id="extract-button" class="action-button">Queue Extraction</button>
+            </div>
+          </div>
+          <div id="collections-list" class="stacked-list"></div>
+        </section>
+
+        <section class="panel panel-tall" id="papers-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Papers</p>
+              <h2>Browse and search</h2>
+            </div>
+            <form id="search-form" class="search-form">
+              <input
+                id="paper-search-input"
+                name="q"
+                type="search"
+                placeholder="Search title or abstract"
+                autocomplete="off"
+              />
+              <button type="submit" class="action-button">Search</button>
+            </form>
+          </div>
+          <div id="paper-list" class="stacked-list"></div>
+        </section>
+
+        <section class="panel panel-wide" id="summary-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Workspace surface</p>
+              <h2>Research context and paper detail</h2>
+            </div>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-card" id="workspace-detail-panel">
+              <h3>Workspace context</h3>
+              <label class="field-label" for="workspace-title-input">Workspace title</label>
+              <input id="workspace-title-input" type="text" placeholder="e.g. scRegNet benchmark review" />
+              <label class="field-label" for="workspace-focus-input">Focus note</label>
+              <textarea id="workspace-focus-input" rows="5" placeholder="What is this workspace trying to answer?"></textarea>
+              <div id="workspace-meta" class="detail-group"></div>
+              <button id="save-workspace-button" class="action-button action-button-primary">
+                Save Workspace
+              </button>
+            </div>
+            <div class="summary-card">
+              <h3>Collection snapshot</h3>
+              <div id="collection-summary"></div>
+            </div>
+            <div class="summary-card">
+              <h3>Paper detail</h3>
+              <div id="paper-detail"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel-wide" id="search-surfaces-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Hybrid search</p>
+              <h2>Chunks and artifact hits</h2>
+            </div>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <h3>Chunk hits</h3>
+              <div id="chunk-search-surface"></div>
+            </div>
+            <div class="summary-card">
+              <h3>Artifact hits</h3>
+              <div id="artifact-search-surface"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel-wide" id="artifacts-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Artifacts</p>
+              <h2>Figures and tables</h2>
+            </div>
+          </div>
+          <div id="artifact-surface" class="summary-grid"></div>
+        </section>
+
+        <aside class="panel panel-jobs" id="jobs-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Jobs</p>
+              <h2>Background execution</h2>
+            </div>
+          </div>
+          <div id="jobs-list" class="stacked-list"></div>
+        </aside>
+      </main>
+    </div>
+  </body>
+</html>

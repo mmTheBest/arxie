@@ -18,11 +18,11 @@ import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Iterable, Literal, Protocol
 
 import httpx
 
-from ra.parsing import PDFParser
+from ra.parsing import PDFParser, Section
 from ra.retrieval.arxiv import ArxivClient, ArxivPaper
 from ra.retrieval.chroma_cache import ChromaCache
 from ra.retrieval.semantic_scholar import SemanticScholarClient
@@ -97,6 +97,41 @@ class Paper:
         return f"{authors_str} {year_str}. {self.title}.{venue_str}{id_str}".strip()
 
 
+@dataclass
+class WorkspaceContext:
+    workspace_id: str
+    title: str
+    collection_id: str | None
+    saved_query: str | None
+    focus_note: str | None
+    active_filters: dict[str, object]
+    pinned_paper_ids: list[str]
+
+
+class PaperbaseGatewayProtocol(Protocol):
+    async def search(self, query: str, limit: int = 10) -> list[Paper]: ...
+
+    async def get_paper(self, identifier: str) -> Paper | None: ...
+
+    async def get_papers_by_ids(self, paper_ids: list[str]) -> list[Paper]: ...
+
+    async def get_paper_structured_data(self, identifier: str) -> dict[str, object] | None: ...
+
+    async def get_stored_sections(self, identifier: str) -> list[Section]: ...
+
+    async def get_collection_papers(
+        self,
+        collection_id: str,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> list[Paper]: ...
+
+    async def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None: ...
+
+    async def close(self) -> None: ...
+
+
 def _paper_key(p: Paper) -> tuple[str, str] | tuple[str, str, str]:
     """Return a stable deduplication key.
 
@@ -152,6 +187,7 @@ class UnifiedRetriever:
         semantic_scholar: SemanticScholarClient | None = None,
         arxiv: ArxivClient | None = None,
         cache: ChromaCache | None = None,
+        paperbase_gateway: "PaperbaseGatewayProtocol | None" = None,
         full_text_max_retries: int = 3,
         full_text_max_backoff_seconds: float = 8.0,
         full_text_timeout: float = 60.0,
@@ -162,6 +198,7 @@ class UnifiedRetriever:
         self.semantic_scholar = semantic_scholar or SemanticScholarClient()
         self.arxiv = arxiv or ArxivClient()
         self.cache = cache
+        self.paperbase_gateway = paperbase_gateway
         self.full_text_max_retries = full_text_max_retries
         self.full_text_max_backoff_seconds = full_text_max_backoff_seconds
         self.full_text_timeout = full_text_timeout
@@ -186,12 +223,149 @@ class UnifiedRetriever:
         await self.close()
 
     async def close(self) -> None:
-        await asyncio.gather(
+        close_tasks = [
             self.semantic_scholar.close(),
             self.arxiv.close(),
             self._close_full_text_client(),
-            return_exceptions=True,
-        )
+        ]
+        if self.paperbase_gateway is not None:
+            close_tasks.append(self.paperbase_gateway.close())
+        await asyncio.gather(*close_tasks, return_exceptions=True)
+
+    @staticmethod
+    def _deduplicate_and_rank(papers: Iterable[Paper], *, limit: int) -> list[Paper]:
+        by_key: dict[object, Paper] = {}
+        for paper in papers:
+            key = _paper_key(paper)
+            if key not in by_key:
+                by_key[key] = paper
+                continue
+
+            existing = by_key[key]
+            if existing.source == "semantic_scholar" and paper.source == "arxiv":
+                by_key[key] = _merge_papers(existing, paper)
+            elif existing.source == "arxiv" and paper.source == "semantic_scholar":
+                by_key[key] = _merge_papers(paper, existing)
+            else:
+                by_key[key] = _merge_papers(existing, paper)
+
+        results = list(by_key.values())
+        results.sort(key=lambda x: (x.citation_count or 0), reverse=True)
+        return results[:limit]
+
+    async def get_stored_sections(self, identifier: str) -> list[Section]:
+        if self.paperbase_gateway is None:
+            return []
+
+        try:
+            safe_identifier = sanitize_identifier(
+                identifier,
+                field_name="identifier",
+                max_length=256,
+            )
+            return await self.paperbase_gateway.get_stored_sections(safe_identifier)
+        except Exception:
+            logger.debug(
+                "Paperbase section lookup failed for identifier=%r",
+                identifier,
+                exc_info=True,
+            )
+            return []
+
+    async def get_papers_by_ids(self, paper_ids: list[str]) -> list[Paper]:
+        if self.paperbase_gateway is None:
+            return []
+
+        try:
+            sanitized = [
+                sanitize_identifier(paper_id, field_name="paper_id", max_length=256)
+                for paper_id in paper_ids
+            ]
+            return await self.paperbase_gateway.get_papers_by_ids(sanitized)
+        except Exception:
+            logger.debug("Paperbase pinned-paper lookup failed.", exc_info=True)
+            return []
+
+    async def get_paper_structured_data(self, identifier: str) -> dict[str, object] | None:
+        if self.paperbase_gateway is None:
+            return None
+
+        try:
+            safe_identifier = sanitize_identifier(
+                identifier,
+                field_name="identifier",
+                max_length=256,
+            )
+            return await self.paperbase_gateway.get_paper_structured_data(safe_identifier)
+        except Exception:
+            logger.debug(
+                "Paperbase structured-data lookup failed for identifier=%r",
+                identifier,
+                exc_info=True,
+            )
+            return None
+
+    async def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None:
+        if self.paperbase_gateway is None:
+            return None
+
+        try:
+            safe_workspace_id = sanitize_identifier(
+                workspace_id,
+                field_name="workspace_id",
+                max_length=256,
+            )
+            return await self.paperbase_gateway.get_workspace_context(safe_workspace_id)
+        except Exception:
+            logger.debug(
+                "Paperbase workspace lookup failed for workspace_id=%r",
+                workspace_id,
+                exc_info=True,
+            )
+            return None
+
+    async def get_collection_papers(
+        self,
+        collection_id: str,
+        *,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> list[Paper]:
+        if self.paperbase_gateway is None:
+            return []
+
+        try:
+            safe_collection_id = sanitize_identifier(
+                collection_id,
+                field_name="collection_id",
+                max_length=256,
+            )
+            return await self.paperbase_gateway.get_collection_papers(
+                safe_collection_id,
+                query=query,
+                limit=limit,
+            )
+        except Exception:
+            logger.debug(
+                "Paperbase collection lookup failed for collection_id=%r",
+                collection_id,
+                exc_info=True,
+            )
+            return []
+
+    @staticmethod
+    def _sections_to_text(sections: list[Section]) -> str:
+        blocks: list[str] = []
+        for section in sections:
+            title = (section.title or "").strip()
+            content = (section.content or "").strip()
+            if title and content:
+                blocks.append(f"{title}\n\n{content}")
+            elif content:
+                blocks.append(content)
+            elif title:
+                blocks.append(title)
+        return "\n\n".join(blocks).strip()
 
     async def _get_full_text_client(self) -> httpx.AsyncClient:
         is_closed = bool(getattr(self._full_text_client, "is_closed", False))
@@ -327,13 +501,30 @@ class UnifiedRetriever:
             cached_results.sort(key=lambda x: (x.citation_count or 0), reverse=True)
             return cached_results[:limit]
 
+        paperbase_results: list[Paper] = []
+        if self.paperbase_gateway is not None:
+            try:
+                remaining_for_paperbase = max(1, limit - len(cached_results))
+                paperbase_results = await self.paperbase_gateway.search(
+                    query=query,
+                    limit=remaining_for_paperbase,
+                )
+            except Exception:
+                logger.debug("Paperbase search failed for query=%r", query, exc_info=True)
+
+        if len(cached_results) + len(paperbase_results) >= limit:
+            return self._deduplicate_and_rank(
+                [*cached_results, *paperbase_results],
+                limit=limit,
+            )
+
         srcs = {str(s).strip().lower() for s in sources if str(s).strip()}
         if not srcs:
             srcs = {"semantic_scholar", "arxiv"}
         tasks = []
 
         # Pull a bit extra per-source so we still have enough after dedup.
-        remaining_limit = max(1, limit - len(cached_results))
+        remaining_limit = max(1, limit - len(cached_results) - len(paperbase_results))
         per_source = max(1, min(100, int(remaining_limit * 1.5)))
 
         if "semantic_scholar" in srcs or "semanticscholar" in srcs or "s2" in srcs:
@@ -361,30 +552,9 @@ class UnifiedRetriever:
 
         unified: list[Paper] = []
         unified.extend(cached_results)
+        unified.extend(paperbase_results)
         unified.extend(live_results)
-
-        # Deduplicate, preferring Semantic Scholar as primary when conflicts exist.
-        by_key: dict[object, Paper] = {}
-        for p in unified:
-            key = _paper_key(p)
-            if key not in by_key:
-                by_key[key] = p
-                continue
-
-            existing = by_key[key]
-            # Prefer Semantic Scholar metadata as primary
-            if existing.source == "semantic_scholar" and p.source == "arxiv":
-                by_key[key] = _merge_papers(existing, p)
-            elif existing.source == "arxiv" and p.source == "semantic_scholar":
-                by_key[key] = _merge_papers(p, existing)
-            else:
-                by_key[key] = _merge_papers(existing, p)
-
-        results = list(by_key.values())
-
-        # Basic ranking: citation_count desc if available, otherwise keep insertion-ish.
-        results.sort(key=lambda x: (x.citation_count or 0), reverse=True)
-        return results[:limit]
+        return self._deduplicate_and_rank(unified, limit=limit)
 
     async def search_batch(
         self,
@@ -444,6 +614,19 @@ class UnifiedRetriever:
         """
         identifier = sanitize_identifier(identifier, field_name="identifier", max_length=256)
 
+        if self.paperbase_gateway is not None:
+            try:
+                paper = await self.paperbase_gateway.get_paper(identifier)
+            except Exception:
+                logger.debug(
+                    "Paperbase paper lookup failed for identifier=%r",
+                    identifier,
+                    exc_info=True,
+                )
+            else:
+                if paper is not None:
+                    return paper
+
         doi_m = DOI_RE.match(identifier)
         if doi_m:
             doi = doi_m.group(1)
@@ -470,6 +653,10 @@ class UnifiedRetriever:
 
         Returns an empty string on any download or parsing failure.
         """
+        stored_sections = await self.get_stored_sections(paper.id)
+        if stored_sections:
+            return self._sections_to_text(stored_sections)
+
         if not paper.pdf_url:
             return ""
         try:

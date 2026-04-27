@@ -82,6 +82,7 @@ from ra.proposal import (
     SessionVersionConflictError,
     StageTransitionError,
 )
+from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.unified import UnifiedRetriever
 from ra.utils.logging_config import configure_logging_from_env
 
@@ -321,7 +322,7 @@ INTERNAL_ERROR_RESPONSE = _error_response_doc(
 
 
 def _default_retriever_factory() -> UnifiedRetriever:
-    return UnifiedRetriever()
+    return build_runtime_retriever()
 
 
 def _default_agent_factory(*, deep_search: bool = False) -> ResearchAgent:
@@ -402,6 +403,78 @@ def _get_or_create_shared_retriever(app: FastAPI) -> Any:
         retriever = app.state.retriever_factory()
         app.state.retriever = retriever
     return retriever
+
+
+async def _resolve_workspace_context(app: FastAPI, workspace_id: str | None) -> Any | None:
+    if not workspace_id:
+        return None
+
+    retriever = _get_or_create_shared_retriever(app)
+    get_workspace_context = getattr(retriever, "get_workspace_context", None)
+    if not callable(get_workspace_context):
+        raise RAAPIError(
+            status_code=503,
+            error="workspace_unavailable",
+            message="Workspace-backed retrieval is not configured for this runtime.",
+        )
+
+    try:
+        workspace = await get_workspace_context(workspace_id)
+    except ValueError as exc:
+        raise RAAPIError(
+            status_code=400,
+            error="invalid_input",
+            message=str(exc),
+        ) from exc
+
+    if workspace is None:
+        raise RAAPIError(
+            status_code=404,
+            error="workspace_not_found",
+            message=f"No workspace found for id: {workspace_id}",
+        )
+    return workspace
+
+
+def _workspace_active_filters(workspace: Any) -> dict[str, object]:
+    raw_filters = getattr(workspace, "active_filters", None)
+    if raw_filters is None:
+        raw_filters = getattr(workspace, "active_filters_json", None)
+    if isinstance(raw_filters, dict):
+        return dict(raw_filters)
+    return {}
+
+
+def _compose_workspace_scoped_query(query: str, workspace: Any | None) -> str:
+    if workspace is None:
+        return query
+
+    context_lines: list[str] = []
+    saved_query = getattr(workspace, "saved_query", None)
+    focus_note = getattr(workspace, "focus_note", None)
+    collection_id = getattr(workspace, "collection_id", None)
+    pinned_paper_ids = list(getattr(workspace, "pinned_paper_ids", []) or [])
+    active_filters = _workspace_active_filters(workspace)
+
+    if saved_query:
+        context_lines.append(f"Saved workspace query: {saved_query}")
+    if focus_note:
+        context_lines.append(f"Workspace focus note: {focus_note}")
+    if collection_id:
+        context_lines.append(f"Workspace collection id: {collection_id}")
+    if active_filters:
+        rendered_filters = ", ".join(
+            f"{key}={value}"
+            for key, value in sorted(active_filters.items(), key=lambda item: item[0])
+        )
+        context_lines.append(f"Workspace active filters: {rendered_filters}")
+    if pinned_paper_ids:
+        context_lines.append(f"Workspace pinned paper ids: {', '.join(pinned_paper_ids)}")
+
+    if not context_lines:
+        return query
+
+    return f"{query}\n\nWorkspace context:\n" + "\n".join(f"- {line}" for line in context_lines)
 
 
 def _get_or_create_proposal_session_service(app: FastAPI) -> ProposalSessionService:
@@ -851,8 +924,11 @@ def create_app(
                 message="Failed to initialize answer agent.",
             ) from exc
 
+        workspace = await _resolve_workspace_context(app, payload.workspace_id)
+        scoped_query = _compose_workspace_scoped_query(payload.query, workspace)
+
         try:
-            answer = await agent.arun(payload.query)
+            answer = await agent.arun(scoped_query)
         except ValueError as exc:
             raise RAAPIError(
                 status_code=400,
@@ -900,8 +976,11 @@ def create_app(
                 ) from exc
             chat_agents[session_id] = agent
 
+        workspace = await _resolve_workspace_context(app, payload.workspace_id)
+        scoped_query = _compose_workspace_scoped_query(payload.query, workspace)
+
         try:
-            answer = await _run_agent_arun(agent, query=payload.query, session_id=session_id)
+            answer = await _run_agent_arun(agent, query=scoped_query, session_id=session_id)
         except ValueError as exc:
             raise RAAPIError(
                 status_code=400,
@@ -938,11 +1017,40 @@ def create_app(
                 message="Failed to initialize lit-review agent.",
             ) from exc
 
+        workspace = await _resolve_workspace_context(app, payload.workspace_id)
+        collection_id = payload.paperbase_collection_id
+        resolved_topic = payload.topic
+        pinned_paper_ids: list[str] = []
+        focus_note: str | None = None
+
+        if workspace is not None:
+            if collection_id is None:
+                collection_id = workspace.collection_id
+            if not resolved_topic:
+                resolved_topic = workspace.saved_query
+            pinned_paper_ids = list(getattr(workspace, "pinned_paper_ids", []) or [])
+            focus_note = getattr(workspace, "focus_note", None)
+
+        if not resolved_topic:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message="Provide topic or workspace_id with a saved query for lit review.",
+            )
+
+        agent_topic = resolved_topic
+        if focus_note:
+            agent_topic = f"{resolved_topic}\nFocus note: {focus_note}"
+
         try:
+            kwargs: dict[str, Any] = {}
             if _callable_supports_kwarg(agent.arun, "max_papers"):
-                review = await agent.arun(payload.topic, max_papers=payload.max_papers)
-            else:
-                review = await agent.arun(payload.topic)
+                kwargs["max_papers"] = payload.max_papers
+            if collection_id is not None and _callable_supports_kwarg(agent.arun, "collection_id"):
+                kwargs["collection_id"] = collection_id
+            if pinned_paper_ids and _callable_supports_kwarg(agent.arun, "pinned_paper_ids"):
+                kwargs["pinned_paper_ids"] = pinned_paper_ids
+            review = await agent.arun(agent_topic, **kwargs)
         except ValueError as exc:
             raise RAAPIError(
                 status_code=400,
@@ -956,7 +1064,7 @@ def create_app(
                 message=f"Lit review backend request failed: {type(exc).__name__}.",
             ) from exc
 
-        return LitReviewResponse(topic=payload.topic, review=review)
+        return LitReviewResponse(topic=resolved_topic, review=review)
 
     @app.post(
         "/query",
@@ -1346,11 +1454,38 @@ def create_app(
         payload: ProposalEvidenceQueryRequest = Body(...),
     ) -> ProposalEvidenceQueryResponse:
         mapper = _get_or_create_evidence_mapper(app)
+        papers = [paper.to_domain() for paper in payload.papers]
+        retriever = _get_or_create_shared_retriever(app)
+        workspace = await _resolve_workspace_context(app, payload.workspace_id)
+        collection_id = payload.paperbase_collection_id
+        pinned_paper_ids = set(payload.pinned_paper_ids)
+
+        if workspace is not None:
+            if collection_id is None:
+                collection_id = workspace.collection_id
+            pinned_paper_ids.update(getattr(workspace, "pinned_paper_ids", []) or [])
+
+        if collection_id:
+            collection_papers = await retriever.get_collection_papers(
+                collection_id,
+                query=payload.claim,
+                limit=50,
+            )
+            seen_ids = {paper.id for paper in papers}
+            papers.extend(paper for paper in collection_papers if paper.id not in seen_ids)
+
+        if not papers:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message="Provide papers, paperbase_collection_id, or workspace_id for evidence mapping.",
+            )
+
         try:
             mapped = mapper.map_evidence(
                 payload.claim,
-                [paper.to_domain() for paper in payload.papers],
-                pinned_paper_ids=set(payload.pinned_paper_ids),
+                papers,
+                pinned_paper_ids=pinned_paper_ids,
             )
         except ValueError as exc:
             raise RAAPIError(
