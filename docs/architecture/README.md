@@ -51,6 +51,13 @@ That UI is still intentionally thin: it sits directly on the workspaces,
 collections, papers, chunk/artifact search, and jobs APIs so the product can
 ship a real research workspace before a larger frontend stack is introduced.
 
+For the supported single-user local workflow, `/app` is now enough to:
+
+- import a local PDF folder into a new collection
+- queue parse and extraction jobs for that collection
+- monitor background job completion
+- browse the resulting papers, structured evidence, and saved workspace state
+
 The workspace app also includes figure and table browse/comparison surfaces, so
 collaborators can inspect visual evidence without dropping into raw PDFs or ad
 hoc scripts.

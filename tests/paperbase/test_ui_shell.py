@@ -39,6 +39,10 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="artifacts-panel"' in html
     assert 'id="jobs-panel"' in html
     assert 'id="parse-button"' in html
+    assert 'id="local-library-form"' in html
+    assert 'id="local-library-source-input"' in html
+    assert 'id="local-library-title-input"' in html
+    assert 'id="local-library-import-button"' in html
     assert "/ui/paperbase-ui.css" in html
     assert "/ui/paperbase-ui.js" in html
 
@@ -50,6 +54,9 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "/api/v1/search/artifacts" in script_response.text
     assert "/api/v1/compare/figures" in script_response.text
     assert "/api/v1/compare/tables" in script_response.text
+    assert "/api/v1/ingest/local-library" in script_response.text
+    assert "local_library_ingest" in script_response.text
+    assert "collection_id" in script_response.text
     assert "/parse" in script_response.text
     assert "/api/v1/papers/" in script_response.text
     assert "/tables" in script_response.text

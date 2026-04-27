@@ -52,6 +52,10 @@ The finished local-first flow is now:
 
 This is now a real product path, not just a planned decomposition.
 
+For the single-user local path, the intended front door is `/app`: the user can
+import a local PDF directory there, watch the ingest job complete, then queue
+parse and extraction from the same dashboard without dropping to scripts.
+
 ## Self-Hosted Runtime
 
 The production stack now expects:

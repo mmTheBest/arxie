@@ -198,6 +198,20 @@ h3 {
   align-items: center;
 }
 
+.inline-form-stack {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 1.1rem;
+  border: 1px solid var(--paperbase-line);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.inline-form-copy p:last-child {
+  margin-bottom: 0;
+}
+
 .search-form input {
   width: min(18rem, 40vw);
 }

@@ -332,6 +332,7 @@ def test_worker_executes_local_library_ingest_job(tmp_path: Path) -> None:
     assert stored_job is not None
     assert stored_job.status == "completed"
     assert stored_job.result_json == {
+        "collection_id": collections[0].id,
         "collection_title": "Sample Library",
         "total_pdf_files": 2,
         "imported_papers": 2,

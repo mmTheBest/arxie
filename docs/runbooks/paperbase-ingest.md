@@ -5,6 +5,11 @@
 Use this runbook to turn a local folder of PDFs into a Paperbase collection that
 Arxie can search, inspect, and extract from.
 
+For a normal single-user local workflow, prefer the browser workspace at `/app`
+first: use **Import Local Folder**, then **Queue Parse**, then **Queue Extraction**.
+Use the scripted steps below when you need operator control, debugging, or batch
+automation.
+
 ## Prerequisites
 
 - work from the clean dev worktree

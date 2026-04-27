@@ -92,6 +92,20 @@ docker compose -f infra/docker-compose.paperbase.yml up -d paperbase-api paperba
 - Liveness: `http://localhost:8080/livez`
 - Readiness: `http://localhost:8080/readyz`
 
+### 5. Use Your Own Local Paper Collection
+
+The browser workspace is now enough for the single-user local workflow:
+
+1. open `http://localhost:8080/app`
+2. in **Collections**, use **Import Local Folder**
+3. enter an absolute directory containing PDFs and optionally a collection title
+4. wait for the ingest job to finish in **Jobs**
+5. select the imported collection, then run **Queue Parse**
+6. run **Queue Extraction** once parse is complete
+7. browse papers, chunk hits, artifacts, limitations, and saved workspaces from the same dashboard
+
+For scripted or operator-driven ingestion, see [docs/runbooks/paperbase-ingest.md](docs/runbooks/paperbase-ingest.md).
+
 ## Local Process Mode
 
 If you prefer running the services without Compose:

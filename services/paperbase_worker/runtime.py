@@ -160,6 +160,7 @@ class PaperbaseWorker:
             object_store=self.object_store,
         )
         return {
+            "collection_id": result.collection_id,
             "collection_title": result.collection_title,
             "total_pdf_files": result.total_pdf_files,
             "imported_papers": result.imported_papers,

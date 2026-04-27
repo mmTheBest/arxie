@@ -3,6 +3,7 @@
     workspaces: "/api/v1/workspaces",
     collections: "/api/v1/collections",
     jobs: "/api/v1/jobs",
+    localLibraryIngest: "/api/v1/ingest/local-library",
     search: "/api/v1/search/papers",
     searchChunks: "/api/v1/search/chunks",
     searchArtifacts: "/api/v1/search/artifacts",
@@ -44,6 +45,11 @@
     jobsList: document.getElementById("jobs-list"),
     searchForm: document.getElementById("search-form"),
     searchInput: document.getElementById("paper-search-input"),
+    localLibraryForm: document.getElementById("local-library-form"),
+    localLibrarySourceInput: document.getElementById("local-library-source-input"),
+    localLibraryTitleInput: document.getElementById("local-library-title-input"),
+    localLibraryDescriptionInput: document.getElementById("local-library-description-input"),
+    localLibraryImportButton: document.getElementById("local-library-import-button"),
     saveWorkspaceButton: document.getElementById("save-workspace-button"),
     extractButton: document.getElementById("extract-button"),
     parseButton: document.getElementById("parse-button"),
@@ -204,10 +210,15 @@
   }
 
   async function loadJobs() {
+    const previouslyHadActiveJobs = state.jobs.some((job) => job.status === "pending" || job.status === "running");
     const payload = await fetchJson(`${endpoints.jobs}?limit=20`);
     state.jobs = payload.data || [];
+    const hasActiveJobs = state.jobs.some((job) => job.status === "pending" || job.status === "running");
     renderJobs();
     updatePolling();
+    if (previouslyHadActiveJobs && !hasActiveJobs) {
+      await refreshAfterJobCompletion();
+    }
   }
 
   async function queueReindex() {
@@ -216,6 +227,30 @@
     renderJobs();
     updatePolling();
     setStatus("Queued a corpus reindex job.");
+  }
+
+  async function queueLocalLibraryIngest() {
+    const sourceDir = elements.localLibrarySourceInput.value.trim();
+    if (!sourceDir) {
+      throw new Error("A local source directory is required.");
+    }
+
+    const collectionTitle = elements.localLibraryTitleInput.value.trim();
+    const collectionDescription = elements.localLibraryDescriptionInput.value.trim();
+    const payload = await fetchJson(endpoints.localLibraryIngest, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_dir: sourceDir,
+        collection_title: collectionTitle || null,
+        collection_description: collectionDescription || null,
+      }),
+    });
+
+    state.jobs.unshift(payload.data);
+    renderJobs();
+    updatePolling();
+    setStatus(`Queued local import from ${sourceDir}.`);
   }
 
   async function queueExtraction() {
@@ -306,9 +341,50 @@
     setStatus(`Saved workspace ${title}.`);
   }
 
+  function resolvePreferredCollectionIdFromJobs() {
+    for (const job of state.jobs) {
+      if (job.status !== "completed") {
+        continue;
+      }
+      if (job.job_type === "local_library_ingest") {
+        if (job.result && job.result.collection_id) {
+          return job.result.collection_id;
+        }
+        if (job.payload && job.payload.collection_title) {
+          const matchingCollection = state.collections.find((collection) => collection.title === job.payload.collection_title);
+          if (matchingCollection) {
+            return matchingCollection.id;
+          }
+        }
+      }
+      if ((job.job_type === "collection_parse" || job.job_type === "collection_extract") && job.result && job.result.collection_id) {
+        return job.result.collection_id;
+      }
+    }
+    return state.selectedCollection ? state.selectedCollection.id : null;
+  }
+
+  async function refreshAfterJobCompletion() {
+    const preferredCollectionId = resolvePreferredCollectionIdFromJobs();
+    const preferredWorkspaceId = state.selectedWorkspace ? state.selectedWorkspace.id : null;
+
+    await loadCollections();
+    if (
+      preferredCollectionId
+      && (!state.selectedCollection || state.selectedCollection.id !== preferredCollectionId)
+    ) {
+      const matchingCollection = state.collections.find((collection) => collection.id === preferredCollectionId);
+      if (matchingCollection) {
+        await loadCollectionSurface(preferredCollectionId);
+      }
+    }
+    await loadWorkspaces(preferredWorkspaceId);
+  }
+
   function updateActionButtons() {
     elements.extractButton.disabled = !state.selectedCollection;
     elements.parseButton.disabled = !state.selectedCollection;
+    elements.localLibraryImportButton.disabled = false;
   }
 
   function renderCollections() {
@@ -747,6 +823,15 @@
   elements.saveWorkspaceButton.addEventListener("click", async () => {
     try {
       await saveWorkspace();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.localLibraryForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await queueLocalLibraryIngest();
     } catch (error) {
       setStatus(error.message);
     }

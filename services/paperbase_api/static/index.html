@@ -48,6 +48,41 @@
               <button id="extract-button" class="action-button">Queue Extraction</button>
             </div>
           </div>
+          <form id="local-library-form" class="inline-form-stack">
+            <div class="inline-form-copy">
+              <p class="panel-kicker">Local Import</p>
+              <h3>Ingest a paper folder</h3>
+              <p class="muted">
+                Point Arxie at a local PDF directory, create a collection, then parse and extract it here.
+              </p>
+            </div>
+            <label class="field-label" for="local-library-source-input">Source directory</label>
+            <input
+              id="local-library-source-input"
+              name="source_dir"
+              type="text"
+              placeholder="/Users/you/Papers/MyField"
+              autocomplete="off"
+            />
+            <label class="field-label" for="local-library-title-input">Collection title</label>
+            <input
+              id="local-library-title-input"
+              name="collection_title"
+              type="text"
+              placeholder="e.g. scRegNet local corpus"
+              autocomplete="off"
+            />
+            <label class="field-label" for="local-library-description-input">Description</label>
+            <textarea
+              id="local-library-description-input"
+              name="collection_description"
+              rows="3"
+              placeholder="Optional note about this local paper collection"
+            ></textarea>
+            <button id="local-library-import-button" type="submit" class="action-button action-button-primary">
+              Import Local Folder
+            </button>
+          </form>
           <div id="collections-list" class="stacked-list"></div>
         </section>
 
