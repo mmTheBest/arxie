@@ -6,13 +6,13 @@ from fastapi import APIRouter, Depends, Path, Query, Request, status
 from sqlalchemy.orm import Session
 
 from paperbase.db.repositories import (
-    BackgroundJobRepository,
     CollectionRepository,
     ExtractionProfileRepository,
 )
 from paperbase.extract.client import OpenAIExtractionClient
 from paperbase.profiles import get_profile_preset, list_profile_presets
 from ra.utils.security import sanitize_identifier, sanitize_user_text
+from services.paperbase_api.background_jobs import create_background_job
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
@@ -168,27 +168,27 @@ def extract_collection(
             message="Provide schema_payload or extraction_profile_id with a stored schema.",
         )
 
-    with request.app.state.session_factory() as job_session:
-        job_repository = BackgroundJobRepository(job_session)
-        job = job_repository.create(
-            job_type="collection_extract",
-            payload_json={
-                "collection_id": safe_collection_id,
-                "schema_payload": schema_payload,
-                "prompt_version": sanitize_user_text(
-                    payload.prompt_version,
-                    field_name="prompt_version",
-                    max_length=64,
-                ),
-                "schema_version": sanitize_user_text(
-                    payload.schema_version,
-                    field_name="schema_version",
-                    max_length=64,
-                ),
-                "extraction_profile_id": extraction_profile_id,
-                "limit": payload.limit,
-            },
-        )
+    job = create_background_job(
+        session_factory=request.app.state.session_factory,
+        job_type="collection_extract",
+        payload_json={
+            "collection_id": safe_collection_id,
+            "schema_payload": schema_payload,
+            "prompt_version": sanitize_user_text(
+                payload.prompt_version,
+                field_name="prompt_version",
+                max_length=64,
+            ),
+            "schema_version": sanitize_user_text(
+                payload.schema_version,
+                field_name="schema_version",
+                max_length=64,
+            ),
+            "extraction_profile_id": extraction_profile_id,
+            "limit": payload.limit,
+        },
+        dispatcher=request.app.state.job_dispatcher,
+    )
     return SingleBackgroundJobResponse(
         data=background_job_to_response(job)
     )

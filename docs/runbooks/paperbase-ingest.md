@@ -170,7 +170,8 @@ Check the DB directly if results look wrong:
 ## Troubleshooting
 
 - No sections after parse:
-  verify `paper_files.storage_uri` points to a real local file.
+  verify `paper_files.storage_uri` points to a canonical object-store URI in the
+  self-hosted runtime, or to a deliberate local fallback URI in dev mode.
 - Collection extraction skips papers:
   check whether parse output exists and whether the paper has a registered PDF.
 - Arxie still falls back to live providers:

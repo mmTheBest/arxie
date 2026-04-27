@@ -75,13 +75,13 @@ def build_search_query(
     if extraction_state:
         bool_query["filter"].append({"term": {"extraction_state": extraction_state}})
 
-    query: dict[str, object] = {"bool": bool_query}
+    request_body: dict[str, object] = {"query": {"bool": bool_query}}
     if embedding_vector is not None:
-        query["knn"] = {
+        request_body["knn"] = {
             "field": "embedding",
             "query_vector": list(embedding_vector),
             "k": k,
             "num_candidates": max(k * 4, 20),
         }
 
-    return query
+    return request_body

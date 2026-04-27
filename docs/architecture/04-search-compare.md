@@ -37,7 +37,7 @@ The first search/read-model layer should stay intentionally thin:
 - `src/paperbase/search/index_templates.py` — Elasticsearch-style mappings for paper, chunk, figure, and table documents
 - `src/paperbase/search/indexer.py` — deterministic builders for paper, chunk, figure, and table documents
 - `src/paperbase/search/query_builder.py` — text, filter, and vector query composition
-- `src/paperbase/search/embeddings.py` — deterministic local embedding generation for backend-assisted semantic search
+- `src/paperbase/search/embeddings.py` — embedding-provider selection, with OpenAI as the production semantic path and deterministic vectors as a dev fallback
 - `src/paperbase/search/runtime.py` — backend integration plus reindex orchestration across all read models
 
 This layer is a read-model scaffold, not a full search service. It should be reusable by the future Paperbase API, worker indexing jobs, and Arxie retrieval gateway.
@@ -53,8 +53,8 @@ The current implementation now exposes three search surfaces:
 - `GET /api/v1/search/artifacts`
 
 Those routes fall back to SQL when no backend is configured, and switch to
-backend-assisted queries with deterministic local embeddings when a search
-backend is available.
+backend-assisted hybrid queries when a search backend is available. In the
+shipped self-hosted runtime, OpenAI embeddings are the intended semantic path.
 
 Collection-scoped backend search is now first-class too:
 
@@ -127,7 +127,7 @@ local-first browse layer readable even before richer metric normalization and
 dedicated comparison tables are added.
 
 The same summary surface now exposes collection-level figure and table slices,
-which the local Paperbase Console uses to render an artifact panel alongside the
+which the Arxie workspace app uses to render an artifact panel alongside the
 existing structured entity summaries. It now also exposes collection-level
 limitations, so users can browse caveats across a curated field database instead
 of only within one paper at a time.
@@ -149,20 +149,20 @@ actually trigger and observe reindexing.” The current behavior is now
 worker-backed rather than API-blocking:
 
 - report whether a backend is configured
-- enqueue a `search_reindex` background job from the API
+- enqueue a `search_reindex` background job from the API into Redis-backed worker dispatch
 - execute the actual rebuild of paper, chunk, figure, and future table read
   models inside the Paperbase worker
 - expose job state through the jobs API for polling clients and the future UI
 
-The local Paperbase Console now uses these wider search surfaces directly:
+The Arxie workspace app now uses these wider search surfaces directly:
 
 - paper search for the main browse list
 - chunk search for section-level query hits
 - artifact search for figure/table query hits
 
-This is still a local-first operator surface. The queue is DB-backed today so it
-can grow later into Redis or a larger broker-backed worker topology without
-changing the product-facing job contract.
+This remains a local-first operator surface, but the shipped server runtime now
+uses Redis as the real worker queue while the DB remains the durable job
+contract and status surface.
 
 ## Production Search Posture
 

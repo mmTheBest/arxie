@@ -36,6 +36,8 @@ def create_app(
     session_factory: sessionmaker[Session] | None = None,
     extraction_client_factory: Callable[[], object] | None = None,
     search_backend: object | None = None,
+    job_dispatcher: object | None = None,
+    embedding_provider: object | None = None,
     dependency_checker: object | None = None,
 ) -> FastAPI:
     """Create the Paperbase API application."""
@@ -66,6 +68,8 @@ def create_app(
     app.state.session_factory = resolved_session_factory
     app.state.extraction_client_factory = resolved_extraction_client_factory
     app.state.search_backend = search_backend
+    app.state.job_dispatcher = job_dispatcher
+    app.state.embedding_provider = embedding_provider
     app.state.dependency_checker = resolved_dependency_checker
 
     register_exception_handlers(app)

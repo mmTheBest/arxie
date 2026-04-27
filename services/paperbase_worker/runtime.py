@@ -16,6 +16,7 @@ from paperbase.ingest.provider_identifiers import (
     ingest_provider_identifiers,
     refresh_paper_metadata,
 )
+from paperbase.search.embeddings import EmbeddingProvider
 from paperbase.parsing.runner import CollectionParseRunner
 from paperbase.search.runtime import PaperbaseSearchReindexer
 
@@ -31,12 +32,26 @@ class PaperbaseWorker:
         extraction_client_factory: Callable[[], object] | None = None,
         parser_factory: Callable[[], object] | None = None,
         provider_resolver: object | None = None,
+        job_consumer: object | None = None,
+        job_dispatcher: object | None = None,
+        retry_limit: int = 3,
+        embedding_provider: EmbeddingProvider | None = None,
+        object_store: object | None = None,
+        download_cache_dir: str | None = None,
+        download_cache_ttl_seconds: int = 86400,
     ) -> None:
         self.session_factory = session_factory
         self.search_backend = search_backend
         self.extraction_client_factory = extraction_client_factory
         self.parser_factory = parser_factory
         self.provider_resolver = provider_resolver
+        self.job_consumer = job_consumer
+        self.job_dispatcher = job_dispatcher
+        self.retry_limit = retry_limit
+        self.embedding_provider = embedding_provider
+        self.object_store = object_store
+        self.download_cache_dir = download_cache_dir
+        self.download_cache_ttl_seconds = download_cache_ttl_seconds
 
     def process_next_job(self) -> str | None:
         with self.session_factory() as session:
@@ -44,22 +59,47 @@ class PaperbaseWorker:
             job = repository.claim_next()
             if job is None:
                 return None
-            job_id = job.id
-            job_type = job.job_type
-            payload = dict(job.payload_json or {})
+        return self._execute_claimed_job(job)
+
+    def process_next_dispatched_job(self, timeout_seconds: float | None = None) -> str | None:
+        if self.job_consumer is None:
+            return self.process_next_job()
+        job_id = self.job_consumer.receive(timeout_seconds)
+        if job_id is None:
+            return None
+        with self.session_factory() as session:
+            repository = BackgroundJobRepository(session)
+            job = repository.claim_by_id(job_id)
+            if job is None:
+                return None
+        return self._execute_claimed_job(job)
+
+    def _execute_claimed_job(self, job) -> str:  # noqa: ANN001
+        job_id = job.id
+        job_type = job.job_type
+        payload = dict(job.payload_json or {})
 
         try:
             result_json = self._execute_job(job_type=job_type, payload=payload)
         except Exception as exc:  # noqa: BLE001
-            with self.session_factory() as session:
-                repository = BackgroundJobRepository(session)
-                repository.mark_failed(job_id, error_message=str(exc))
+            self._handle_failed_job(job_id=job_id, attempt_count=job.attempt_count, error_message=str(exc))
             return job_id
 
         with self.session_factory() as session:
             repository = BackgroundJobRepository(session)
             repository.mark_completed(job_id, result_json=result_json)
         return job_id
+
+    def _handle_failed_job(self, *, job_id: str, attempt_count: int, error_message: str) -> None:
+        should_retry = self.job_dispatcher is not None and attempt_count < self.retry_limit
+        with self.session_factory() as session:
+            repository = BackgroundJobRepository(session)
+            if should_retry:
+                repository.mark_pending(job_id, error_message=error_message)
+            else:
+                repository.mark_failed(job_id, error_message=error_message)
+        if should_retry:
+            self.job_dispatcher.dispatch(job_id)
 
     def _execute_job(self, *, job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         if job_type == "search_reindex":
@@ -83,6 +123,7 @@ class PaperbaseWorker:
         reindexer = PaperbaseSearchReindexer(
             session_factory=self.session_factory,
             backend=self.search_backend,
+            embedding_provider=self.embedding_provider,
         )
         indexed = reindexer.reindex_all()
         return {"indexed": indexed}
@@ -116,6 +157,7 @@ class PaperbaseWorker:
             owner_id=str(payload.get("owner_id") or "local-user"),
             collection_title=payload.get("collection_title"),
             collection_description=payload.get("collection_description"),
+            object_store=self.object_store,
         )
         return {
             "collection_title": result.collection_title,
@@ -128,6 +170,9 @@ class PaperbaseWorker:
         summary = CollectionParseRunner(
             session_factory=self.session_factory,
             parser_factory=self.parser_factory,
+            object_store=self.object_store,
+            cache_dir=self.download_cache_dir,
+            cache_ttl_seconds=self.download_cache_ttl_seconds,
         ).parse_collection(
             collection_id=str(payload["collection_id"]),
             limit=payload.get("limit"),
@@ -155,6 +200,7 @@ class PaperbaseWorker:
             collection_id=payload.get("collection_id"),
             collection_title=payload.get("collection_title"),
             collection_description=payload.get("collection_description"),
+            object_store=self.object_store,
         )
         return {
             "collection_id": result.collection_id,
@@ -171,6 +217,7 @@ class PaperbaseWorker:
             paper_ids=[str(paper_id) for paper_id in list(payload.get("paper_ids") or [])],
             session_factory=self.session_factory,
             resolver=self.provider_resolver,
+            object_store=self.object_store,
         )
         return {
             "requested_count": result.requested_count,

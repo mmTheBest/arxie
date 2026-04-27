@@ -16,7 +16,8 @@ This repository now ships the `v0.2.0` product surface described in the April 14
 - build a curated paper collection from local PDFs, DOI, arXiv, and OpenAlex identifiers
 - parse papers into sections, chunks, figures, and tables
 - extract datasets, methods, metrics, result rows, findings, limitations, glossary terms, and engineering tricks
-- search papers, chunks, and artifacts with SQL fallback or Elasticsearch-backed retrieval
+- search papers, chunks, and artifacts with Elasticsearch-backed hybrid retrieval
+  in the self-hosted stack, plus explicit local fallbacks for development
 - compare results, methods, tricks, figures, and tables across a corpus slice
 - save workspaces with a collection, query, focus note, filters, and pinned papers
 - run Arxie answer, chat, literature review, and proposal evidence flows against that saved context
@@ -50,7 +51,19 @@ Set at least:
 
 - `OPENAI_API_KEY`
 
-For the full self-hosted stack, `.env.example` also includes the Paperbase runtime variables for PostgreSQL, Elasticsearch, Redis, and object storage.
+For the full self-hosted stack, `.env.example` also includes the Paperbase runtime variables for PostgreSQL, Elasticsearch, Redis, MinIO-compatible object storage, queue dispatch, cache lifecycle, and semantic search configuration.
+
+Important runtime defaults:
+
+- `PAPERBASE_WORKER_QUEUE_BACKEND=redis` in the shipped server stack
+- `PAPERBASE_OBJECT_STORE_BACKEND=s3` in the shipped server stack
+- `PAPERBASE_EMBEDDING_PROVIDER=openai` for production semantic retrieval
+
+If you intentionally want a lighter local process mode, you can switch to:
+
+- `PAPERBASE_WORKER_QUEUE_BACKEND=db`
+- `PAPERBASE_OBJECT_STORE_BACKEND=filesystem`
+- `PAPERBASE_EMBEDDING_PROVIDER=deterministic`
 
 ### 3. Start The Self-Hosted Stack
 
@@ -88,6 +101,10 @@ paperbase-db upgrade
 paperbase-api
 paperbase-worker
 ```
+
+In this mode, the default `.env.example` still points at the self-hosted stack.
+If you want a no-MinIO/no-Redis local run, switch the queue, object-store, and
+embedding settings as described above before launching the processes.
 
 Useful make targets:
 

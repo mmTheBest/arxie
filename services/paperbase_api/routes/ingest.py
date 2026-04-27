@@ -7,8 +7,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
-from paperbase.db.repositories import BackgroundJobRepository
 from ra.utils.security import sanitize_identifier, sanitize_user_text
+from services.paperbase_api.background_jobs import create_background_job
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
@@ -48,20 +48,21 @@ def queue_local_library_ingest(
             message=f"source_dir is not a directory: {source_dir}",
         )
 
-    with request.app.state.session_factory() as job_session:
-        job = BackgroundJobRepository(job_session).create(
-            job_type="local_library_ingest",
-            payload_json={
-                "source_dir": str(source_dir),
-                "owner_id": sanitize_user_text(
-                    payload.owner_id,
-                    field_name="owner_id",
-                    max_length=128,
-                ),
-                "collection_title": payload.collection_title,
-                "collection_description": payload.collection_description,
-            },
-        )
+    job = create_background_job(
+        session_factory=request.app.state.session_factory,
+        job_type="local_library_ingest",
+        payload_json={
+            "source_dir": str(source_dir),
+            "owner_id": sanitize_user_text(
+                payload.owner_id,
+                field_name="owner_id",
+                max_length=128,
+            ),
+            "collection_title": payload.collection_title,
+            "collection_description": payload.collection_description,
+        },
+        dispatcher=request.app.state.job_dispatcher,
+    )
 
     return SingleBackgroundJobResponse(data=background_job_to_response(job))
 
@@ -88,31 +89,32 @@ def queue_provider_identifier_ingest(
         else None
     )
 
-    with request.app.state.session_factory() as job_session:
-        job = BackgroundJobRepository(job_session).create(
-            job_type="provider_identifier_ingest",
-            payload_json={
-                "owner_id": owner_id,
-                "collection_id": collection_id,
-                "collection_title": collection_title,
-                "collection_description": payload.collection_description,
-                "identifiers": [
-                    {
-                        "kind": sanitize_identifier(
-                            item.kind,
-                            field_name="identifier_kind",
-                            max_length=32,
-                        ),
-                        "value": sanitize_identifier(
-                            item.value,
-                            field_name="identifier_value",
-                            max_length=512,
-                        ),
-                    }
-                    for item in payload.identifiers
-                ],
-            },
-        )
+    job = create_background_job(
+        session_factory=request.app.state.session_factory,
+        job_type="provider_identifier_ingest",
+        payload_json={
+            "owner_id": owner_id,
+            "collection_id": collection_id,
+            "collection_title": collection_title,
+            "collection_description": payload.collection_description,
+            "identifiers": [
+                {
+                    "kind": sanitize_identifier(
+                        item.kind,
+                        field_name="identifier_kind",
+                        max_length=32,
+                    ),
+                    "value": sanitize_identifier(
+                        item.value,
+                        field_name="identifier_value",
+                        max_length=512,
+                    ),
+                }
+                for item in payload.identifiers
+            ],
+        },
+        dispatcher=request.app.state.job_dispatcher,
+    )
 
     return SingleBackgroundJobResponse(data=background_job_to_response(job))
 
@@ -128,15 +130,16 @@ def queue_paper_metadata_refresh(
     session: Session = Depends(get_session),
 ) -> SingleBackgroundJobResponse:
     del session
-    with request.app.state.session_factory() as job_session:
-        job = BackgroundJobRepository(job_session).create(
-            job_type="paper_metadata_refresh",
-            payload_json={
-                "paper_ids": [
-                    sanitize_identifier(paper_id, field_name="paper_id", max_length=36)
-                    for paper_id in payload.paper_ids
-                ]
-            },
-        )
+    job = create_background_job(
+        session_factory=request.app.state.session_factory,
+        job_type="paper_metadata_refresh",
+        payload_json={
+            "paper_ids": [
+                sanitize_identifier(paper_id, field_name="paper_id", max_length=36)
+                for paper_id in payload.paper_ids
+            ]
+        },
+        dispatcher=request.app.state.job_dispatcher,
+    )
 
     return SingleBackgroundJobResponse(data=background_job_to_response(job))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -33,9 +34,15 @@ class CollectionParseRunner:
         *,
         session_factory: sessionmaker[Session],
         parser_factory: Callable[[], object] | None = None,
+        object_store: object | None = None,
+        cache_dir: Path | None = None,
+        cache_ttl_seconds: int = 86400,
     ) -> None:
         self.session_factory = session_factory
         self.parser_factory = parser_factory
+        self.object_store = object_store
+        self.cache_dir = cache_dir
+        self.cache_ttl_seconds = cache_ttl_seconds
 
     def parse_collection(
         self,
@@ -54,7 +61,11 @@ class CollectionParseRunner:
         table_count = 0
 
         for membership in memberships[:limit]:
-            storage_resolver = StorageResolver()
+            storage_resolver = StorageResolver(
+                object_store=self.object_store,
+                cache_dir=None if self.cache_dir is None else self.cache_dir,
+                cache_ttl_seconds=self.cache_ttl_seconds,
+            )
             try:
                 parser = self.parser_factory() if self.parser_factory is not None else None
                 result = PaperParsePipeline(

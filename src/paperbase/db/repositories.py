@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Select, delete, select
+from sqlalchemy import Select, delete, select, update
 from sqlalchemy.orm import Session
 
 from paperbase.db.models import (
@@ -615,6 +615,25 @@ class BackgroundJobRepository:
         self.session.refresh(job)
         return job
 
+    def claim_by_id(self, job_id: str) -> BackgroundJob | None:
+        started_at = _utc_now()
+        result = self.session.execute(
+            update(BackgroundJob)
+            .where(BackgroundJob.id == job_id, BackgroundJob.status == "pending")
+            .values(
+                status="running",
+                attempt_count=BackgroundJob.attempt_count + 1,
+                started_at=started_at,
+                finished_at=None,
+                error_message=None,
+            )
+        )
+        if result.rowcount == 0:
+            self.session.rollback()
+            return None
+        self.session.commit()
+        return self.session.get(BackgroundJob, job_id)
+
     def mark_completed(self, job_id: str, *, result_json: dict[str, Any] | None = None) -> BackgroundJob:
         job = self.session.get(BackgroundJob, job_id)
         if job is None:
@@ -639,6 +658,31 @@ class BackgroundJobRepository:
         self.session.commit()
         self.session.refresh(job)
         return job
+
+    def mark_pending(self, job_id: str, *, error_message: str | None = None) -> BackgroundJob:
+        job = self.session.get(BackgroundJob, job_id)
+        if job is None:
+            raise ValueError(f"No background job found for id: {job_id}")
+
+        job.status = "pending"
+        job.error_message = error_message
+        job.finished_at = None
+        self.session.commit()
+        self.session.refresh(job)
+        return job
+
+    def list_stale_running(self, *, older_than_seconds: float) -> Sequence[BackgroundJob]:
+        cutoff = _utc_now() - timedelta(seconds=older_than_seconds)
+        statement: Select[tuple[BackgroundJob]] = (
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.status == "running",
+                BackgroundJob.started_at.is_not(None),
+                BackgroundJob.started_at <= cutoff,
+            )
+            .order_by(BackgroundJob.started_at.asc())
+        )
+        return self.session.execute(statement).scalars().all()
 
 
 class PaperSourceRepository:

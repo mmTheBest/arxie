@@ -43,7 +43,8 @@ The finished local-first flow is now:
 3. parse stored PDFs into sections, chunks, figures, and tables
 4. extract structured entities such as datasets, methods, metrics, result rows,
    findings, limitations, glossary terms, and engineering tricks
-5. enqueue background jobs for parse, extraction, provider refresh, and reindex
+5. enqueue background jobs for ingest, parse, extraction, provider refresh, and reindex
+   into the Redis-backed worker queue while keeping the DB as the audit/status surface
 6. search the corpus by paper, chunk, or artifact, with backend-first hybrid
    retrieval when a search backend is configured
 7. save a workspace and reuse it across browse, compare, answer, chat, lit
@@ -57,8 +58,8 @@ The production stack now expects:
 
 - PostgreSQL for canonical storage
 - Elasticsearch for backend search and reindex
-- Redis for worker-adjacent runtime configuration and future queue expansion
-- MinIO for object-store-compatible asset storage
+- Redis for the production worker queue and dispatch path
+- MinIO for canonical PDF and artifact storage
 - one Paperbase API service
 - one Paperbase worker service
 - one migration entrypoint before API and worker startup

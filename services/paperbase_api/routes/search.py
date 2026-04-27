@@ -22,10 +22,10 @@ from paperbase.db.models import (
     TableArtifact,
     Tag,
 )
-from paperbase.db.repositories import BackgroundJobRepository, PaperRepository
-from paperbase.search.embeddings import embed_text_deterministic
+from paperbase.db.repositories import PaperRepository
 from paperbase.search.query_builder import build_search_query
 from ra.utils.security import sanitize_identifier, sanitize_user_text
+from services.paperbase_api.background_jobs import create_background_job
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
@@ -44,10 +44,15 @@ from services.paperbase_api.routes.jobs import background_job_to_response
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
 
 
-def _search_backend_query(query_text: str | None, *, filters: dict[str, object] | None = None) -> dict[str, object]:
+def _search_backend_query(
+    query_text: str | None,
+    *,
+    filters: dict[str, object] | None = None,
+    embedding_provider: object | None = None,
+) -> dict[str, object]:
     embedding_vector = None
-    if query_text:
-        embedding_vector = embed_text_deterministic(query_text)
+    if query_text and embedding_provider is not None:
+        embedding_vector = embedding_provider.embed(query_text)
     return build_search_query(
         query_text=query_text,
         filters=filters,
@@ -75,9 +80,12 @@ def search_status(request: Request) -> SearchStatusResponse:
     status_code=status.HTTP_202_ACCEPTED,
 )
 def search_reindex(request: Request) -> SingleBackgroundJobResponse:
-    with request.app.state.session_factory() as session:
-        repository = BackgroundJobRepository(session)
-        job = repository.create(job_type="search_reindex", payload_json={})
+    job = create_background_job(
+        session_factory=request.app.state.session_factory,
+        job_type="search_reindex",
+        payload_json={},
+        dispatcher=request.app.state.job_dispatcher,
+    )
     return SingleBackgroundJobResponse(data=background_job_to_response(job))
 
 
@@ -256,7 +264,11 @@ def search_papers(
     if search_backend is not None:
         documents = search_backend.search(
             "paperbase-papers",
-            _search_backend_query(safe_query, filters=search_filters),
+            _search_backend_query(
+                safe_query,
+                filters=search_filters,
+                embedding_provider=request.app.state.embedding_provider,
+            ),
             limit,
         )
         return SearchPapersResponse(
@@ -334,6 +346,7 @@ def search_chunks(
             _search_backend_query(
                 safe_query,
                 filters={"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
+                embedding_provider=request.app.state.embedding_provider,
             ),
             limit,
         )
@@ -412,6 +425,7 @@ def search_artifacts(
         query = _search_backend_query(
             safe_query,
             filters={"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
+            embedding_provider=request.app.state.embedding_provider,
         )
         if safe_kind in {"all", "figure"}:
             for document in search_backend.search("paperbase-figures", query, limit):

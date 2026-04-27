@@ -22,11 +22,11 @@ from paperbase.db.models import (
 )
 from paperbase.db.repositories import (
     AnnotationRepository,
-    BackgroundJobRepository,
     CollectionRepository,
     PaperRepository,
 )
 from ra.utils.security import sanitize_identifier, sanitize_user_text
+from services.paperbase_api.background_jobs import create_background_job
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
@@ -455,14 +455,15 @@ def parse_collection(
             message=f"No collection found for id: {safe_collection_id}",
         )
 
-    with request.app.state.session_factory() as job_session:
-        job = BackgroundJobRepository(job_session).create(
-            job_type="collection_parse",
-            payload_json={
-                "collection_id": safe_collection_id,
-                "limit": payload.limit,
-            },
-        )
+    job = create_background_job(
+        session_factory=request.app.state.session_factory,
+        job_type="collection_parse",
+        payload_json={
+            "collection_id": safe_collection_id,
+            "limit": payload.limit,
+        },
+        dispatcher=request.app.state.job_dispatcher,
+    )
 
     return SingleBackgroundJobResponse(data=background_job_to_response(job))
 

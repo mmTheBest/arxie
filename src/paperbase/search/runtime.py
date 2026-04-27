@@ -23,7 +23,7 @@ from paperbase.db.models import (
     TableArtifact,
 )
 from paperbase.db.repositories import PaperRepository
-from paperbase.search.embeddings import embed_text_deterministic
+from paperbase.search.embeddings import EmbeddingProvider
 from paperbase.search.index_templates import (
     chunk_index_template,
     figure_index_template,
@@ -63,7 +63,8 @@ class ElasticsearchSearchBackend:
         head_response = self.client.head(f"{self.base_url}/{index_name}")
         if head_response.status_code == 200:
             return
-        head_response.raise_for_status()
+        if head_response.status_code not in {404}:
+            head_response.raise_for_status()
         response = self.client.put(f"{self.base_url}/{index_name}", json=template)
         response.raise_for_status()
 
@@ -87,9 +88,11 @@ class ElasticsearchSearchBackend:
             raise RuntimeError(f"Bulk indexing returned errors for index {index_name}.")
 
     def search(self, index_name: str, query: dict[str, object], size: int) -> list[dict[str, object]]:
+        payload = dict(query)
+        payload.setdefault("size", size)
         response = self.client.post(
             f"{self.base_url}/{index_name}/_search",
-            json={"size": size, "query": query},
+            json=payload,
         )
         response.raise_for_status()
         hits = response.json().get("hits", {}).get("hits", [])
@@ -105,9 +108,11 @@ class PaperbaseSearchReindexer:
         session_factory: sessionmaker[Session],
         backend: SearchBackend,
         index_prefix: str = "paperbase",
+        embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.backend = backend
+        self.embedding_provider = embedding_provider
         self.paper_index_name = f"{index_prefix}-papers"
         self.chunk_index_name = f"{index_prefix}-chunks"
         self.figure_index_name = f"{index_prefix}-figures"
@@ -171,7 +176,7 @@ class PaperbaseSearchReindexer:
                 metrics=metrics_by_paper_id.get(paper.id, []),
                 collection_ids=collection_ids_by_paper_id.get(paper.id, []),
                 extraction_state="extracted" if paper.id in extracted_paper_ids else "unextracted",
-                embedding_vector=embed_text_deterministic(
+                embedding_vector=self._embed_text(
                     " ".join(
                         filter(
                             None,
@@ -210,7 +215,7 @@ class PaperbaseSearchReindexer:
                 section_title=section.title if section is not None else None,
                 text=chunk.text,
                 collection_ids=collection_ids_by_paper_id.get(paper.id, []),
-                embedding_vector=embed_text_deterministic(
+                embedding_vector=self._embed_text(
                     " ".join(
                         filter(
                             None,
@@ -244,7 +249,7 @@ class PaperbaseSearchReindexer:
                 figure_label=figure.figure_label,
                 caption=figure.caption,
                 collection_ids=collection_ids_by_paper_id.get(paper.id, []),
-                embedding_vector=embed_text_deterministic(
+                embedding_vector=self._embed_text(
                     " ".join(filter(None, [paper.canonical_title, figure.figure_label, figure.caption]))
                 ),
             )
@@ -270,7 +275,7 @@ class PaperbaseSearchReindexer:
                 caption=table.caption,
                 structured_payload=dict(table.structured_payload_json or {}),
                 collection_ids=collection_ids_by_paper_id.get(paper.id, []),
-                embedding_vector=embed_text_deterministic(
+                embedding_vector=self._embed_text(
                     " ".join(
                         filter(
                             None,
@@ -286,6 +291,11 @@ class PaperbaseSearchReindexer:
             )
             for table, paper in rows
         ]
+
+    def _embed_text(self, text: str) -> list[float] | None:
+        if self.embedding_provider is None:
+            return None
+        return self.embedding_provider.embed(text)
 
     @staticmethod
     def _load_collection_ids_by_paper_id(

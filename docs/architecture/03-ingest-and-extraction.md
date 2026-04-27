@@ -34,7 +34,8 @@ The current ingest and parse modules are:
 - `src/paperbase/parsing/runner.py` — collection-level parse orchestration for queued worker execution
 - `src/paperbase/parsing/store.py` — persistence of sections and chunks
 - `src/paperbase/parsing/chunker.py` — deterministic section chunking
-- `src/paperbase/storage.py` — resolution of local and remote PDF URIs into parser-readable local paths
+- `src/paperbase/object_store.py` — canonical object-store upload/download adapters
+- `src/paperbase/storage.py` — resolution of local, remote, and object-store PDF URIs into parser-readable local paths plus bounded cache cleanup
 - `src/paperbase/extract/contracts.py` — typed bundle contract for structured LLM extraction outputs
 - `src/paperbase/extract/prompts.py` — prompt builder for field-specific extraction profiles
 - `src/paperbase/extract/client.py` — OpenAI-backed structured extraction client
@@ -80,18 +81,19 @@ Paperbase now exposes local pipeline operations as queued jobs:
 The contract is now intentionally asynchronous:
 
 - the API can enqueue `local_library_ingest` to register a filesystem paper set
-  as a curated collection
+  as a curated collection and copy the canonical PDFs into object storage when
+  the runtime store is configured
 - the API can enqueue `provider_identifier_ingest` to resolve DOI, arXiv, and
-  OpenAlex identifiers into canonical paper records and attach them to a
-  collection in one step
+  OpenAlex identifiers into canonical paper records, fetch/store provider PDFs,
+  and attach them to a collection in one step
 - the API can enqueue `paper_metadata_refresh` to re-resolve stored papers
   against their provider identifiers and merge fresher metadata back into the
   canonical paper rows
 - the API can enqueue `collection_parse` to persist sections and chunks for an
   existing collection
 - the API validates the request and enqueues a `collection_extract` job
-- the worker claims those jobs and executes the local import, parse, or
-  extraction runners
+- the worker consumes those jobs from Redis and executes the local import,
+  parse, or extraction runners while the DB keeps the durable job state
 - clients poll `GET /api/v1/jobs/{job_id}` to observe `pending`, `running`,
   `completed`, or `failed`
 
@@ -101,9 +103,9 @@ inside the API process.
 
 ## Remote PDF Support
 
-Provider-backed ingest often stores public HTTP PDF URLs instead of only local
-filesystem paths. The runtime now resolves those remote PDF URIs into cached
-local files before parse, figure extraction, or table extraction runs begin.
+Provider-backed ingest now stores canonical object-store URIs in the self-hosted
+runtime, while the parser still resolves them into bounded cached local files
+before parse, figure extraction, or table extraction runs begin.
 
 That matters operationally because provider ingest is now a real product path,
 not only a metadata registration path.

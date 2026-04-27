@@ -27,9 +27,12 @@ For local-first development, the same schema must run cleanly on SQLite so a sin
 
 Use object storage for PDFs, parser artifacts, and figure assets.
 
-The current runtime still supports direct local files and public provider PDF
-URLs, but the release stack now carries explicit object-store configuration and
-service wiring so storage can move out of the local filesystem cleanly.
+In the shipped self-hosted runtime, provider-downloaded PDFs and imported local
+library PDFs are copied into canonical object storage and referenced by stable
+`s3://bucket/key` URIs.
+
+Local filesystem storage remains only as a deliberate dev/test fallback for
+single-user runs that do not want MinIO.
 
 ### Search/read models
 
@@ -55,6 +58,7 @@ The first concrete Paperbase modules are:
 - `src/paperbase/db/bootstrap.py` — local schema initialization
 - `src/paperbase/db/cli.py` — packaged migration commands over Alembic
 - `src/paperbase/db/repositories.py` — write paths for papers, venue/author/tag metadata, extraction profiles, collections, and annotations
+- `src/paperbase/object_store.py` — filesystem and S3-compatible object-store adapters for canonical paper assets
 
 These modules are intentionally thin. They should encode durable boundaries now without prematurely building API, worker, or ingest orchestration around them.
 

@@ -27,6 +27,12 @@ class FakeSearchBackend:
         return list(self.search_results.get(index_name, []))
 
 
+class FakeEmbeddingProvider:
+    def embed(self, text: str) -> list[float]:
+        del text
+        return [0.1, 0.2, 0.3]
+
+
 def test_reindexer_builds_and_pushes_paper_chunk_figure_and_table_documents(tmp_path) -> None:
     from paperbase.search.runtime import PaperbaseSearchReindexer
 
@@ -152,7 +158,13 @@ def test_search_api_uses_configured_backend_when_available(tmp_path) -> None:
         }
     ]
 
-    client = TestClient(create_app(session_factory=session_factory, search_backend=backend))
+    client = TestClient(
+        create_app(
+            session_factory=session_factory,
+            search_backend=backend,
+            embedding_provider=FakeEmbeddingProvider(),
+        )
+    )
 
     response = client.get(
         "/api/v1/search/papers",
@@ -172,10 +184,10 @@ def test_search_api_uses_configured_backend_when_available(tmp_path) -> None:
     assert response.json()["data"][0]["id"] == "paper-1"
     assert response.json()["data"][0]["authors"] == ["Alice Smith", "Bob Lee"]
     assert backend.search_calls[0][0] == "paperbase-papers"
-    assert {"terms": {"collection_ids": ["collection-1"]}} in backend.search_calls[0][1]["bool"]["filter"]
-    assert {"terms": {"authors.keyword": ["Alice Smith"]}} in backend.search_calls[0][1]["bool"]["filter"]
-    assert {"terms": {"metrics.keyword": ["AUROC"]}} in backend.search_calls[0][1]["bool"]["filter"]
-    assert {"term": {"extraction_state": "extracted"}} in backend.search_calls[0][1]["bool"]["filter"]
+    assert {"terms": {"collection_ids": ["collection-1"]}} in backend.search_calls[0][1]["query"]["bool"]["filter"]
+    assert {"terms": {"authors.keyword": ["Alice Smith"]}} in backend.search_calls[0][1]["query"]["bool"]["filter"]
+    assert {"terms": {"metrics.keyword": ["AUROC"]}} in backend.search_calls[0][1]["query"]["bool"]["filter"]
+    assert {"term": {"extraction_state": "extracted"}} in backend.search_calls[0][1]["query"]["bool"]["filter"]
     assert backend.search_calls[0][1]["knn"]["field"] == "embedding"
 
 
@@ -213,7 +225,13 @@ def test_search_api_uses_configured_backend_for_chunk_and_artifact_surfaces(tmp_
         }
     ]
 
-    client = TestClient(create_app(session_factory=session_factory, search_backend=backend))
+    client = TestClient(
+        create_app(
+            session_factory=session_factory,
+            search_backend=backend,
+            embedding_provider=FakeEmbeddingProvider(),
+        )
+    )
 
     chunk_response = client.get(
         "/api/v1/search/chunks",
@@ -229,6 +247,6 @@ def test_search_api_uses_configured_backend_for_chunk_and_artifact_surfaces(tmp_
     assert chunk_response.json()["data"][0]["chunk_id"] == "chunk-1"
     assert {item["artifact_type"] for item in artifact_response.json()["data"]} == {"figure", "table"}
     assert backend.search_calls[0][0] == "paperbase-chunks"
-    assert {"terms": {"collection_ids": ["collection-1"]}} in backend.search_calls[0][1]["bool"]["filter"]
+    assert {"terms": {"collection_ids": ["collection-1"]}} in backend.search_calls[0][1]["query"]["bool"]["filter"]
     assert backend.search_calls[0][1]["knn"]["field"] == "embedding"
     assert {call[0] for call in backend.search_calls[1:]} == {"paperbase-figures", "paperbase-tables"}

@@ -99,11 +99,11 @@ def test_query_builder_supports_text_filters_and_vector_query() -> None:
         embedding_vector=[0.1, 0.2, 0.3],
     )
 
-    assert query["bool"]["must"][0]["multi_match"]["query"] == "gene regulatory"
-    assert {"range": {"publication_year": {"gte": 2024}}} in query["bool"]["filter"]
-    assert {"terms": {"collection_ids": ["collection-1"]}} in query["bool"]["filter"]
-    assert {"terms": {"venue.keyword": ["Nature"]}} in query["bool"]["filter"]
-    assert {"terms": {"authors.keyword": ["Alice Smith"]}} in query["bool"]["filter"]
-    assert {"terms": {"metrics.keyword": ["AUROC"]}} in query["bool"]["filter"]
-    assert {"term": {"extraction_state": "extracted"}} in query["bool"]["filter"]
+    assert query["query"]["bool"]["must"][0]["multi_match"]["query"] == "gene regulatory"
+    assert {"range": {"publication_year": {"gte": 2024}}} in query["query"]["bool"]["filter"]
+    assert {"terms": {"collection_ids": ["collection-1"]}} in query["query"]["bool"]["filter"]
+    assert {"terms": {"venue.keyword": ["Nature"]}} in query["query"]["bool"]["filter"]
+    assert {"terms": {"authors.keyword": ["Alice Smith"]}} in query["query"]["bool"]["filter"]
+    assert {"terms": {"metrics.keyword": ["AUROC"]}} in query["query"]["bool"]["filter"]
+    assert {"term": {"extraction_state": "extracted"}} in query["query"]["bool"]["filter"]
     assert query["knn"]["field"] == "embedding"

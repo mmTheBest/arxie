@@ -28,6 +28,11 @@ def _content_hash_for_path(pdf_path: Path) -> str:
     return hashlib.sha256(pdf_path.read_bytes()).hexdigest()
 
 
+def _paper_object_key(*, paper_id: str, content_hash: str, suffix: str) -> str:
+    normalized_suffix = suffix if suffix.startswith(".") else f".{suffix}"
+    return f"papers/{paper_id}/source-{content_hash}{normalized_suffix}"
+
+
 def import_local_pdf_directory(
     *,
     source_dir: Path,
@@ -35,6 +40,7 @@ def import_local_pdf_directory(
     owner_id: str = "local-user",
     collection_title: str | None = None,
     collection_description: str | None = None,
+    object_store: object | None = None,
 ) -> LocalLibraryImportResult:
     """Import all PDFs from a local directory into a curated Paperbase collection."""
 
@@ -65,6 +71,7 @@ def import_local_pdf_directory(
 
         for position, pdf_path in enumerate(pdf_paths, start=1):
             external_id = str(pdf_path.resolve())
+            content_hash = _content_hash_for_path(pdf_path)
             existing_paper = paper_repository.get_by_provider_id("local_filesystem", external_id)
             paper = paper_repository.upsert(
                 provider="local_filesystem",
@@ -81,11 +88,22 @@ def import_local_pdf_directory(
             else:
                 reused_papers += 1
 
+            storage_uri = pdf_path.resolve().as_uri()
+            if object_store is not None:
+                storage_uri = object_store.put_file(
+                    key=_paper_object_key(
+                        paper_id=paper.id,
+                        content_hash=content_hash,
+                        suffix=pdf_path.suffix or ".pdf",
+                    ),
+                    source_path=pdf_path,
+                    content_type="application/pdf",
+                )
             file_repository.upsert(
                 paper_id=paper.id,
-                storage_uri=pdf_path.resolve().as_uri(),
+                storage_uri=storage_uri,
                 file_kind="pdf",
-                content_hash=_content_hash_for_path(pdf_path),
+                content_hash=content_hash,
                 mime_type="application/pdf",
                 parser_status="pending",
             )

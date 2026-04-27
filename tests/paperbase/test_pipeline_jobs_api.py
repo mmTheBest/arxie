@@ -11,6 +11,14 @@ from paperbase.db.session import make_session_factory
 from services.paperbase_api.app import create_app
 
 
+class FakeJobDispatcher:
+    def __init__(self) -> None:
+        self.job_ids: list[str] = []
+
+    def dispatch(self, job_id: str) -> None:
+        self.job_ids.append(job_id)
+
+
 def test_local_library_ingest_api_enqueues_background_job(tmp_path: Path) -> None:
     source_dir = tmp_path / "library"
     source_dir.mkdir()
@@ -136,3 +144,17 @@ def test_collection_parse_api_enqueues_background_job(tmp_path: Path) -> None:
     assert payload["status"] == "pending"
     assert payload["payload"]["collection_id"] == collection_id
     assert payload["payload"]["limit"] == 1
+
+
+def test_search_reindex_dispatches_job_when_runtime_dispatcher_is_configured(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+    dispatcher = FakeJobDispatcher()
+    client = TestClient(create_app(session_factory=session_factory, job_dispatcher=dispatcher))
+
+    response = client.post("/api/v1/search/reindex")
+
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert dispatcher.job_ids == [payload["id"]]

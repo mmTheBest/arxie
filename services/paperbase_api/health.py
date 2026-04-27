@@ -80,6 +80,15 @@ class DependencyChecker:
         return DependencyCheckResult(name="redis", ok=True, detail="ok")
 
     def _check_object_store(self) -> DependencyCheckResult:
+        if self.config.object_store_backend.strip().lower() == "filesystem":
+            try:
+                from pathlib import Path
+
+                path = Path(self.config.object_store_local_root)
+                path.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:  # noqa: BLE001
+                return DependencyCheckResult(name="object_store", ok=False, detail=str(exc))
+            return DependencyCheckResult(name="object_store", ok=True, detail="ok")
         endpoint = self.config.object_store_endpoint.rstrip("/")
         probe_url = f"{endpoint}/minio/health/live" if endpoint.startswith(("http://", "https://")) else endpoint
         try:

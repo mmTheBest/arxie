@@ -39,7 +39,7 @@ Operationally, the runtime is split three ways:
 - the canonical DB and domain logic live under `src/paperbase/`
 - the query/CRUD API contract lives under `services/paperbase_api/`
 - long-running ingest, parse, extraction, and reindex work is queued by the API
-  and executed by `services/paperbase_worker/`
+  and executed by `services/paperbase_worker/` through a Redis-backed runtime queue
 
 The first product UI is served from `services/paperbase_api/` as a build-free
 web surface:
@@ -66,3 +66,5 @@ The current release surface also exposes:
 - packaged `paperbase-api`, `paperbase-worker`, and `paperbase-db` entrypoints
 - a self-hostable Compose stack with PostgreSQL, Elasticsearch, MinIO, Redis,
   API, worker, and migration service wiring
+- canonical object-store-backed PDF persistence in the shipped runtime, with
+  filesystem fallback only for local development

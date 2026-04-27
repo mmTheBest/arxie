@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -100,6 +101,17 @@ class DefaultProviderResolver:
         return asyncio.run(_load())
 
 
+def _default_pdf_fetcher(storage_url: str) -> bytes:
+    with httpx.Client(timeout=30.0, headers={"User-Agent": "academic-research-assistant/1.0"}) as client:
+        response = client.get(storage_url)
+        response.raise_for_status()
+        return response.content
+
+
+def _paper_object_key(*, paper_id: str, provider: str, content_hash: str) -> str:
+    return f"papers/{paper_id}/{provider}-{content_hash}.pdf"
+
+
 def ingest_provider_identifiers(
     *,
     identifiers: Sequence[IdentifierInput],
@@ -109,6 +121,8 @@ def ingest_provider_identifiers(
     collection_id: str | None = None,
     collection_title: str | None = None,
     collection_description: str | None = None,
+    object_store: object | None = None,
+    pdf_fetcher=None,
 ) -> ProviderIdentifierIngestResult:
     """Ingest scholarly records by identifier and optionally attach them to a collection."""
 
@@ -152,6 +166,8 @@ def ingest_provider_identifiers(
                     paper_source_repository=paper_source_repository,
                     paper_file_repository=paper_file_repository,
                     seed=seed,
+                    object_store=object_store,
+                    pdf_fetcher=pdf_fetcher,
                 )
                 if target_collection is not None:
                     collection_repository.add_paper(
@@ -188,6 +204,8 @@ def refresh_paper_metadata(
     paper_ids: Sequence[str],
     session_factory: sessionmaker[Session],
     resolver: ProviderResolver | None = None,
+    object_store: object | None = None,
+    pdf_fetcher=None,
 ) -> PaperMetadataRefreshResult:
     """Refresh stored paper metadata from provider-backed identifiers."""
 
@@ -216,6 +234,8 @@ def refresh_paper_metadata(
                     paper_source_repository=paper_source_repository,
                     paper_file_repository=paper_file_repository,
                     seed=seed,
+                    object_store=object_store,
+                    pdf_fetcher=pdf_fetcher,
                 )
             except Exception:  # noqa: BLE001
                 skipped_paper_ids.append(paper_id)
@@ -259,6 +279,8 @@ def _upsert_seed(
     paper_source_repository: PaperSourceRepository,
     paper_file_repository: PaperFileRepository,
     seed: CanonicalPaperSeed,
+    object_store: object | None = None,
+    pdf_fetcher=None,
 ) -> tuple[Paper, bool]:
     existing_source = paper_source_repository.get_by_provider_record(
         provider=seed.provider,
@@ -312,10 +334,28 @@ def _upsert_seed(
     )
 
     if seed.pdf_url:
+        validated_pdf_url = validate_public_http_url(seed.pdf_url, field_name="pdf_url")
+        storage_uri = validated_pdf_url
+        content_hash = None
+        if object_store is not None:
+            fetcher = pdf_fetcher or _default_pdf_fetcher
+            pdf_bytes = fetcher(validated_pdf_url)
+            content_hash = hashlib.sha256(pdf_bytes).hexdigest()
+            storage_uri = object_store.put_bytes(
+                key=_paper_object_key(
+                    paper_id=paper.id,
+                    provider=seed.provider,
+                    content_hash=content_hash,
+                ),
+                content=pdf_bytes,
+                content_type="application/pdf",
+            )
+
         paper_file_repository.upsert(
             paper_id=paper.id,
-            storage_uri=validate_public_http_url(seed.pdf_url, field_name="pdf_url"),
+            storage_uri=storage_uri,
             file_kind="pdf",
+            content_hash=content_hash,
             mime_type="application/pdf",
             parser_status="pending",
         )
