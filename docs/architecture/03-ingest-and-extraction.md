@@ -29,6 +29,7 @@ The current ingest and parse modules are:
 - `src/paperbase/ingest/arxiv_seed.py` — adapters from current arXiv and Semantic Scholar client models
 - `src/paperbase/ingest/openalex.py` and `src/paperbase/ingest/crossref.py` — raw-provider payload normalization
 - `src/paperbase/ingest/local_library.py` — local PDF directory import into canonical paper/file/collection records
+- `src/paperbase/ingest/provider_identifiers.py` — provider-backed ingest and metadata refresh by DOI, arXiv ID, and OpenAlex identifier
 - `src/paperbase/parsing/pipeline.py` — stored-PDF parse orchestration
 - `src/paperbase/parsing/runner.py` — collection-level parse orchestration for queued worker execution
 - `src/paperbase/parsing/store.py` — persistence of sections and chunks
@@ -38,10 +39,10 @@ The current ingest and parse modules are:
 - `src/paperbase/extract/client.py` — OpenAI-backed structured extraction client
 - `src/paperbase/extract/pipeline.py` — persistence of datasets, methods, metrics, result rows, findings, glossary terms, engineering tricks, and evidence spans
 - `src/paperbase/extract/runner.py` — collection-level orchestration for local-first extraction runs
-- `src/paperbase/figures/pipeline.py` — placeholder figure candidate extraction and persistence contracts
-- `src/paperbase/tables/pipeline.py` — placeholder table candidate extraction and persistence contracts
+- `src/paperbase/figures/pipeline.py` — phase-1 caption-line figure extraction and persistence
+- `src/paperbase/tables/pipeline.py` — phase-1 caption-line table extraction and persistence
 - `services/paperbase_api/routes/extraction.py` — API surface for extraction profiles and queued collection extraction jobs
-- `services/paperbase_api/routes/ingest.py` — API surface for queued local-library ingest jobs
+- `services/paperbase_api/routes/ingest.py` — API surface for queued local-library ingest, provider ingest, and metadata refresh jobs
 - `services/paperbase_worker/runtime.py` — worker dispatcher for queued parse/extract/index jobs
 - `src/paperbase/profiles/` — built-in field-specific extraction profile presets such as `sc_regnet`
 
@@ -64,6 +65,8 @@ The first extraction pipeline should remain schema-constrained and replaceable:
 Paperbase now exposes local pipeline operations as queued jobs:
 
 - `POST /api/v1/ingest/local-library`
+- `POST /api/v1/ingest/providers`
+- `POST /api/v1/ingest/refresh-metadata`
 - `POST /api/v1/collections/{collection_id}/parse`
 
 - `POST /api/v1/collections/{collection_id}/extract`
@@ -75,6 +78,12 @@ The contract is now intentionally asynchronous:
 
 - the API can enqueue `local_library_ingest` to register a filesystem paper set
   as a curated collection
+- the API can enqueue `provider_identifier_ingest` to resolve DOI, arXiv, and
+  OpenAlex identifiers into canonical paper records and attach them to a
+  collection in one step
+- the API can enqueue `paper_metadata_refresh` to re-resolve stored papers
+  against their provider identifiers and merge fresher metadata back into the
+  canonical paper rows
 - the API can enqueue `collection_parse` to persist sections and chunks for an
   existing collection
 - the API validates the request and enqueues a `collection_extract` job
@@ -113,6 +122,11 @@ heavier OCR or diagram extraction is added:
   boxes, storage URIs, and a lightweight JSON payload for structured table shape
 - paper and collection browse surfaces can expose those artifacts immediately,
   while richer extraction continues to evolve behind the same storage contract
+
+The current phase-1 implementation now extracts captioned figures and tables
+directly from parsed PDF text for common cases. That is not a full OCR or chart
+understanding stack, but it makes the artifact layer operational instead of
+purely placeholder.
 
 This keeps figure and table work on the same architectural path as datasets,
 methods, metrics, and result rows: typed candidates first, canonical storage

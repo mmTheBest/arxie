@@ -19,6 +19,7 @@ from paperbase.db.models import (
     Paper,
     PaperAuthor,
     PaperFile,
+    PaperSource,
     PaperTag,
     Tag,
     Workspace,
@@ -63,6 +64,14 @@ class PaperRepository:
 
     def get_by_id(self, paper_id: str) -> Paper | None:
         return self.session.get(Paper, paper_id)
+
+    def get_by_doi(self, doi: str) -> Paper | None:
+        statement: Select[tuple[Paper]] = select(Paper).where(Paper.doi == doi)
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def get_by_arxiv_id(self, arxiv_id: str) -> Paper | None:
+        statement: Select[tuple[Paper]] = select(Paper).where(Paper.arxiv_id == arxiv_id)
+        return self.session.execute(statement).scalar_one_or_none()
 
     def list_author_names(self, paper_id: str) -> list[str]:
         rows = self.session.execute(
@@ -149,6 +158,52 @@ class PaperRepository:
             paper.doi = doi
             paper.arxiv_id = arxiv_id
             paper.raw_metadata = raw_metadata or paper.raw_metadata
+
+        self.session.flush()
+
+        if authors is not None:
+            self._sync_authors(paper_id=paper.id, author_names=authors)
+        if tags is not None:
+            self._sync_tags(paper_id=paper.id, tag_names=tags)
+
+        self.session.commit()
+        self.session.refresh(paper)
+        return paper
+
+    def merge_metadata(
+        self,
+        paper_id: str,
+        *,
+        canonical_title: str | None = None,
+        abstract: str | None = None,
+        publication_year: int | None = None,
+        venue: str | None = None,
+        doi: str | None = None,
+        arxiv_id: str | None = None,
+        raw_metadata: dict[str, Any] | None = None,
+        authors: Sequence[str] | None = None,
+        tags: Sequence[str] | None = None,
+    ) -> Paper:
+        paper = self.get_by_id(paper_id)
+        if paper is None:
+            raise ValueError(f"No paper found for id: {paper_id}")
+
+        if canonical_title:
+            paper.canonical_title = canonical_title
+        if abstract:
+            paper.abstract = abstract
+        if publication_year is not None:
+            paper.publication_year = publication_year
+        if venue:
+            paper.venue = venue
+        if doi:
+            paper.doi = doi
+        if arxiv_id:
+            paper.arxiv_id = arxiv_id
+        if raw_metadata:
+            merged = dict(paper.raw_metadata or {})
+            merged.update(raw_metadata)
+            paper.raw_metadata = merged
 
         self.session.flush()
 
@@ -559,6 +614,59 @@ class BackgroundJobRepository:
         self.session.commit()
         self.session.refresh(job)
         return job
+
+
+class PaperSourceRepository:
+    """Persistence helpers for provider-specific source records."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_by_provider_record(self, *, provider: str, provider_record_id: str) -> PaperSource | None:
+        statement: Select[tuple[PaperSource]] = select(PaperSource).where(
+            PaperSource.provider == provider,
+            PaperSource.provider_record_id == provider_record_id,
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def list_for_paper(self, paper_id: str) -> Sequence[PaperSource]:
+        statement: Select[tuple[PaperSource]] = (
+            select(PaperSource)
+            .where(PaperSource.paper_id == paper_id)
+            .order_by(PaperSource.created_at.asc(), PaperSource.provider.asc())
+        )
+        return self.session.execute(statement).scalars().all()
+
+    def upsert(
+        self,
+        *,
+        paper_id: str,
+        provider: str,
+        provider_record_id: str,
+        source_payload: dict[str, Any] | None = None,
+        is_primary: bool = False,
+    ) -> PaperSource:
+        source = self.get_by_provider_record(
+            provider=provider,
+            provider_record_id=provider_record_id,
+        )
+        if source is None:
+            source = PaperSource(
+                paper_id=paper_id,
+                provider=provider,
+                provider_record_id=provider_record_id,
+                is_primary=is_primary,
+                source_payload=source_payload or {},
+            )
+            self.session.add(source)
+        else:
+            source.paper_id = paper_id
+            source.is_primary = is_primary
+            source.source_payload = source_payload or source.source_payload
+
+        self.session.commit()
+        self.session.refresh(source)
+        return source
 
 
 class PaperFileRepository:

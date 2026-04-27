@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -607,6 +607,29 @@ class LocalLibraryIngestRequest(BaseModel):
     owner_id: str = Field(default="local-user", min_length=1, max_length=128)
     collection_title: str | None = Field(None, min_length=1, max_length=255)
     collection_description: str | None = Field(None, max_length=5000)
+
+
+class ProviderIdentifierItemRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    kind: Literal["doi", "arxiv", "openalex"]
+    value: str = Field(..., min_length=1, max_length=512)
+
+
+class ProviderIdentifierIngestRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    owner_id: str = Field(default="local-user", min_length=1, max_length=128)
+    collection_id: str | None = Field(None, min_length=1, max_length=36)
+    collection_title: str | None = Field(None, min_length=1, max_length=255)
+    collection_description: str | None = Field(None, max_length=5000)
+    identifiers: list[ProviderIdentifierItemRequest] = Field(default_factory=list, min_length=1)
+
+
+class PaperMetadataRefreshRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    paper_ids: list[str] = Field(default_factory=list, min_length=1, max_length=200)
 
 
 class CollectionExtractionSummaryResponse(BaseModel):

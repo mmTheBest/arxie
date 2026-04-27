@@ -90,6 +90,27 @@ class LitReviewAgent:
         return max(1, min(int(max_papers), 50))
 
     @staticmethod
+    def _dedupe_papers(papers: list[Paper], *, limit: int) -> list[Paper]:
+        ordered: list[Paper] = []
+        seen_ids: set[str] = set()
+        seen_titles: set[str] = set()
+        for paper in papers:
+            paper_id = paper.id.strip()
+            title_key = " ".join((paper.title or "").lower().split())
+            if paper_id and paper_id in seen_ids:
+                continue
+            if not paper_id and title_key and title_key in seen_titles:
+                continue
+            if paper_id:
+                seen_ids.add(paper_id)
+            if title_key:
+                seen_titles.add(title_key)
+            ordered.append(paper)
+            if len(ordered) >= limit:
+                break
+        return ordered
+
+    @staticmethod
     def _response_to_text(response: Any) -> str:
         if response is None:
             return ""
@@ -228,7 +249,17 @@ class LitReviewAgent:
         *,
         max_papers: int,
         collection_id: str | None = None,
+        pinned_paper_ids: list[str] | None = None,
     ) -> list[Paper]:
+        seeded_papers: list[Paper] = []
+        if pinned_paper_ids:
+            get_papers_by_ids = getattr(self.retriever, "get_papers_by_ids", None)
+            if callable(get_papers_by_ids):
+                try:
+                    seeded_papers = await get_papers_by_ids(list(pinned_paper_ids))
+                except Exception:
+                    logger.exception("LitReviewAgent pinned-paper lookup failed.")
+
         if collection_id:
             get_collection_papers = getattr(self.retriever, "get_collection_papers", None)
             if callable(get_collection_papers):
@@ -239,7 +270,7 @@ class LitReviewAgent:
                         limit=max_papers,
                     )
                     if papers:
-                        return papers[:max_papers]
+                        return self._dedupe_papers(seeded_papers + papers, limit=max_papers)
                 except Exception:
                     logger.exception("LitReviewAgent collection-scoped Paperbase lookup failed.")
 
@@ -261,7 +292,7 @@ class LitReviewAgent:
                     papers.append(paper)
 
         if papers:
-            return papers[:max_papers]
+            return self._dedupe_papers(seeded_papers + papers, limit=max_papers)
 
         try:
             fallback = await self.retriever.search(
@@ -269,10 +300,10 @@ class LitReviewAgent:
                 limit=max_papers,
                 sources=("semantic_scholar", "arxiv"),
             )
-            return fallback[:max_papers]
+            return self._dedupe_papers(seeded_papers + fallback, limit=max_papers)
         except Exception:
             logger.exception("LitReviewAgent fallback search failed.")
-            return []
+            return self._dedupe_papers(seeded_papers, limit=max_papers)
 
     async def _read_top_fulltexts_async(
         self,
@@ -600,6 +631,7 @@ class LitReviewAgent:
         max_papers: int | None = None,
         *,
         collection_id: str | None = None,
+        pinned_paper_ids: list[str] | None = None,
     ) -> str:
         """Generate a structured literature review asynchronously."""
         try:
@@ -612,6 +644,7 @@ class LitReviewAgent:
             topic,
             max_papers=limit,
             collection_id=collection_id,
+            pinned_paper_ids=list(pinned_paper_ids or []),
         )
         if not papers:
             return self._no_results_response(topic)
@@ -642,6 +675,7 @@ class LitReviewAgent:
         max_papers: int | None = None,
         *,
         collection_id: str | None = None,
+        pinned_paper_ids: list[str] | None = None,
     ) -> str:
         """Generate a structured literature review synchronously."""
         try:
@@ -650,6 +684,7 @@ class LitReviewAgent:
                     topic,
                     max_papers=max_papers,
                     collection_id=collection_id,
+                    pinned_paper_ids=pinned_paper_ids,
                 )
             )
         except RuntimeError as exc:

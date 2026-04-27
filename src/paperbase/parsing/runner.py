@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.repositories import CollectionRepository
+from paperbase.figures.pipeline import FigureExtractionPipeline
 from paperbase.parsing.pipeline import PaperParsePipeline
+from paperbase.tables.pipeline import TableExtractionPipeline
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +20,8 @@ class CollectionParseSummary:
     skipped_paper_ids: list[str]
     section_count: int
     chunk_count: int
+    figure_count: int
+    table_count: int
 
 
 class CollectionParseRunner:
@@ -45,6 +49,8 @@ class CollectionParseRunner:
         skipped_paper_ids: list[str] = []
         section_count = 0
         chunk_count = 0
+        figure_count = 0
+        table_count = 0
 
         for membership in memberships[:limit]:
             try:
@@ -60,6 +66,15 @@ class CollectionParseRunner:
             parsed_paper_count += 1
             section_count += result.section_count
             chunk_count += result.chunk_count
+            try:
+                figure_count += FigureExtractionPipeline(session_factory=self.session_factory).extract_and_store(
+                    membership.paper_id
+                ).figure_count
+                table_count += TableExtractionPipeline(session_factory=self.session_factory).extract_and_store(
+                    membership.paper_id
+                ).table_count
+            except Exception:  # noqa: BLE001
+                continue
 
         return CollectionParseSummary(
             collection_id=collection_id,
@@ -67,4 +82,6 @@ class CollectionParseRunner:
             skipped_paper_ids=skipped_paper_ids,
             section_count=section_count,
             chunk_count=chunk_count,
+            figure_count=figure_count,
+            table_count=table_count,
         )

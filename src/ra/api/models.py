@@ -95,12 +95,13 @@ class LitReviewRequest(BaseModel):
             "example": {
                 "topic": "graph neural networks for molecular property prediction",
                 "max_papers": 20,
+                "workspace_id": "workspace-1",
             }
         },
     )
 
-    topic: str = Field(
-        ...,
+    topic: str | None = Field(
+        None,
         min_length=1,
         max_length=1000,
         description="Topic to synthesize into a structured literature review.",
@@ -112,6 +113,18 @@ class LitReviewRequest(BaseModel):
         le=50,
         description="Maximum number of papers to retrieve and synthesize.",
         examples=[20],
+    )
+    paperbase_collection_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=256,
+        description="Optional Paperbase collection id to scope the review corpus.",
+    )
+    workspace_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=36,
+        description="Optional saved workspace id to reuse collection, query, and pinned-paper context.",
     )
 
 

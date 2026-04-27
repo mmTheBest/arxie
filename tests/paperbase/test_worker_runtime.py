@@ -4,11 +4,13 @@ from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
 
+import fitz
 import paperbase.db.models as db_models
 from paperbase.db.bootstrap import initialize_database
-from paperbase.db.models import Chunk, ExtractionRun, Figure, GlossaryTerm, PaperFile, Section
+from paperbase.db.models import Chunk, ExtractionRun, Figure, GlossaryTerm, PaperFile, Section, TableArtifact
 from paperbase.db.repositories import CollectionRepository, PaperRepository
 from paperbase.db.session import make_session_factory
+from paperbase.ingest.models import CanonicalPaperSeed
 from paperbase.parsing.pipeline import PaperParsePipeline
 from ra.parsing.pdf_parser import ParsedDocument, Section as ParsedSection
 
@@ -57,6 +59,25 @@ class FakePDFParser:
                 page_start=0,
             )
         ]
+
+
+class FakeProviderResolver:
+    def __init__(self, seeds: dict[tuple[str, str], CanonicalPaperSeed]) -> None:
+        self.seeds = seeds
+
+    def fetch_identifier(self, *, kind: str, value: str) -> CanonicalPaperSeed:
+        return self.seeds[(kind, value)]
+
+
+def _write_caption_pdf(pdf_path: Path, *lines: str) -> None:
+    document = fitz.open()
+    page = document.new_page()
+    y = 72
+    for line in lines:
+        page.insert_text((72, y), line, fontsize=11)
+        y += 16
+    document.save(pdf_path)
+    document.close()
 
 
 def test_worker_executes_search_reindex_job(tmp_path: Path) -> None:
@@ -320,6 +341,167 @@ def test_worker_executes_local_library_ingest_job(tmp_path: Path) -> None:
     assert collections[0].title == "Sample Library"
 
 
+def test_worker_executes_provider_identifier_ingest_job(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        job = background_job_model(
+            job_type="provider_identifier_ingest",
+            payload_json={
+                "owner_id": "local-user",
+                "collection_title": "Provider Import",
+                "collection_description": "Imported from identifiers.",
+                "identifiers": [
+                    {"kind": "arxiv", "value": "2503.01682v1"},
+                    {"kind": "doi", "value": "10.1038/example"},
+                ],
+            },
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+
+    worker = worker_cls(
+        session_factory=session_factory,
+        provider_resolver=FakeProviderResolver(
+            {
+                ("arxiv", "2503.01682v1"): CanonicalPaperSeed(
+                    provider="arxiv",
+                    external_id="2503.01682v1",
+                    canonical_title="scLong",
+                    abstract="Long-range gene context.",
+                    publication_year=2025,
+                    venue="arXiv",
+                    doi="10.1038/example",
+                    arxiv_id="2503.01682v1",
+                    pdf_url="https://arxiv.org/pdf/2503.01682v1.pdf",
+                    authors=["Alice Smith"],
+                    source_payload={"source": "arxiv"},
+                ),
+                ("doi", "10.1038/example"): CanonicalPaperSeed(
+                    provider="crossref",
+                    external_id="10.1038/example",
+                    canonical_title="scLong journal record",
+                    abstract="Journal abstract.",
+                    publication_year=2025,
+                    venue="Nature",
+                    doi="10.1038/example",
+                    pdf_url="https://example.org/scLong.pdf",
+                    authors=["Alice Smith", "Bob Jones"],
+                    source_payload={"source": "crossref"},
+                ),
+            }
+        ),
+    )
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        collections = CollectionRepository(session).list_collections()
+        papers = session.query(db_models.Paper).all()
+        sources = session.query(db_models.PaperSource).all()
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert len(collections) == 1
+    assert len(papers) == 1
+    assert len(sources) == 2
+    assert stored_job.result_json == {
+        "collection_id": collections[0].id,
+        "collection_title": "Provider Import",
+        "requested_count": 2,
+        "imported_papers": 1,
+        "reused_papers": 1,
+        "paper_ids": [papers[0].id, papers[0].id],
+        "skipped_identifiers": [],
+    }
+
+
+def test_worker_executes_paper_metadata_refresh_job(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="crossref",
+            external_id="10.1038/example",
+            canonical_title="Original Title",
+            abstract="Original abstract.",
+            publication_year=2024,
+            venue="Nature",
+            doi="10.1038/example",
+            authors=["Alice Smith"],
+        )
+        session.add(
+            db_models.PaperSource(
+                paper_id=paper.id,
+                provider="crossref",
+                provider_record_id="10.1038/example",
+                is_primary=True,
+                source_payload={"source": "crossref"},
+            )
+        )
+        job = background_job_model(
+            job_type="paper_metadata_refresh",
+            payload_json={"paper_ids": [paper.id]},
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        paper_id = paper.id
+
+    worker = worker_cls(
+        session_factory=session_factory,
+        provider_resolver=FakeProviderResolver(
+            {
+                ("doi", "10.1038/example"): CanonicalPaperSeed(
+                    provider="crossref",
+                    external_id="10.1038/example",
+                    canonical_title="Refreshed Title",
+                    abstract="Refreshed abstract.",
+                    publication_year=2025,
+                    venue="Nature",
+                    doi="10.1038/example",
+                    pdf_url="https://example.org/refreshed.pdf",
+                    authors=["Alice Smith", "Bob Jones"],
+                    source_payload={"source": "crossref"},
+                    raw_metadata={"publisher": "Nature"},
+                )
+            }
+        ),
+    )
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        refreshed = session.get(db_models.Paper, paper_id)
+        files = session.query(db_models.PaperFile).all()
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert stored_job.result_json == {
+        "requested_count": 1,
+        "refreshed_papers": 1,
+        "skipped_paper_ids": [],
+    }
+    assert refreshed is not None
+    assert refreshed.canonical_title == "Refreshed Title"
+    assert refreshed.publication_year == 2025
+    assert len(files) == 1
+    assert files[0].storage_uri == "https://example.org/refreshed.pdf"
+
+
 def test_worker_executes_collection_parse_job(tmp_path: Path) -> None:
     background_job_model, worker_cls = _load_worker_class()
 
@@ -385,7 +567,81 @@ def test_worker_executes_collection_parse_job(tmp_path: Path) -> None:
         "skipped_paper_ids": [],
         "section_count": 1,
         "chunk_count": 1,
+        "figure_count": 0,
+        "table_count": 0,
     }
     assert len(sections) == 1
     assert len(chunks) == 1
     assert file_record.parser_status == "parsed"
+
+
+def test_worker_collection_parse_populates_figure_and_table_artifacts_when_pdf_has_captions(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    pdf_path = tmp_path / "captioned.pdf"
+    _write_caption_pdf(
+        pdf_path,
+        "Methods",
+        "Figure 1. Model architecture for gene regulatory inference.",
+        "Table 1. Benchmark comparison across scRegNet methods.",
+    )
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(pdf_path),
+            canonical_title="scLong",
+        )
+        session.add(
+            PaperFile(
+                paper_id=paper.id,
+                storage_uri=pdf_path.resolve().as_uri(),
+                file_kind="pdf",
+                mime_type="application/pdf",
+                parser_status="pending",
+            )
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper.id)
+        job = background_job_model(
+            job_type="collection_parse",
+            payload_json={"collection_id": collection.id, "limit": None},
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        collection_id = collection.id
+
+    worker = worker_cls(session_factory=session_factory)
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        figures = session.query(Figure).all()
+        tables = session.query(TableArtifact).all()
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert stored_job.result_json == {
+        "collection_id": collection_id,
+        "parsed_paper_count": 1,
+        "skipped_paper_ids": [],
+        "section_count": 1,
+        "chunk_count": 1,
+        "figure_count": 1,
+        "table_count": 1,
+    }
+    assert len(figures) == 1
+    assert figures[0].figure_label == "Figure 1"
+    assert len(tables) == 1
+    assert tables[0].table_label == "Table 1"

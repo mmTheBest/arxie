@@ -1,12 +1,14 @@
-"""Placeholder table extraction pipeline."""
+"""Phase-1 table extraction pipeline."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from urllib.parse import unquote, urlparse
 
+import fitz
 from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -30,12 +32,66 @@ def _path_from_storage_uri(storage_uri: str) -> Path:
     return Path(storage_uri)
 
 
-def _placeholder_table_extractor(pdf_path: Path) -> list[TableCandidate]:  # noqa: ARG001
-    return []
+_TABLE_LABEL_PATTERN = re.compile(
+    r"^\s*Table\s*(?P<index>\d+[A-Za-z]?)\s*[:.\-]?\s*(?P<caption>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _extract_text_lines(page: fitz.Page) -> list[tuple[str, tuple[float, float, float, float]]]:
+    text_lines: list[tuple[str, tuple[float, float, float, float]]] = []
+    text_page = page.get_text("dict")
+
+    for block in text_page.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+
+        for line in block.get("lines", []):
+            spans = line.get("spans", [])
+            text = "".join(span.get("text", "") for span in spans).strip()
+            if not text:
+                continue
+            bbox = tuple(line.get("bbox") or block.get("bbox") or (0.0, 0.0, 0.0, 0.0))
+            if len(bbox) != 4:
+                bbox = (0.0, 0.0, 0.0, 0.0)
+            text_lines.append((text, bbox))
+
+    return text_lines
+
+
+def _default_table_extractor(pdf_path: Path) -> list[TableCandidate]:
+    candidates: list[TableCandidate] = []
+
+    with fitz.open(pdf_path) as document:
+        for page_number, page in enumerate(document, start=1):
+            for text, bbox in _extract_text_lines(page):
+                match = _TABLE_LABEL_PATTERN.match(text)
+                if match is None:
+                    continue
+
+                label_index = match.group("index")
+                caption = match.group("caption").strip()
+                candidates.append(
+                    TableCandidate(
+                        page_number=page_number,
+                        table_label=f"Table {label_index}",
+                        caption=caption,
+                        storage_uri=f"{pdf_path.resolve().as_uri()}#page={page_number}",
+                        bbox_json={
+                            "x0": bbox[0],
+                            "y0": bbox[1],
+                            "x1": bbox[2],
+                            "y1": bbox[3],
+                        },
+                        structured_payload_json={},
+                    )
+                )
+
+    return candidates
 
 
 class TableExtractionPipeline:
-    """Persist table metadata produced by a placeholder extraction adapter."""
+    """Persist table metadata produced by a PDF caption extractor."""
 
     def __init__(
         self,
@@ -44,7 +100,7 @@ class TableExtractionPipeline:
         extractor: TableExtractor | None = None,
     ) -> None:
         self.session_factory = session_factory
-        self.extractor = extractor or _placeholder_table_extractor
+        self.extractor = extractor or _default_table_extractor
 
     def extract_and_store(self, paper_id: str) -> TableExtractionResult:
         with self.session_factory() as session:

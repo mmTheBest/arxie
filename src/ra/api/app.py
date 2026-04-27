@@ -405,6 +405,37 @@ def _get_or_create_shared_retriever(app: FastAPI) -> Any:
     return retriever
 
 
+async def _resolve_workspace_context(app: FastAPI, workspace_id: str | None) -> Any | None:
+    if not workspace_id:
+        return None
+
+    retriever = _get_or_create_shared_retriever(app)
+    get_workspace_context = getattr(retriever, "get_workspace_context", None)
+    if not callable(get_workspace_context):
+        raise RAAPIError(
+            status_code=503,
+            error="workspace_unavailable",
+            message="Workspace-backed retrieval is not configured for this runtime.",
+        )
+
+    try:
+        workspace = await get_workspace_context(workspace_id)
+    except ValueError as exc:
+        raise RAAPIError(
+            status_code=400,
+            error="invalid_input",
+            message=str(exc),
+        ) from exc
+
+    if workspace is None:
+        raise RAAPIError(
+            status_code=404,
+            error="workspace_not_found",
+            message=f"No workspace found for id: {workspace_id}",
+        )
+    return workspace
+
+
 def _get_or_create_proposal_session_service(app: FastAPI) -> ProposalSessionService:
     service = getattr(app.state, "proposal_session_service", None)
     if service is None:
@@ -939,11 +970,40 @@ def create_app(
                 message="Failed to initialize lit-review agent.",
             ) from exc
 
+        workspace = await _resolve_workspace_context(app, payload.workspace_id)
+        collection_id = payload.paperbase_collection_id
+        resolved_topic = payload.topic
+        pinned_paper_ids: list[str] = []
+        focus_note: str | None = None
+
+        if workspace is not None:
+            if collection_id is None:
+                collection_id = workspace.collection_id
+            if not resolved_topic:
+                resolved_topic = workspace.saved_query
+            pinned_paper_ids = list(getattr(workspace, "pinned_paper_ids", []) or [])
+            focus_note = getattr(workspace, "focus_note", None)
+
+        if not resolved_topic:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message="Provide topic or workspace_id with a saved query for lit review.",
+            )
+
+        agent_topic = resolved_topic
+        if focus_note:
+            agent_topic = f"{resolved_topic}\nFocus note: {focus_note}"
+
         try:
+            kwargs: dict[str, Any] = {}
             if _callable_supports_kwarg(agent.arun, "max_papers"):
-                review = await agent.arun(payload.topic, max_papers=payload.max_papers)
-            else:
-                review = await agent.arun(payload.topic)
+                kwargs["max_papers"] = payload.max_papers
+            if collection_id is not None and _callable_supports_kwarg(agent.arun, "collection_id"):
+                kwargs["collection_id"] = collection_id
+            if pinned_paper_ids and _callable_supports_kwarg(agent.arun, "pinned_paper_ids"):
+                kwargs["pinned_paper_ids"] = pinned_paper_ids
+            review = await agent.arun(agent_topic, **kwargs)
         except ValueError as exc:
             raise RAAPIError(
                 status_code=400,
@@ -957,7 +1017,7 @@ def create_app(
                 message=f"Lit review backend request failed: {type(exc).__name__}.",
             ) from exc
 
-        return LitReviewResponse(topic=payload.topic, review=review)
+        return LitReviewResponse(topic=resolved_topic, review=review)
 
     @app.post(
         "/query",
@@ -1348,10 +1408,19 @@ def create_app(
     ) -> ProposalEvidenceQueryResponse:
         mapper = _get_or_create_evidence_mapper(app)
         papers = [paper.to_domain() for paper in payload.papers]
-        if payload.paperbase_collection_id:
-            retriever = _get_or_create_shared_retriever(app)
+        retriever = _get_or_create_shared_retriever(app)
+        workspace = await _resolve_workspace_context(app, payload.workspace_id)
+        collection_id = payload.paperbase_collection_id
+        pinned_paper_ids = set(payload.pinned_paper_ids)
+
+        if workspace is not None:
+            if collection_id is None:
+                collection_id = workspace.collection_id
+            pinned_paper_ids.update(getattr(workspace, "pinned_paper_ids", []) or [])
+
+        if collection_id:
             collection_papers = await retriever.get_collection_papers(
-                payload.paperbase_collection_id,
+                collection_id,
                 query=payload.claim,
                 limit=50,
             )
@@ -1362,14 +1431,14 @@ def create_app(
             raise RAAPIError(
                 status_code=400,
                 error="invalid_input",
-                message="Provide papers or paperbase_collection_id for evidence mapping.",
+                message="Provide papers, paperbase_collection_id, or workspace_id for evidence mapping.",
             )
 
         try:
             mapped = mapper.map_evidence(
                 payload.claim,
                 papers,
-                pinned_paper_ids=set(payload.pinned_paper_ids),
+                pinned_paper_ids=pinned_paper_ids,
             )
         except ValueError as exc:
             raise RAAPIError(

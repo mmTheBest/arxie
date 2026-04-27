@@ -37,6 +37,61 @@ def test_local_library_ingest_api_enqueues_background_job(tmp_path: Path) -> Non
     assert payload["payload"]["collection_title"] == "Sample Library"
 
 
+def test_provider_identifier_ingest_api_enqueues_background_job(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+    client = TestClient(create_app(session_factory=session_factory))
+
+    response = client.post(
+        "/api/v1/ingest/providers",
+        json={
+            "collection_title": "scRegNet provider import",
+            "identifiers": [
+                {"kind": "doi", "value": "10.1038/example"},
+                {"kind": "arxiv", "value": "2503.01682v1"},
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert payload["job_type"] == "provider_identifier_ingest"
+    assert payload["status"] == "pending"
+    assert payload["payload"]["collection_title"] == "scRegNet provider import"
+    assert payload["payload"]["identifiers"] == [
+        {"kind": "doi", "value": "10.1038/example"},
+        {"kind": "arxiv", "value": "2503.01682v1"},
+    ]
+
+
+def test_provider_metadata_refresh_api_enqueues_background_job(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="crossref",
+            external_id="10.1038/example",
+            canonical_title="Original Title",
+            doi="10.1038/example",
+        )
+        paper_id = paper.id
+
+    client = TestClient(create_app(session_factory=session_factory))
+    response = client.post(
+        "/api/v1/ingest/refresh-metadata",
+        json={"paper_ids": [paper_id]},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert payload["job_type"] == "paper_metadata_refresh"
+    assert payload["status"] == "pending"
+    assert payload["payload"]["paper_ids"] == [paper_id]
+
+
 def test_collection_parse_api_enqueues_background_job(tmp_path: Path) -> None:
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n%stub pdf\n")

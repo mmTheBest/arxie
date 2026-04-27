@@ -3,12 +3,13 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from ra.api import create_app
-from ra.retrieval.unified import Paper
+from ra.retrieval.unified import Paper, WorkspaceContext
 
 
 class _CollectionRetrieverStub:
     def __init__(self) -> None:
         self.collection_calls: list[tuple[str, str | None, int]] = []
+        self.workspace_calls: list[str] = []
 
     async def search(self, query: str, limit: int, sources: tuple[str, ...]):  # noqa: ARG002
         return []
@@ -40,6 +41,18 @@ class _CollectionRetrieverStub:
             )
         ]
 
+    async def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None:
+        self.workspace_calls.append(workspace_id)
+        return WorkspaceContext(
+            workspace_id=workspace_id,
+            title="scRegNet workspace",
+            collection_id="collection-2",
+            saved_query="scRegNet perturbation models",
+            focus_note="Use persisted benchmark evidence.",
+            active_filters={},
+            pinned_paper_ids=["pb-1"],
+        )
+
     async def close(self) -> None:
         return None
 
@@ -62,4 +75,26 @@ def test_query_proposal_evidence_can_load_papers_from_paperbase_collection() -> 
     assert payload["bucket_counts"]["supporting"] >= 1
     assert retriever.collection_calls == [
         ("collection-1", "Perturbation transformers improve single-cell prediction quality.", 50)
+    ]
+
+
+def test_query_proposal_evidence_can_use_workspace_context_defaults() -> None:
+    retriever = _CollectionRetrieverStub()
+    client = TestClient(create_app(retriever_factory=lambda: retriever))
+
+    response = client.post(
+        "/api/proposal/evidence/query",
+        json={
+            "claim": "Perturbation transformers improve single-cell prediction quality.",
+            "workspace_id": "workspace-1",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["bucket_counts"]["supporting"] >= 1
+    assert payload["supporting"][0]["pinned"] is True
+    assert retriever.workspace_calls == ["workspace-1"]
+    assert retriever.collection_calls == [
+        ("collection-2", "Perturbation transformers improve single-cell prediction quality.", 50)
     ]

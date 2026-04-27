@@ -37,6 +37,9 @@ class _StubRetriever:
             raise self._error
         return self._paper_result
 
+    async def get_workspace_context(self, workspace_id: str):  # noqa: ARG002
+        return None
+
     async def search_batch(
         self,
         requests: list[tuple[str, int, tuple[str, ...]]],  # noqa: ARG002
@@ -208,6 +211,63 @@ def test_lit_review_endpoint_returns_structured_review():
     assert payload["topic"] == "graph neural networks"
     assert payload["review"] == expected_review
     assert observed["topic"] == "graph neural networks"
+
+
+def test_lit_review_endpoint_can_use_workspace_context_defaults():
+    observed: dict[str, object] = {}
+    expected_review = (
+        "## Introduction\nIntro.\n\n"
+        "## Thematic Groups\n- Theme A\n\n"
+        "## Key Findings\n- Finding\n\n"
+        "## Research Gaps\n- Gap\n\n"
+        "## Future Directions\n- Next steps"
+    )
+
+    class _WorkspaceRetriever(_StubRetriever):
+        async def get_workspace_context(self, workspace_id: str):  # noqa: ARG002
+            return type(
+                "WorkspaceContextStub",
+                (),
+                {
+                    "workspace_id": "workspace-1",
+                    "collection_id": "collection-1",
+                    "saved_query": "scRegNet benchmark",
+                    "focus_note": "Prioritize AUROC evidence.",
+                    "pinned_paper_ids": ["paper-1"],
+                },
+            )()
+
+    class _TrackingLitReviewAgent(_StubLitReviewAgent):
+        async def arun(
+            self,
+            topic: str,
+            max_papers: int | None = None,
+            *,
+            collection_id: str | None = None,
+            pinned_paper_ids: list[str] | None = None,
+        ) -> str:
+            observed["topic"] = topic
+            observed["max_papers"] = max_papers
+            observed["collection_id"] = collection_id
+            observed["pinned_paper_ids"] = list(pinned_paper_ids or [])
+            return await super().arun(topic)
+
+    app = _mk_app(
+        retriever_factory=lambda: _WorkspaceRetriever(),
+        lit_review_agent_factory=lambda: _TrackingLitReviewAgent(expected_review),
+    )
+    client = TestClient(app)
+
+    resp = client.post("/api/lit-review", json={"workspace_id": "workspace-1", "max_papers": 7})
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["topic"] == "scRegNet benchmark"
+    assert payload["review"] == expected_review
+    assert observed["topic"] == "scRegNet benchmark\nFocus note: Prioritize AUROC evidence."
+    assert observed["max_papers"] == 7
+    assert observed["collection_id"] == "collection-1"
+    assert observed["pinned_paper_ids"] == ["paper-1"]
 
 
 def test_lit_review_endpoint_maps_factory_errors_to_service_unavailable():

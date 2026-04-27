@@ -97,10 +97,23 @@ class Paper:
         return f"{authors_str} {year_str}. {self.title}.{venue_str}{id_str}".strip()
 
 
+@dataclass
+class WorkspaceContext:
+    workspace_id: str
+    title: str
+    collection_id: str | None
+    saved_query: str | None
+    focus_note: str | None
+    active_filters: dict[str, object]
+    pinned_paper_ids: list[str]
+
+
 class PaperbaseGatewayProtocol(Protocol):
     async def search(self, query: str, limit: int = 10) -> list[Paper]: ...
 
     async def get_paper(self, identifier: str) -> Paper | None: ...
+
+    async def get_papers_by_ids(self, paper_ids: list[str]) -> list[Paper]: ...
 
     async def get_stored_sections(self, identifier: str) -> list[Section]: ...
 
@@ -111,6 +124,8 @@ class PaperbaseGatewayProtocol(Protocol):
         query: str | None = None,
         limit: int = 50,
     ) -> list[Paper]: ...
+
+    async def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None: ...
 
     async def close(self) -> None: ...
 
@@ -254,6 +269,39 @@ class UnifiedRetriever:
                 exc_info=True,
             )
             return []
+
+    async def get_papers_by_ids(self, paper_ids: list[str]) -> list[Paper]:
+        if self.paperbase_gateway is None:
+            return []
+
+        try:
+            sanitized = [
+                sanitize_identifier(paper_id, field_name="paper_id", max_length=256)
+                for paper_id in paper_ids
+            ]
+            return await self.paperbase_gateway.get_papers_by_ids(sanitized)
+        except Exception:
+            logger.debug("Paperbase pinned-paper lookup failed.", exc_info=True)
+            return []
+
+    async def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None:
+        if self.paperbase_gateway is None:
+            return None
+
+        try:
+            safe_workspace_id = sanitize_identifier(
+                workspace_id,
+                field_name="workspace_id",
+                max_length=256,
+            )
+            return await self.paperbase_gateway.get_workspace_context(safe_workspace_id)
+        except Exception:
+            logger.debug(
+                "Paperbase workspace lookup failed for workspace_id=%r",
+                workspace_id,
+                exc_info=True,
+            )
+            return None
 
     async def get_collection_papers(
         self,

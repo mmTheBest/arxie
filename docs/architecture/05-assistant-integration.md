@@ -15,6 +15,9 @@ It queries Paperbase first and uses live provider retrieval second.
   - searches Paperbase before Semantic Scholar / arXiv
   - resolves paper ids from Paperbase before external lookups
   - returns stored Paperbase sections as full text before attempting PDF download
+  - can resolve pinned Paperbase papers by id for workspace-scoped synthesis
+  - can load saved workspace context from the Paperbase DB when the runtime
+    gateway supports it
 - `read_paper_fulltext` in `src/ra/tools/retrieval_tools.py` uses stored sections
   when available, then falls back to PDF download and parse.
 - Runtime entry points now construct a Paperbase-aware retriever:
@@ -34,21 +37,29 @@ The gateway is intentionally read-only and tolerant of missing local state.
 This keeps the assistant usable during local-first development while still moving
 the product toward a database-backed workflow.
 
+## Current Workspace Integration
+
+Saved workspaces are no longer only a UI concern.
+
+- `LitReviewRequest` can now take `workspace_id` and reuse the workspace
+  collection, saved query, focus note, and pinned papers
+- `ProposalEvidenceQueryRequest` can now take `workspace_id` and reuse the
+  workspace collection plus pinned-paper defaults for evidence bucketing
+- `LitReviewAgent` can seed synthesis with pinned papers before broader
+  collection or live search retrieval, so workspace state changes the actual
+  evidence surface instead of only decorating the UI
+
+This is the current V1 realization of “return later and continue from the same
+research context.” The assistant still remains tolerant of missing Paperbase
+state, but when a workspace exists it can now drive the retrieval defaults
+directly.
+
 ## Remaining Integration Work
 
-Task 11 covers retrieval and fulltext access. The next integration layer is Task 12:
+The biggest remaining assistant-facing gap is deeper structured-evidence use:
 
-- proposal evidence queries should consume Paperbase-backed structured facts
-- lit-review synthesis should explicitly use Paperbase collections, annotations, and
-  extraction profiles instead of only the generic retrieval tools
-
-## Workspace Implication
-
-The new saved-workspace UI is intentionally a product layer, not a second assistant
-stack.
-
-- workspaces store durable research context over Paperbase collections
-- the assistant layer should eventually read that context directly when a user asks
-  Arxie to continue a prior investigation
-- pinned papers, saved queries, and focus notes are now part of the expected
-  user-facing state model even though the CLI/agent layer does not consume them yet
+- proposal and lit-review generation should increasingly consume stored result
+  rows, figures, tables, and evidence spans directly instead of only paper
+  titles/abstracts/fulltext sections
+- the chat and answer flows should eventually accept workspace-scoped execution
+  context too, not just the lit-review and proposal evidence paths

@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from paperbase.db.models import CollectionPaper
 from paperbase.db.models import Paper as PaperRecord
 from paperbase.db.models import Section as PaperSectionRecord
+from paperbase.db.models import Workspace as WorkspaceRecord
 from paperbase.db.session import make_session_factory
 from ra.parsing import Section
-from ra.retrieval.unified import Paper, normalize_arxiv_id, normalize_doi
+from ra.retrieval.unified import Paper, WorkspaceContext, normalize_arxiv_id, normalize_doi
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,25 @@ class PaperbaseGateway:
                 for section in sections
             ]
 
+    async def get_papers_by_ids(self, paper_ids: list[str]) -> list[Paper]:
+        return await asyncio.to_thread(self._get_papers_by_ids_sync, paper_ids)
+
+    def _get_papers_by_ids_sync(self, paper_ids: list[str]) -> list[Paper]:
+        if not paper_ids:
+            return []
+
+        with self.session_factory() as session:
+            papers: list[Paper] = []
+            for paper_id in paper_ids:
+                record = session.get(PaperRecord, paper_id)
+                if record is None:
+                    continue
+                abstract_override = None
+                if not record.abstract:
+                    abstract_override = _abstract_from_sections(session, record.id)
+                papers.append(_to_ra_paper(record, abstract_override=abstract_override))
+            return papers
+
     async def get_collection_papers(
         self,
         collection_id: str,
@@ -206,6 +226,24 @@ class PaperbaseGateway:
 
             ranked.sort(key=lambda item: (-item[0], item[1], item[2].title.lower()))
             return [paper for _, _, paper in ranked[:limit]]
+
+    async def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None:
+        return await asyncio.to_thread(self._get_workspace_context_sync, workspace_id)
+
+    def _get_workspace_context_sync(self, workspace_id: str) -> WorkspaceContext | None:
+        with self.session_factory() as session:
+            workspace = session.get(WorkspaceRecord, workspace_id)
+            if workspace is None:
+                return None
+            return WorkspaceContext(
+                workspace_id=workspace.id,
+                title=workspace.title,
+                collection_id=workspace.collection_id,
+                saved_query=workspace.saved_query,
+                focus_note=workspace.focus_note,
+                active_filters=dict(workspace.active_filters_json or {}),
+                pinned_paper_ids=list(workspace.pinned_paper_ids_json or []),
+            )
 
     async def close(self) -> None:
         return None

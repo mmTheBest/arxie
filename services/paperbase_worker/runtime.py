@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from paperbase.db.repositories import BackgroundJobRepository
 from paperbase.extract.runner import CollectionExtractionRunner
 from paperbase.ingest.local_library import import_local_pdf_directory
+from paperbase.ingest.provider_identifiers import (
+    IdentifierInput,
+    ingest_provider_identifiers,
+    refresh_paper_metadata,
+)
 from paperbase.parsing.runner import CollectionParseRunner
 from paperbase.search.runtime import PaperbaseSearchReindexer
 
@@ -25,11 +30,13 @@ class PaperbaseWorker:
         search_backend: object | None = None,
         extraction_client_factory: Callable[[], object] | None = None,
         parser_factory: Callable[[], object] | None = None,
+        provider_resolver: object | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.search_backend = search_backend
         self.extraction_client_factory = extraction_client_factory
         self.parser_factory = parser_factory
+        self.provider_resolver = provider_resolver
 
     def process_next_job(self) -> str | None:
         with self.session_factory() as session:
@@ -63,6 +70,10 @@ class PaperbaseWorker:
             return self._execute_local_library_ingest(payload)
         if job_type == "collection_parse":
             return self._execute_collection_parse(payload)
+        if job_type == "provider_identifier_ingest":
+            return self._execute_provider_identifier_ingest(payload)
+        if job_type == "paper_metadata_refresh":
+            return self._execute_paper_metadata_refresh(payload)
         raise RuntimeError(f"Unsupported background job type: {job_type}")
 
     def _execute_search_reindex(self) -> dict[str, Any]:
@@ -127,4 +138,42 @@ class PaperbaseWorker:
             "skipped_paper_ids": list(summary.skipped_paper_ids),
             "section_count": summary.section_count,
             "chunk_count": summary.chunk_count,
+            "figure_count": summary.figure_count,
+            "table_count": summary.table_count,
+        }
+
+    def _execute_provider_identifier_ingest(self, payload: dict[str, Any]) -> dict[str, Any]:
+        identifiers = [
+            IdentifierInput(kind=str(item["kind"]), value=str(item["value"]))
+            for item in list(payload.get("identifiers") or [])
+        ]
+        result = ingest_provider_identifiers(
+            identifiers=identifiers,
+            session_factory=self.session_factory,
+            resolver=self.provider_resolver,
+            owner_id=str(payload.get("owner_id") or "local-user"),
+            collection_id=payload.get("collection_id"),
+            collection_title=payload.get("collection_title"),
+            collection_description=payload.get("collection_description"),
+        )
+        return {
+            "collection_id": result.collection_id,
+            "collection_title": result.collection_title,
+            "requested_count": result.requested_count,
+            "imported_papers": result.imported_papers,
+            "reused_papers": result.reused_papers,
+            "paper_ids": list(result.paper_ids),
+            "skipped_identifiers": list(result.skipped_identifiers),
+        }
+
+    def _execute_paper_metadata_refresh(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = refresh_paper_metadata(
+            paper_ids=[str(paper_id) for paper_id in list(payload.get("paper_ids") or [])],
+            session_factory=self.session_factory,
+            resolver=self.provider_resolver,
+        )
+        return {
+            "requested_count": result.requested_count,
+            "refreshed_papers": result.refreshed_papers,
+            "skipped_paper_ids": list(result.skipped_paper_ids),
         }
