@@ -71,6 +71,7 @@ def create_app(
     app.state.job_dispatcher = job_dispatcher
     app.state.embedding_provider = embedding_provider
     app.state.dependency_checker = resolved_dependency_checker
+    app.state.upload_staging_dir = Path(config.upload_staging_dir)
 
     register_exception_handlers(app)
     app.mount("/ui", StaticFiles(directory=Path(STATIC_DIR)), name="paperbase-ui")

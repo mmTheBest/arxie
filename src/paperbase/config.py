@@ -22,6 +22,7 @@ class PaperbaseConfig:
     object_store_access_key: str | None = None
     object_store_secret_key: str | None = None
     object_store_local_root: str = "data/object-store"
+    upload_staging_dir: str = "data/uploads/paperbase-ingest"
     download_cache_dir: str = "data/cache/paperbase-downloads"
     download_cache_ttl_seconds: int = 86400
     embedding_provider: str = "auto"
@@ -71,6 +72,9 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         ),
         object_store_local_root=(
             resolved_env.get("PAPERBASE_OBJECT_STORE_LOCAL_ROOT") or "data/object-store"
+        ).strip(),
+        upload_staging_dir=(
+            resolved_env.get("PAPERBASE_UPLOAD_STAGING_DIR") or "data/uploads/paperbase-ingest"
         ).strip(),
         download_cache_dir=(
             resolved_env.get("PAPERBASE_DOWNLOAD_CACHE_DIR") or "data/cache/paperbase-downloads"

@@ -48,12 +48,49 @@
               <button id="extract-button" class="action-button">Queue Extraction</button>
             </div>
           </div>
+          <form id="local-library-upload-form" class="inline-form-stack">
+            <div class="inline-form-copy">
+              <p class="panel-kicker">Recommended Import</p>
+              <h3>Upload a local PDF folder</h3>
+              <p class="muted">
+                Best for the default Docker stack. Select a folder from your machine and Arxie will ingest it into a collection.
+              </p>
+            </div>
+            <label class="field-label" for="local-library-upload-input">PDF folder</label>
+            <input
+              id="local-library-upload-input"
+              name="files"
+              type="file"
+              accept=".pdf,application/pdf"
+              webkitdirectory
+              directory
+              multiple
+            />
+            <label class="field-label" for="local-library-upload-title-input">Collection title</label>
+            <input
+              id="local-library-upload-title-input"
+              name="collection_title"
+              type="text"
+              placeholder="e.g. scRegNet local corpus"
+              autocomplete="off"
+            />
+            <label class="field-label" for="local-library-upload-description-input">Description</label>
+            <textarea
+              id="local-library-upload-description-input"
+              name="collection_description"
+              rows="3"
+              placeholder="Optional note about this uploaded paper collection"
+            ></textarea>
+            <button id="local-library-upload-button" type="submit" class="action-button action-button-primary">
+              Upload PDF Folder
+            </button>
+          </form>
           <form id="local-library-form" class="inline-form-stack">
             <div class="inline-form-copy">
-              <p class="panel-kicker">Local Import</p>
-              <h3>Ingest a paper folder</h3>
+              <p class="panel-kicker">Advanced Import</p>
+              <h3>Import by host filesystem path</h3>
               <p class="muted">
-                Point Arxie at a local PDF directory, create a collection, then parse and extract it here.
+                Use this when the API and worker can already see the same host path, such as local-process mode.
               </p>
             </div>
             <label class="field-label" for="local-library-source-input">Source directory</label>

@@ -45,6 +45,39 @@ def test_local_library_ingest_api_enqueues_background_job(tmp_path: Path) -> Non
     assert payload["payload"]["collection_title"] == "Sample Library"
 
 
+def test_local_library_upload_api_stages_uploaded_pdfs_and_enqueues_background_job(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PAPERBASE_UPLOAD_STAGING_DIR", str(tmp_path / "uploads"))
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+    client = TestClient(create_app(session_factory=session_factory))
+
+    response = client.post(
+        "/api/v1/ingest/local-library-upload",
+        data={
+            "collection_title": "Uploaded Library",
+            "collection_description": "Uploaded from browser.",
+        },
+        files=[
+            ("files", ("nested/paper-one.pdf", b"%PDF-1.4\n%stub pdf\n", "application/pdf")),
+            ("files", ("paper-two.pdf", b"%PDF-1.4\n%stub pdf\n", "application/pdf")),
+        ],
+    )
+
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert payload["job_type"] == "local_library_ingest"
+    assert payload["status"] == "pending"
+    assert payload["payload"]["collection_title"] == "Uploaded Library"
+    staged_dir = Path(payload["payload"]["source_dir"])
+    assert staged_dir.exists()
+    assert (staged_dir / "nested" / "paper-one.pdf").exists()
+    assert (staged_dir / "paper-two.pdf").exists()
+
+
 def test_provider_identifier_ingest_api_enqueues_background_job(tmp_path: Path) -> None:
     database_path = tmp_path / "paperbase.sqlite3"
     initialize_database(f"sqlite:///{database_path}")

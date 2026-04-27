@@ -97,12 +97,15 @@ docker compose -f infra/docker-compose.paperbase.yml up -d paperbase-api paperba
 The browser workspace is now enough for the single-user local workflow:
 
 1. open `http://localhost:8080/app`
-2. in **Collections**, use **Import Local Folder**
-3. enter an absolute directory containing PDFs and optionally a collection title
+2. in **Collections**, use **Upload PDF Folder**
+3. select a local folder containing PDFs and optionally set a collection title
 4. wait for the ingest job to finish in **Jobs**
 5. select the imported collection, then run **Queue Parse**
 6. run **Queue Extraction** once parse is complete
 7. browse papers, chunk hits, artifacts, limitations, and saved workspaces from the same dashboard
+
+If you are running the API and worker directly on the host instead of in Docker,
+the dashboard also exposes an advanced absolute-path import form.
 
 For scripted or operator-driven ingestion, see [docs/runbooks/paperbase-ingest.md](docs/runbooks/paperbase-ingest.md).
 

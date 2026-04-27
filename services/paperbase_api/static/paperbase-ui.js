@@ -3,6 +3,7 @@
     workspaces: "/api/v1/workspaces",
     collections: "/api/v1/collections",
     jobs: "/api/v1/jobs",
+    localLibraryUpload: "/api/v1/ingest/local-library-upload",
     localLibraryIngest: "/api/v1/ingest/local-library",
     search: "/api/v1/search/papers",
     searchChunks: "/api/v1/search/chunks",
@@ -45,6 +46,11 @@
     jobsList: document.getElementById("jobs-list"),
     searchForm: document.getElementById("search-form"),
     searchInput: document.getElementById("paper-search-input"),
+    localLibraryUploadForm: document.getElementById("local-library-upload-form"),
+    localLibraryUploadInput: document.getElementById("local-library-upload-input"),
+    localLibraryUploadTitleInput: document.getElementById("local-library-upload-title-input"),
+    localLibraryUploadDescriptionInput: document.getElementById("local-library-upload-description-input"),
+    localLibraryUploadButton: document.getElementById("local-library-upload-button"),
     localLibraryForm: document.getElementById("local-library-form"),
     localLibrarySourceInput: document.getElementById("local-library-source-input"),
     localLibraryTitleInput: document.getElementById("local-library-title-input"),
@@ -235,8 +241,8 @@
       throw new Error("A local source directory is required.");
     }
 
-    const collectionTitle = elements.localLibraryTitleInput.value.trim();
-    const collectionDescription = elements.localLibraryDescriptionInput.value.trim();
+    const collectionTitle = elements.localLibraryUploadTitleInput.value.trim();
+    const collectionDescription = elements.localLibraryUploadDescriptionInput.value.trim();
     const payload = await fetchJson(endpoints.localLibraryIngest, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -251,6 +257,41 @@
     renderJobs();
     updatePolling();
     setStatus(`Queued local import from ${sourceDir}.`);
+  }
+
+  async function queueLocalLibraryUploadIngest() {
+    const files = Array.from(elements.localLibraryUploadInput.files || []);
+    if (files.length === 0) {
+      throw new Error("Select at least one PDF file or folder to upload.");
+    }
+
+    const collectionTitle = elements.localLibraryTitleInput.value.trim();
+    const collectionDescription = elements.localLibraryDescriptionInput.value.trim();
+    const formData = new FormData();
+    for (const file of files) {
+      const relativePath = file.webkitRelativePath || file.name;
+      formData.append("files", file, relativePath);
+    }
+    if (collectionTitle) {
+      formData.append("collection_title", collectionTitle);
+    }
+    if (collectionDescription) {
+      formData.append("collection_description", collectionDescription);
+    }
+
+    const response = await fetch(endpoints.localLibraryUpload, {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || `Request failed: ${response.status}`);
+    }
+
+    state.jobs.unshift(payload.data);
+    renderJobs();
+    updatePolling();
+    setStatus(`Queued upload import for ${files.length} file(s).`);
   }
 
   async function queueExtraction() {
@@ -832,6 +873,15 @@
     event.preventDefault();
     try {
       await queueLocalLibraryIngest();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.localLibraryUploadForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await queueLocalLibraryUploadIngest();
     } catch (error) {
       setStatus(error.message);
     }

@@ -53,7 +53,7 @@ ship a real research workspace before a larger frontend stack is introduced.
 
 For the supported single-user local workflow, `/app` is now enough to:
 
-- import a local PDF folder into a new collection
+- upload a local PDF folder into a new collection
 - queue parse and extraction jobs for that collection
 - monitor background job completion
 - browse the resulting papers, structured evidence, and saved workspace state
