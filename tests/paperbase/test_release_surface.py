@@ -21,6 +21,7 @@ def test_env_example_exposes_paperbase_runtime_configuration() -> None:
         "PAPERBASE_OBJECT_STORE_ACCESS_KEY=",
         "PAPERBASE_OBJECT_STORE_SECRET_KEY=",
         "PAPERBASE_OBJECT_STORE_LOCAL_ROOT=",
+        "PAPERBASE_UPLOAD_STAGING_DIR=",
         "PAPERBASE_DOWNLOAD_CACHE_DIR=",
         "PAPERBASE_DOWNLOAD_CACHE_TTL_SECONDS=",
         "PAPERBASE_EMBEDDING_PROVIDER=",
@@ -44,6 +45,13 @@ def test_dockerfile_and_compose_include_runtime_services() -> None:
     assert "paperbase-api:" in compose_text
     assert "paperbase-worker:" in compose_text
     assert "env/paperbase.env" in compose_text
+
+
+def test_pyproject_exposes_local_launcher_entrypoint() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    pyproject_text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'arxie-local = "paperbase.launcher.cli:main"' in pyproject_text
 
 
 def test_release_surface_removes_legacy_runtime_and_prd_files() -> None:

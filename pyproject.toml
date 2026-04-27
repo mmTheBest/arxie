@@ -58,6 +58,7 @@ dev = [
 
 [project.scripts]
 ra = "ra.cli:main"
+arxie-local = "paperbase.launcher.cli:main"
 paperbase-api = "services.paperbase_api.main:main"
 paperbase-worker = "services.paperbase_worker.main:main"
 paperbase-db = "paperbase.db.cli:main"

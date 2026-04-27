@@ -92,6 +92,27 @@ docker compose -f infra/docker-compose.paperbase.yml up -d paperbase-api paperba
 - Liveness: `http://localhost:8080/livez`
 - Readiness: `http://localhost:8080/readyz`
 
+### Shortcut Launch
+
+If you want a more app-like local workflow, use the launcher command:
+
+```bash
+arxie-local run
+```
+
+That boots the local Docker stack, waits for readiness, and opens `/app`.
+
+Other useful shortcuts:
+
+```bash
+arxie-local open
+arxie-local down
+arxie-local install-shortcut
+```
+
+`arxie-local install-shortcut` writes a double-clickable `Arxie.command` launcher
+to your Desktop by default.
+
 ### 5. Use Your Own Local Paper Collection
 
 The browser workspace is now enough for the single-user local workflow:
