@@ -34,6 +34,7 @@ The current ingest and parse modules are:
 - `src/paperbase/parsing/runner.py` — collection-level parse orchestration for queued worker execution
 - `src/paperbase/parsing/store.py` — persistence of sections and chunks
 - `src/paperbase/parsing/chunker.py` — deterministic section chunking
+- `src/paperbase/storage.py` — resolution of local and remote PDF URIs into parser-readable local paths
 - `src/paperbase/extract/contracts.py` — typed bundle contract for structured LLM extraction outputs
 - `src/paperbase/extract/prompts.py` — prompt builder for field-specific extraction profiles
 - `src/paperbase/extract/client.py` — OpenAI-backed structured extraction client
@@ -97,6 +98,15 @@ The contract is now intentionally asynchronous:
 This keeps the current local-first extraction stack operational for curated
 collections without keeping long-running ingest, parse, or extraction work
 inside the API process.
+
+## Remote PDF Support
+
+Provider-backed ingest often stores public HTTP PDF URLs instead of only local
+filesystem paths. The runtime now resolves those remote PDF URIs into cached
+local files before parse, figure extraction, or table extraction runs begin.
+
+That matters operationally because provider ingest is now a real product path,
+not only a metadata registration path.
 
 ## Current Local Corpus Status
 

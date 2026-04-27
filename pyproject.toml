@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "academic-research-assistant"
-version = "0.1.0"
-description = "AI agent for answering academic literature questions with verifiable citations"
+version = "0.2.0"
+description = "AI research workspace with a persistent paper database, structured evidence extraction, hybrid search, and proposal workflows"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -40,6 +40,8 @@ dependencies = [
     "fastapi>=0.115.0",
     "alembic>=1.16.0",
     "SQLAlchemy>=2.0.0",
+    "psycopg[binary]>=3.2.0",
+    "uvicorn[standard]>=0.30.0",
 ]
 
 [project.optional-dependencies]
@@ -53,9 +55,14 @@ dev = [
 
 [project.scripts]
 ra = "ra.cli:main"
+paperbase-api = "services.paperbase_api.main:main"
+paperbase-worker = "services.paperbase_worker.main:main"
+paperbase-db = "paperbase.db.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["ra*", "paperbase*", "services*"]
+exclude = ["tests*", "docs*", "remotion*", "skills*", "tools*"]
 
 [tool.ruff]
 line-length = 100

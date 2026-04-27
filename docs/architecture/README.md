@@ -25,24 +25,24 @@ Contributor-facing runbooks live in `docs/runbooks/`.
 - [paperbase-ingest.md](../runbooks/paperbase-ingest.md)
 - [paperbase-reindex.md](../runbooks/paperbase-reindex.md)
 
-## Current Direction
+## Current Product State
 
-Arxie is being evolved into:
+Arxie is now shipped as:
 
 - a persistent research database layer named Paperbase
 - an assistant layer that runs on top of that database
 
 The user experiences one product, but the code should keep those responsibilities separate.
 
-Operationally, the current Paperbase branch is now split three ways:
+Operationally, the runtime is split three ways:
 
 - the canonical DB and domain logic live under `src/paperbase/`
 - the query/CRUD API contract lives under `services/paperbase_api/`
 - long-running ingest, parse, extraction, and reindex work is queued by the API
   and executed by `services/paperbase_worker/`
 
-The first product UI is now also served from `services/paperbase_api/` as a
-build-free web surface:
+The first product UI is served from `services/paperbase_api/` as a build-free
+web surface:
 
 - `/` is the public Arxie homepage
 - `/app` is the saved-workspace UI over the local Paperbase APIs
@@ -55,10 +55,14 @@ The workspace app also includes figure and table browse/comparison surfaces, so
 collaborators can inspect visual evidence without dropping into raw PDFs or ad
 hoc scripts.
 
-The current V1 surface now also exposes:
+The current release surface also exposes:
 
 - first-class `limitations` alongside findings, result rows, figures, and tables
 - provider-backed ingest by DOI, arXiv ID, and OpenAlex identifier
 - backend-first collection-aware search when a search backend is configured
 - workspace-aware `/answer` and `/api/chat` execution paths
 - a Paperbase structured-evidence tool that the Arxie agent can call directly
+- dependency-aware `/health`, `/livez`, and `/readyz` service probes
+- packaged `paperbase-api`, `paperbase-worker`, and `paperbase-db` entrypoints
+- a self-hostable Compose stack with PostgreSQL, Elasticsearch, MinIO, Redis,
+  API, worker, and migration service wiring

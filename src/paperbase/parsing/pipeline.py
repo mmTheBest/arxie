@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -13,6 +11,7 @@ from paperbase.db.models import PaperFile
 from paperbase.db.repositories import PaperFileRepository
 from paperbase.parsing.chunker import SimpleSectionChunker
 from paperbase.parsing.store import ParsedPaperStore
+from paperbase.storage import StorageResolver
 from ra.parsing.pdf_parser import PDFParser
 
 
@@ -22,15 +21,6 @@ class PaperParseResult:
     paper_file_id: str
     section_count: int
     chunk_count: int
-
-
-def _path_from_storage_uri(storage_uri: str) -> Path:
-    parsed = urlparse(storage_uri)
-    if parsed.scheme == "file":
-        return Path(unquote(parsed.path))
-    return Path(storage_uri)
-
-
 class PaperParsePipeline:
     """Load a stored PDF, parse it, chunk it, and persist the results."""
 
@@ -40,11 +30,13 @@ class PaperParsePipeline:
         session_factory: sessionmaker[Session],
         parser: PDFParser | None = None,
         chunker: SimpleSectionChunker | None = None,
+        storage_resolver: StorageResolver | None = None,
         max_chunk_characters: int = 1200,
         chunk_overlap_characters: int = 120,
     ) -> None:
         self.session_factory = session_factory
         self.parser = parser or PDFParser()
+        self.storage_resolver = storage_resolver or StorageResolver()
         self.chunker = chunker or SimpleSectionChunker(
             max_characters=max_chunk_characters,
             overlap_characters=chunk_overlap_characters,
@@ -54,7 +46,7 @@ class PaperParsePipeline:
         with self.session_factory() as session:
             file_record = self._get_pdf_file(session, paper_id, paper_file_id)
 
-        pdf_path = _path_from_storage_uri(file_record.storage_uri)
+        pdf_path = self.storage_resolver.resolve(file_record.storage_uri)
         document = self.parser.parse(pdf_path)
         sections = self.parser.extract_sections(document)
         chunks = self.chunker.chunk_sections(sections)

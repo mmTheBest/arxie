@@ -20,3 +20,9 @@ The product is not only a global corpus. Curated field-specific collections are 
 ## 5. Single-User Local-First, Not Single-User Forever
 
 Optimize v1 for one local operator, but do not hard-code assumptions that make future multi-user or larger hosted corpora expensive.
+
+## 6. Production Surface Must Be Explicit
+
+If a deployment needs migrations, background execution, search infrastructure,
+or health checks, those concerns must be first-class entrypoints and docs, not
+tribal knowledge hidden in feature branches.

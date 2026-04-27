@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from paperbase.version import get_version
+
 
 class ErrorResponse(BaseModel):
     error: str
@@ -16,7 +18,21 @@ class ErrorResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     service: str = "paperbase-api"
-    version: str = "0.1.0"
+    version: str = Field(default_factory=get_version)
+
+
+class DependencyStatusResponse(BaseModel):
+    name: str
+    ok: bool
+    detail: str
+    required: bool = True
+
+
+class ReadinessResponse(BaseModel):
+    status: Literal["ready", "not_ready"]
+    service: str = "paperbase-api"
+    version: str = Field(default_factory=get_version)
+    dependencies: list[DependencyStatusResponse] = Field(default_factory=list)
 
 
 class PaperSummaryResponse(BaseModel):

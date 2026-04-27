@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from paperbase.db.repositories import CollectionRepository
 from paperbase.figures.pipeline import FigureExtractionPipeline
 from paperbase.parsing.pipeline import PaperParsePipeline
+from paperbase.storage import StorageResolver
 from paperbase.tables.pipeline import TableExtractionPipeline
 
 
@@ -53,11 +54,13 @@ class CollectionParseRunner:
         table_count = 0
 
         for membership in memberships[:limit]:
+            storage_resolver = StorageResolver()
             try:
                 parser = self.parser_factory() if self.parser_factory is not None else None
                 result = PaperParsePipeline(
                     session_factory=self.session_factory,
                     parser=parser,
+                    storage_resolver=storage_resolver,
                 ).parse_paper(membership.paper_id)
             except Exception:  # noqa: BLE001
                 skipped_paper_ids.append(membership.paper_id)
@@ -67,12 +70,14 @@ class CollectionParseRunner:
             section_count += result.section_count
             chunk_count += result.chunk_count
             try:
-                figure_count += FigureExtractionPipeline(session_factory=self.session_factory).extract_and_store(
-                    membership.paper_id
-                ).figure_count
-                table_count += TableExtractionPipeline(session_factory=self.session_factory).extract_and_store(
-                    membership.paper_id
-                ).table_count
+                figure_count += FigureExtractionPipeline(
+                    session_factory=self.session_factory,
+                    storage_resolver=storage_resolver,
+                ).extract_and_store(membership.paper_id).figure_count
+                table_count += TableExtractionPipeline(
+                    session_factory=self.session_factory,
+                    storage_resolver=storage_resolver,
+                ).extract_and_store(membership.paper_id).table_count
             except Exception:  # noqa: BLE001
                 continue
 

@@ -140,6 +140,9 @@ just as internal library code:
 - `GET /api/v1/search/status`
 - `POST /api/v1/search/reindex`
 - `GET /api/v1/jobs/{job_id}`
+- `GET /health`
+- `GET /livez`
+- `GET /readyz`
 
 This closes the gap between “the runtime classes exist” and “the platform can
 actually trigger and observe reindexing.” The current behavior is now
@@ -160,3 +163,14 @@ The local Paperbase Console now uses these wider search surfaces directly:
 This is still a local-first operator surface. The queue is DB-backed today so it
 can grow later into Redis or a larger broker-backed worker topology without
 changing the product-facing job contract.
+
+## Production Search Posture
+
+The release stack now treats backend search as the intended deployed path:
+
+- Elasticsearch is part of the self-hosted Compose runtime
+- the packaged API and worker entrypoints are wired to the configured backend
+- readiness checks now surface backend availability directly
+
+SQL fallback remains in place for local development and tests, but the product
+runtime is no longer documented as SQL-only.

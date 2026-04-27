@@ -27,6 +27,10 @@ For local-first development, the same schema must run cleanly on SQLite so a sin
 
 Use object storage for PDFs, parser artifacts, and figure assets.
 
+The current runtime still supports direct local files and public provider PDF
+URLs, but the release stack now carries explicit object-store configuration and
+service wiring so storage can move out of the local filesystem cleanly.
+
 ### Search/read models
 
 Use Elasticsearch for keyword search, semantic retrieval, filtering, and comparison-oriented read models.
@@ -45,9 +49,11 @@ Even though v1 is local-first, the schema should preserve future support for:
 The first concrete Paperbase modules are:
 
 - `src/paperbase/config.py` — environment-driven platform configuration
+- `src/paperbase/version.py` — shared release version surface for API responses and packaging
 - `src/paperbase/db/models.py` — canonical relational schema, including normalized `venues`, `authors`, `paper_authors`, `tags`, and `paper_tags`
 - `src/paperbase/db/session.py` — engine and session factory helpers
 - `src/paperbase/db/bootstrap.py` — local schema initialization
+- `src/paperbase/db/cli.py` — packaged migration commands over Alembic
 - `src/paperbase/db/repositories.py` — write paths for papers, venue/author/tag metadata, extraction profiles, collections, and annotations
 
 These modules are intentionally thin. They should encode durable boundaries now without prematurely building API, worker, or ingest orchestration around them.
@@ -55,6 +61,9 @@ These modules are intentionally thin. They should encode durable boundaries now 
 The first service layer now exists at:
 
 - `services/paperbase_api/app.py` — FastAPI entrypoint for corpus search, fetch, fulltext, figures, and comparison routes
+- `services/paperbase_api/main.py` — packaged API process entrypoint
+- `services/paperbase_api/health.py` — readiness checks for DB, search, Redis, and object-store dependencies
 - `services/paperbase_api/routes/` — route groups for `search`, `papers`, `compare`, `collections`, `ingest`, `extraction`, `workspaces`, and `jobs`
+- `services/paperbase_worker/main.py` — packaged worker process entrypoint
 
 This service should stay independent from `src/ra/api/app.py`. Arxie will consume it through a gateway layer rather than sharing endpoint code directly.

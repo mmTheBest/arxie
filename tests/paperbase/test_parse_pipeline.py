@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 from sqlalchemy import select
 
 from paperbase.db.bootstrap import initialize_database
@@ -9,6 +10,7 @@ from paperbase.db.models import Chunk, Paper, PaperFile, Section
 from paperbase.db.session import make_session_factory
 from paperbase.ingest.local_library import import_local_pdf_directory
 from paperbase.parsing.pipeline import PaperParsePipeline
+from paperbase.storage import StorageResolver
 from ra.parsing.pdf_parser import ParsedDocument, Section as ParsedSection
 
 
@@ -72,3 +74,57 @@ def test_parse_pipeline_persists_sections_chunks_and_parser_status(tmp_path: Pat
     assert [section.title for section in sections] == ["Abstract", "Methods"]
     assert all(chunk.paper_id == paper.id for chunk in chunks)
     assert stored_file.parser_status == "parsed"
+
+
+def test_parse_pipeline_can_download_remote_pdf_before_parsing(tmp_path: Path) -> None:
+    pdf_bytes = b"%PDF-1.4\n%downloaded pdf\n"
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = session.execute(select(Paper)).scalar_one_or_none()
+        if paper is not None:
+            raise AssertionError("expected empty database")
+
+    with session_factory() as session:
+        remote_paper = Paper(
+            provider="crossref",
+            external_id="10.1000/example",
+            canonical_title="Remote PDF Paper",
+        )
+        session.add(remote_paper)
+        session.flush()
+        session.add(
+            PaperFile(
+                paper_id=remote_paper.id,
+                storage_uri="https://example.org/papers/remote.pdf",
+                file_kind="pdf",
+                mime_type="application/pdf",
+                parser_status="pending",
+            )
+        )
+        session.commit()
+        paper_id = remote_paper.id
+
+    class RecordingPDFParser(FakePDFParser):
+        def parse(self, pdf_path: Path) -> ParsedDocument:
+            assert pdf_path.exists()
+            assert pdf_path.read_bytes() == pdf_bytes
+            return super().parse(pdf_path)
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=pdf_bytes))
+    client = httpx.Client(transport=transport)
+    resolver = StorageResolver(client=client, cache_dir=tmp_path / "downloads")
+
+    pipeline = PaperParsePipeline(
+        session_factory=session_factory,
+        parser=RecordingPDFParser(),
+        storage_resolver=resolver,
+    )
+
+    result = pipeline.parse_paper(paper_id=paper_id)
+
+    assert result.paper_id == paper_id
+    downloaded_files = list((tmp_path / "downloads").glob("*.pdf"))
+    assert downloaded_files

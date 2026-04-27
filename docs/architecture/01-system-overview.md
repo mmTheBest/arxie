@@ -11,7 +11,7 @@ The system has two top-level layers:
 
 ## Initial Deployment Mode
 
-V1 is single-user and local-first.
+V1 is single-user and self-hosted, with local-first development support.
 
 That means:
 
@@ -32,6 +32,7 @@ But the architecture should leave room for:
 - `services/paperbase_api/` — platform API service
 - `services/paperbase_worker/` — async ingest/extract/index worker
 - `infra/` — local stack and environment setup
+- `Dockerfile` — shared production image for migrate, API, and worker commands
 
 ## Current V1 Flow
 
@@ -49,3 +50,18 @@ The finished local-first flow is now:
    review, and proposal evidence workflows
 
 This is now a real product path, not just a planned decomposition.
+
+## Self-Hosted Runtime
+
+The production stack now expects:
+
+- PostgreSQL for canonical storage
+- Elasticsearch for backend search and reindex
+- Redis for worker-adjacent runtime configuration and future queue expansion
+- MinIO for object-store-compatible asset storage
+- one Paperbase API service
+- one Paperbase worker service
+- one migration entrypoint before API and worker startup
+
+The code still supports SQLite fallback for local development and tests, but the
+intended deployed surface is the full self-hosted stack.

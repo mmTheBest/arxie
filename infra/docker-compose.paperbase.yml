@@ -1,6 +1,68 @@
 name: paperbase-local
 
 services:
+  paperbase-migrate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: paperbase-migrate
+    env_file:
+      - env/paperbase.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["paperbase-db", "upgrade"]
+
+  paperbase-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: paperbase-api
+    env_file:
+      - env/paperbase.env
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      paperbase-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+    command: ["paperbase-api"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - paperbase-app-data:/app/data
+
+  paperbase-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: paperbase-worker
+    env_file:
+      - env/paperbase.env
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      paperbase-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+    command: ["paperbase-worker"]
+    volumes:
+      - paperbase-app-data:/app/data
+
   postgres:
     image: postgres:17
     container_name: paperbase-postgres
@@ -49,6 +111,7 @@ services:
       - paperbase-redis-data:/data
 
 volumes:
+  paperbase-app-data:
   paperbase-postgres-data:
   paperbase-elasticsearch-data:
   paperbase-minio-data:

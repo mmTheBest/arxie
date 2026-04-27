@@ -61,3 +61,14 @@ This is the current V1 realization of “return later and continue from the same
 research context.” The assistant still remains tolerant of missing Paperbase
 state, but when a workspace exists it can now drive the retrieval defaults
 directly.
+
+## Release Boundary
+
+The current shipped product boundary is:
+
+- Paperbase API at `/`, `/app`, and `/api/v1/*`
+- Paperbase worker for queued ingest, parse, extraction, and reindex execution
+- legacy RA API and CLI still available as adjacent assistant interfaces
+
+That means collaborators should treat `src/ra` and `services/paperbase_api/`
+as two valid operator surfaces over the same product, not as competing systems.
