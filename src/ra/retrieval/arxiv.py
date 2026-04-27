@@ -50,6 +50,30 @@ class ArxivPaper:
     pdf_url: str | None
     doi: str | None
 
+    def to_seed_payload(self) -> dict[str, Any]:
+        """Return a provider-normalized payload for Paperbase ingest."""
+        year: int | None = None
+        if self.published and len(self.published) >= 4 and self.published[:4].isdigit():
+            year = int(self.published[:4])
+        return {
+            "provider": "arxiv",
+            "external_id": self.arxiv_id,
+            "canonical_title": self.title,
+            "abstract": self.abstract or None,
+            "publication_year": year,
+            "venue": "arXiv",
+            "doi": self.doi,
+            "arxiv_id": self.arxiv_id,
+            "authors": list(self.authors),
+            "source_payload": self.to_dict(),
+            "raw_metadata": {
+                "categories": list(self.categories),
+                "published": self.published,
+                "updated": self.updated,
+                "pdf_url": self.pdf_url,
+            },
+        }
+
     def to_citation(self) -> str:
         """Return a simple human-readable citation string."""
         authors_str = ", ".join(self.authors[:3])

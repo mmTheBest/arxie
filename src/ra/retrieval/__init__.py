@@ -2,6 +2,8 @@
 
 from ra.retrieval.arxiv import ArxivClient, ArxivPaper
 from ra.retrieval.chroma_cache import ChromaCache
+from ra.retrieval.paperbase_gateway import PaperbaseGateway
+from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.semantic_scholar import (
     Author,
     Paper as SemanticScholarPaper,
@@ -24,4 +26,7 @@ __all__ = [
     "ArxivPaper",
     # Cache
     "ChromaCache",
+    # Paperbase
+    "PaperbaseGateway",
+    "build_runtime_retriever",
 ]

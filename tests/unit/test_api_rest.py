@@ -37,6 +37,9 @@ class _StubRetriever:
             raise self._error
         return self._paper_result
 
+    async def get_workspace_context(self, workspace_id: str):  # noqa: ARG002
+        return None
+
     async def search_batch(
         self,
         requests: list[tuple[str, int, tuple[str, ...]]],  # noqa: ARG002
@@ -64,8 +67,10 @@ class _StubRetriever:
 class _StubAgent:
     def __init__(self, answer: str) -> None:
         self._answer = answer
+        self.queries: list[str] = []
 
     async def arun(self, query: str) -> str:  # noqa: ARG002
+        self.queries.append(query)
         return self._answer
 
 
@@ -166,6 +171,40 @@ def test_answer_endpoint_returns_agent_response():
     assert "## Answer" in payload["answer"]
 
 
+def test_answer_endpoint_can_use_workspace_context_to_scope_query():
+    class _WorkspaceRetriever(_StubRetriever):
+        async def get_workspace_context(self, workspace_id: str):  # noqa: ARG002
+            return type(
+                "WorkspaceContextStub",
+                (),
+                {
+                    "workspace_id": "workspace-1",
+                    "collection_id": "collection-1",
+                    "saved_query": "single-cell GRN benchmarking",
+                    "focus_note": "Prioritize limitations and AUROC evidence.",
+                    "active_filters": {"metric": "AUROC"},
+                    "pinned_paper_ids": ["paper-1", "paper-2"],
+                },
+            )()
+
+    agent = _StubAgent("## Answer\nscoped\n\n## References\nNone.")
+    app = _mk_app(
+        retriever_factory=lambda: _WorkspaceRetriever(),
+        agent_factory=lambda: agent,
+    )
+    client = TestClient(app)
+
+    resp = client.post(
+        "/answer",
+        json={"query": "What are the main limitations?", "workspace_id": "workspace-1"},
+    )
+
+    assert resp.status_code == 200
+    assert "single-cell GRN benchmarking" in agent.queries[0]
+    assert "Prioritize limitations and AUROC evidence." in agent.queries[0]
+    assert "What are the main limitations?" in agent.queries[0]
+
+
 def test_answer_endpoint_maps_agent_factory_errors_to_service_unavailable():
     def _failing_agent_factory() -> _StubAgent:
         raise ValueError("OPENAI_API_KEY missing")
@@ -208,6 +247,63 @@ def test_lit_review_endpoint_returns_structured_review():
     assert payload["topic"] == "graph neural networks"
     assert payload["review"] == expected_review
     assert observed["topic"] == "graph neural networks"
+
+
+def test_lit_review_endpoint_can_use_workspace_context_defaults():
+    observed: dict[str, object] = {}
+    expected_review = (
+        "## Introduction\nIntro.\n\n"
+        "## Thematic Groups\n- Theme A\n\n"
+        "## Key Findings\n- Finding\n\n"
+        "## Research Gaps\n- Gap\n\n"
+        "## Future Directions\n- Next steps"
+    )
+
+    class _WorkspaceRetriever(_StubRetriever):
+        async def get_workspace_context(self, workspace_id: str):  # noqa: ARG002
+            return type(
+                "WorkspaceContextStub",
+                (),
+                {
+                    "workspace_id": "workspace-1",
+                    "collection_id": "collection-1",
+                    "saved_query": "scRegNet benchmark",
+                    "focus_note": "Prioritize AUROC evidence.",
+                    "pinned_paper_ids": ["paper-1"],
+                },
+            )()
+
+    class _TrackingLitReviewAgent(_StubLitReviewAgent):
+        async def arun(
+            self,
+            topic: str,
+            max_papers: int | None = None,
+            *,
+            collection_id: str | None = None,
+            pinned_paper_ids: list[str] | None = None,
+        ) -> str:
+            observed["topic"] = topic
+            observed["max_papers"] = max_papers
+            observed["collection_id"] = collection_id
+            observed["pinned_paper_ids"] = list(pinned_paper_ids or [])
+            return await super().arun(topic)
+
+    app = _mk_app(
+        retriever_factory=lambda: _WorkspaceRetriever(),
+        lit_review_agent_factory=lambda: _TrackingLitReviewAgent(expected_review),
+    )
+    client = TestClient(app)
+
+    resp = client.post("/api/lit-review", json={"workspace_id": "workspace-1", "max_papers": 7})
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["topic"] == "scRegNet benchmark"
+    assert payload["review"] == expected_review
+    assert observed["topic"] == "scRegNet benchmark\nFocus note: Prioritize AUROC evidence."
+    assert observed["max_papers"] == 7
+    assert observed["collection_id"] == "collection-1"
+    assert observed["pinned_paper_ids"] == ["paper-1"]
 
 
 def test_lit_review_endpoint_maps_factory_errors_to_service_unavailable():
@@ -302,6 +398,52 @@ def test_chat_endpoint_routes_session_id_and_preserves_session_agent():
     assert len(instances) == 2
     assert instances[0].calls == [("What is RAG?", "sess-1"), ("And limitations?", "sess-1")]
     assert instances[1].calls == [("New thread", "sess-2")]
+
+
+def test_chat_endpoint_can_use_workspace_context_defaults():
+    class _WorkspaceRetriever(_StubRetriever):
+        async def get_workspace_context(self, workspace_id: str):  # noqa: ARG002
+            return type(
+                "WorkspaceContextStub",
+                (),
+                {
+                    "workspace_id": "workspace-1",
+                    "collection_id": "collection-1",
+                    "saved_query": "single-cell GRN benchmarking",
+                    "focus_note": "Stay within the curated corpus.",
+                    "active_filters": {"metric": "AUROC"},
+                    "pinned_paper_ids": [],
+                },
+            )()
+
+    class _TrackingChatAgent:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str | None]] = []
+
+        async def arun(self, query: str, session_id: str | None = None) -> str:
+            self.calls.append((query, session_id))
+            return "## Answer\nchat\n\n## References\nNone."
+
+    agent = _TrackingChatAgent()
+    app = _mk_app(
+        retriever_factory=lambda: _WorkspaceRetriever(),
+        agent_factory=lambda: agent,
+    )
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/chat",
+        json={
+            "query": "Compare the best methods.",
+            "session_id": "sess-1",
+            "workspace_id": "workspace-1",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert "single-cell GRN benchmarking" in agent.calls[0][0]
+    assert "Stay within the curated corpus." in agent.calls[0][0]
+    assert "Compare the best methods." in agent.calls[0][0]
 
 
 def test_chat_endpoint_requires_session_id():

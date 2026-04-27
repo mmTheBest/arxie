@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from tests.eval.qa_agent import ResearcherQAAgent
+import pytest
+
+ResearcherQAAgent = pytest.importorskip(
+    "tests.eval.qa_agent",
+    reason=(
+        "Optional QA eval helper is not part of the clean dev baseline. "
+        "Local-only eval workflows may provide it separately."
+    ),
+).ResearcherQAAgent
 
 
 class _MockResearchAgent:

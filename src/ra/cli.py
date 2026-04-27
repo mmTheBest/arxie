@@ -27,6 +27,7 @@ from typing import Any
 
 from ra.agents.lit_review_agent import LitReviewAgent
 from ra.agents.research_agent import ResearchAgent
+from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
@@ -208,14 +209,14 @@ async def _cmd_search(query: str, limit: int, source: str) -> list[dict[str, Any
     else:
         sources = ("semantic_scholar", "arxiv")
 
-    async with UnifiedRetriever() as r:
+    async with build_runtime_retriever() as r:
         papers = await r.search(query=query, limit=limit, sources=sources)
         return [_paper_to_jsonable(p) for p in papers]
 
 
 async def _cmd_get(identifier: str) -> dict[str, Any] | None:
     identifier = sanitize_identifier(identifier, field_name="identifier", max_length=256)
-    async with UnifiedRetriever() as r:
+    async with build_runtime_retriever() as r:
         p = await r.get_paper(identifier)
         return _paper_to_jsonable(p) if p else None
 

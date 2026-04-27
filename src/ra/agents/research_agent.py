@@ -30,6 +30,7 @@ from ra.citation import (
     ClaimConfidenceScorer,
     annotate_claim_with_confidence,
 )
+from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
 from ra.tools.retrieval_tools import make_retrieval_tools
@@ -78,6 +79,9 @@ Tool-use rules:
 - When a user asks about specific methods, results, experiments, discussion points,
   or conclusions from a paper, call read_paper_fulltext for that paper before
   answering.
+- When a user asks about extracted datasets, metrics, benchmark results, limitations,
+  figures, or tables for a paper already in Paperbase, call get_paper_structured_data
+  before answering.
 - Use forward citation chasing (get_paper_citations) to find follow-ups or validations when helpful.
 
 Uncertainty rules:
@@ -404,7 +408,7 @@ class ResearchAgent:
 
         self.llm = ChatOpenAI(model=self.model, api_key=config.openai_api_key, temperature=0)
 
-        self.retriever = UnifiedRetriever()
+        self.retriever = build_runtime_retriever()
         self.semantic_scholar = SemanticScholarClient(api_key=config.semantic_scholar_api_key)
         self.tools = make_retrieval_tools(
             retriever=self.retriever,

@@ -210,4 +210,48 @@ describe('proposal shell M2 integration smoke', () => {
       },
     );
   });
+
+  it('promotes a branch through the primary branch endpoint', async () => {
+    const fetchMock = vi
+      .fn<(input: URL | RequestInfo, init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          session_id: 'session-1',
+          branch_id: 'branch-a',
+          name: 'Branch A',
+          hypothesis: 'Hypothesis A',
+          scorecard: {
+            evidence_support: 0.7,
+            feasibility: 0.8,
+            risk: 0.3,
+            impact: 0.9,
+          },
+          confidence_label: 'high',
+          metadata: {},
+          parent_branch_id: null,
+          lineage: [],
+          is_primary: true,
+        }),
+      );
+
+    const client = createProposalShellM2Client({
+      apiBase: 'http://localhost:8000',
+      fetchImpl: fetchMock,
+    });
+
+    const promoted = await client.promoteBranch({
+      sessionId: 'session-1',
+      branchId: 'branch-a',
+    });
+
+    expect(promoted.branch_id).toBe('branch-a');
+    expect(promoted.is_primary).toBe(true);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8000/api/proposal/branches/session-1/branch-a/promote',
+      {
+        method: 'POST',
+      },
+    );
+  });
 });

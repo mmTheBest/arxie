@@ -1,0 +1,118 @@
+name: paperbase-local
+
+services:
+  paperbase-migrate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: paperbase-migrate
+    env_file:
+      - env/paperbase.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["paperbase-db", "upgrade"]
+
+  paperbase-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: paperbase-api
+    env_file:
+      - env/paperbase.env
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      paperbase-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+    command: ["paperbase-api"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - paperbase-app-data:/app/data
+
+  paperbase-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: paperbase-worker
+    env_file:
+      - env/paperbase.env
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      paperbase-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+    command: ["paperbase-worker"]
+    volumes:
+      - paperbase-app-data:/app/data
+
+  postgres:
+    image: postgres:17
+    container_name: paperbase-postgres
+    env_file:
+      - env/postgres.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - paperbase-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperbase -d paperbase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
+    container_name: paperbase-elasticsearch
+    env_file:
+      - env/elasticsearch.env
+    ports:
+      - "9200:9200"
+    volumes:
+      - paperbase-elasticsearch-data:/usr/share/elasticsearch/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: paperbase-minio
+    command: server /data --console-address ":9001"
+    env_file:
+      - env/minio.env
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - paperbase-minio-data:/data
+
+  redis:
+    image: redis:8
+    container_name: paperbase-redis
+    env_file:
+      - env/redis.env
+    ports:
+      - "6379:6379"
+    volumes:
+      - paperbase-redis-data:/data
+
+volumes:
+  paperbase-app-data:
+  paperbase-postgres-data:
+  paperbase-elasticsearch-data:
+  paperbase-minio-data:
+  paperbase-redis-data:
