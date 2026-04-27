@@ -37,7 +37,7 @@ The current ingest and parse modules are:
 - `src/paperbase/extract/contracts.py` — typed bundle contract for structured LLM extraction outputs
 - `src/paperbase/extract/prompts.py` — prompt builder for field-specific extraction profiles
 - `src/paperbase/extract/client.py` — OpenAI-backed structured extraction client
-- `src/paperbase/extract/pipeline.py` — persistence of datasets, methods, metrics, result rows, findings, glossary terms, engineering tricks, and evidence spans
+- `src/paperbase/extract/pipeline.py` — persistence of datasets, methods, metrics, result rows, findings, limitations, glossary terms, engineering tricks, and evidence spans
 - `src/paperbase/extract/runner.py` — collection-level orchestration for local-first extraction runs
 - `src/paperbase/figures/pipeline.py` — phase-1 caption-line figure extraction and persistence
 - `src/paperbase/tables/pipeline.py` — phase-1 caption-line table extraction and persistence
@@ -59,6 +59,8 @@ The first extraction pipeline should remain schema-constrained and replaceable:
 - persistence is handled inside Paperbase so Arxie and future workers reuse the same storage contract
 - collection runners are the execution engine behind worker-dispatched extraction jobs
 - glossary terms are stored as first-class canonical entities because field-specific databases often need shared vocabulary and benchmark definitions alongside result rows
+- limitations are stored as first-class canonical entities because the product
+  promise includes inspectable paper caveats and failure modes, not only positive findings
 
 ## Current API Surface
 

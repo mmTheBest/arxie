@@ -17,7 +17,9 @@ from paperbase.search.query_builder import build_search_query
 
 def test_index_templates_define_expected_mappings() -> None:
     assert "embedding" in paper_index_template()["mappings"]["properties"]
+    assert "collection_ids" in paper_index_template()["mappings"]["properties"]
     assert "paper_id" in chunk_index_template()["mappings"]["properties"]
+    assert "collection_ids" in chunk_index_template()["mappings"]["properties"]
     assert "caption" in figure_index_template()["mappings"]["properties"]
     assert "table_label" in table_index_template()["mappings"]["properties"]
 
@@ -38,6 +40,7 @@ def test_indexer_builds_documents_for_papers_chunks_figures_and_tables() -> None
         datasets=["scRegNetBench"],
         methods=["scLong"],
         metrics=["AUROC"],
+        collection_ids=["collection-1"],
         extraction_state="extracted",
     )
     chunk_doc = build_chunk_document(
@@ -46,6 +49,7 @@ def test_indexer_builds_documents_for_papers_chunks_figures_and_tables() -> None
         title="scLong",
         section_title="Methods",
         text="We evaluate AUROC on scRegNetBench.",
+        collection_ids=["collection-1"],
     )
     figure_doc = build_figure_document(
         figure_id="figure-1",
@@ -53,6 +57,7 @@ def test_indexer_builds_documents_for_papers_chunks_figures_and_tables() -> None
         title="scLong",
         figure_label="Figure 1",
         caption="Model architecture.",
+        collection_ids=["collection-1"],
     )
     table_doc = build_table_document(
         table_id="table-1",
@@ -61,13 +66,18 @@ def test_indexer_builds_documents_for_papers_chunks_figures_and_tables() -> None
         table_label="Table 1",
         caption="Benchmark comparison table.",
         structured_payload={"rows": 2},
+        collection_ids=["collection-1"],
     )
 
     assert paper_doc["paper_id"] == "paper-1"
     assert paper_doc["provider"] == "local_filesystem"
     assert paper_doc["metrics"] == ["AUROC"]
+    assert paper_doc["collection_ids"] == ["collection-1"]
     assert chunk_doc["section_title"] == "Methods"
+    assert chunk_doc["collection_ids"] == ["collection-1"]
+    assert figure_doc["collection_ids"] == ["collection-1"]
     assert figure_doc["figure_label"] == "Figure 1"
+    assert table_doc["collection_ids"] == ["collection-1"]
     assert table_doc["table_label"] == "Table 1"
     assert table_doc["structured_payload"]["rows"] == 2
 
@@ -77,6 +87,7 @@ def test_query_builder_supports_text_filters_and_vector_query() -> None:
         query_text="gene regulatory",
         filters={
             "year_gte": 2024,
+            "collection_ids": ["collection-1"],
             "venue": ["Nature"],
             "authors": ["Alice Smith"],
             "tags": ["scRegNet"],
@@ -90,6 +101,7 @@ def test_query_builder_supports_text_filters_and_vector_query() -> None:
 
     assert query["bool"]["must"][0]["multi_match"]["query"] == "gene regulatory"
     assert {"range": {"publication_year": {"gte": 2024}}} in query["bool"]["filter"]
+    assert {"terms": {"collection_ids": ["collection-1"]}} in query["bool"]["filter"]
     assert {"terms": {"venue.keyword": ["Nature"]}} in query["bool"]["filter"]
     assert {"terms": {"authors.keyword": ["Alice Smith"]}} in query["bool"]["filter"]
     assert {"terms": {"metrics.keyword": ["AUROC"]}} in query["bool"]["filter"]

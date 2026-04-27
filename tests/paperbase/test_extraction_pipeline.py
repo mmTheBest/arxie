@@ -12,6 +12,7 @@ from paperbase.db.models import (
     ExtractionRun,
     Finding,
     GlossaryTerm,
+    Limitation,
     Method,
     Metric,
     ResultRow,
@@ -55,6 +56,7 @@ def test_extraction_pipeline_persists_structured_entities_and_evidence(tmp_path:
         EngineeringTrickExtraction,
         EvidenceSpanPayload,
         FindingExtraction,
+        LimitationExtraction,
         MethodExtraction,
         MetricExtraction,
         ResultExtraction,
@@ -92,6 +94,12 @@ def test_extraction_pipeline_persists_structured_entities_and_evidence(tmp_path:
                 findings=[
                     FindingExtraction(
                         statement="scLong improves AUROC on scRegNetBench.",
+                        evidence_spans=[evidence],
+                    )
+                ],
+                limitations=[
+                    LimitationExtraction(
+                        statement="The benchmark only covers a small number of curated cell states.",
                         evidence_spans=[evidence],
                     )
                 ],
@@ -154,6 +162,7 @@ def test_extraction_pipeline_persists_structured_entities_and_evidence(tmp_path:
         assert session.execute(select(Metric)).scalar_one().display_name == "AUROC"
         assert session.execute(select(ResultRow)).scalar_one().value_numeric == 0.91
         assert session.execute(select(Finding)).scalar_one().statement.startswith("scLong improves")
+        assert session.execute(select(Limitation)).scalar_one().statement.startswith("The benchmark only covers")
         assert session.execute(select(GlossaryTerm)).scalar_one().term == "AUROC"
         assert session.execute(select(EngineeringTrick)).scalar_one().title == "Context pretraining"
         evidence_spans = session.execute(select(EvidenceSpan)).scalars().all()

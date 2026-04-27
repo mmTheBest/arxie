@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from paperbase.db.bootstrap import initialize_database
 from paperbase.db.models import Chunk, Dataset, ExtractionRun, Figure, Method, Metric, PaperFile, Section, TableArtifact
-from paperbase.db.repositories import PaperRepository
+from paperbase.db.repositories import CollectionRepository, PaperRepository
 from paperbase.db.session import make_session_factory
 from services.paperbase_api.app import create_app
 
@@ -47,6 +47,12 @@ def test_reindexer_builds_and_pushes_paper_chunk_figure_and_table_documents(tmp_
             authors=["Alice Smith", "Bob Lee"],
             tags=["scRegNet"],
         )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated field corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper.id)
         session.add_all(
             [
                 PaperFile(
@@ -113,6 +119,7 @@ def test_reindexer_builds_and_pushes_paper_chunk_figure_and_table_documents(tmp_
     table_docs = next(documents for index_name, documents in backend.bulk_calls if index_name == "paperbase-tables")
     assert paper_docs[0]["authors"] == ["Alice Smith", "Bob Lee"]
     assert paper_docs[0]["tags"] == ["scRegNet"]
+    assert len(paper_docs[0]["collection_ids"]) == 1
     assert paper_docs[0]["datasets"] == ["scRegNetBench"]
     assert paper_docs[0]["methods"] == ["scLong"]
     assert paper_docs[0]["metrics"] == ["AUROC"]
@@ -151,6 +158,7 @@ def test_search_api_uses_configured_backend_when_available(tmp_path) -> None:
         "/api/v1/search/papers",
         params={
             "q": "gene regulatory",
+            "collection_id": "collection-1",
             "author": "Alice Smith",
             "tag": "scRegNet",
             "dataset": "scRegNetBench",
@@ -164,6 +172,7 @@ def test_search_api_uses_configured_backend_when_available(tmp_path) -> None:
     assert response.json()["data"][0]["id"] == "paper-1"
     assert response.json()["data"][0]["authors"] == ["Alice Smith", "Bob Lee"]
     assert backend.search_calls[0][0] == "paperbase-papers"
+    assert {"terms": {"collection_ids": ["collection-1"]}} in backend.search_calls[0][1]["bool"]["filter"]
     assert {"terms": {"authors.keyword": ["Alice Smith"]}} in backend.search_calls[0][1]["bool"]["filter"]
     assert {"terms": {"metrics.keyword": ["AUROC"]}} in backend.search_calls[0][1]["bool"]["filter"]
     assert {"term": {"extraction_state": "extracted"}} in backend.search_calls[0][1]["bool"]["filter"]
@@ -206,13 +215,20 @@ def test_search_api_uses_configured_backend_for_chunk_and_artifact_surfaces(tmp_
 
     client = TestClient(create_app(session_factory=session_factory, search_backend=backend))
 
-    chunk_response = client.get("/api/v1/search/chunks", params={"q": "gene regulatory"})
-    artifact_response = client.get("/api/v1/search/artifacts", params={"q": "benchmark", "kind": "all"})
+    chunk_response = client.get(
+        "/api/v1/search/chunks",
+        params={"q": "gene regulatory", "collection_id": "collection-1"},
+    )
+    artifact_response = client.get(
+        "/api/v1/search/artifacts",
+        params={"q": "benchmark", "kind": "all", "collection_id": "collection-1"},
+    )
 
     assert chunk_response.status_code == 200
     assert artifact_response.status_code == 200
     assert chunk_response.json()["data"][0]["chunk_id"] == "chunk-1"
     assert {item["artifact_type"] for item in artifact_response.json()["data"]} == {"figure", "table"}
     assert backend.search_calls[0][0] == "paperbase-chunks"
+    assert {"terms": {"collection_ids": ["collection-1"]}} in backend.search_calls[0][1]["bool"]["filter"]
     assert backend.search_calls[0][1]["knn"]["field"] == "embedding"
     assert {call[0] for call in backend.search_calls[1:]} == {"paperbase-figures", "paperbase-tables"}

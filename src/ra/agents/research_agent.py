@@ -79,6 +79,9 @@ Tool-use rules:
 - When a user asks about specific methods, results, experiments, discussion points,
   or conclusions from a paper, call read_paper_fulltext for that paper before
   answering.
+- When a user asks about extracted datasets, metrics, benchmark results, limitations,
+  figures, or tables for a paper already in Paperbase, call get_paper_structured_data
+  before answering.
 - Use forward citation chasing (get_paper_citations) to find follow-ups or validations when helpful.
 
 Uncertainty rules:

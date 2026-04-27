@@ -31,6 +31,7 @@ def paper_index_template() -> dict[str, object]:
                 "datasets": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "methods": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "metrics": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "collection_ids": {"type": "keyword"},
                 "extraction_state": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
@@ -48,6 +49,7 @@ def chunk_index_template() -> dict[str, object]:
                 "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "section_title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "text": {"type": "text"},
+                "collection_ids": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
         },
@@ -64,6 +66,7 @@ def figure_index_template() -> dict[str, object]:
                 "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "figure_label": {"type": "keyword"},
                 "caption": {"type": "text"},
+                "collection_ids": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
         },
@@ -81,6 +84,7 @@ def table_index_template() -> dict[str, object]:
                 "table_label": {"type": "keyword"},
                 "caption": {"type": "text"},
                 "structured_payload": {"type": "object", "enabled": False},
+                "collection_ids": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
         },

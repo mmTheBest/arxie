@@ -16,9 +16,11 @@ class DummyPaperbaseGateway:
     search_results: list[Paper] = field(default_factory=list)
     paper: Paper | None = None
     sections: list[Section] = field(default_factory=list)
+    structured_data: dict[str, object] | None = None
     search_calls: list[tuple[str, int]] = field(default_factory=list)
     get_paper_calls: list[str] = field(default_factory=list)
     get_sections_calls: list[str] = field(default_factory=list)
+    get_structured_data_calls: list[str] = field(default_factory=list)
 
     async def search(self, query: str, limit: int = 10) -> list[Paper]:
         self.search_calls.append((query, limit))
@@ -31,6 +33,10 @@ class DummyPaperbaseGateway:
     async def get_stored_sections(self, identifier: str) -> list[Section]:
         self.get_sections_calls.append(identifier)
         return list(self.sections)
+
+    async def get_paper_structured_data(self, identifier: str) -> dict[str, object] | None:
+        self.get_structured_data_calls.append(identifier)
+        return dict(self.structured_data or {}) if self.structured_data is not None else None
 
     async def close(self) -> None:
         return None
@@ -225,6 +231,47 @@ async def test_read_paper_fulltext_uses_stored_paperbase_sections_before_pdf_dow
     assert payload["abstract"] == "Abstract section"
     assert payload["methods"] == "Methods section"
     assert gateway.get_sections_calls == ["pb-1"]
+
+
+@pytest.mark.asyncio
+async def test_get_paper_structured_data_tool_uses_paperbase_gateway():
+    paper = Paper(
+        id="pb-1",
+        title="scLong",
+        abstract="local corpus result",
+        authors=[],
+        year=2026,
+        venue="Nature",
+        citation_count=None,
+        pdf_url=None,
+        doi=None,
+        arxiv_id=None,
+        source="both",
+    )
+    gateway = DummyPaperbaseGateway(
+        paper=paper,
+        structured_data={
+            "paper_id": "pb-1",
+            "methods": [{"display_name": "scLong"}],
+            "limitations": [{"statement": "Evaluation is limited to curated datasets."}],
+            "result_rows": [{"metric": "AUROC", "value_numeric": 0.91}],
+        },
+    )
+    retriever = UnifiedRetriever(
+        semantic_scholar=DummySemanticScholarClient(),
+        arxiv=DummyArxivClient(),
+        paperbase_gateway=gateway,
+    )
+    tools = make_retrieval_tools(retriever=retriever)
+    tool = next(t for t in tools if t.name == "get_paper_structured_data")
+
+    raw = await tool.ainvoke({"paper_id": "pb-1"})
+    payload = json.loads(raw)
+
+    assert payload["paper_id"] == "pb-1"
+    assert payload["methods"][0]["display_name"] == "scLong"
+    assert payload["limitations"][0]["statement"] == "Evaluation is limited to curated datasets."
+    assert gateway.get_structured_data_calls == ["pb-1"]
 
 
 @pytest.mark.asyncio

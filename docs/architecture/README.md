@@ -54,3 +54,11 @@ ship a real research workspace before a larger frontend stack is introduced.
 The workspace app also includes figure and table browse/comparison surfaces, so
 collaborators can inspect visual evidence without dropping into raw PDFs or ad
 hoc scripts.
+
+The current V1 surface now also exposes:
+
+- first-class `limitations` alongside findings, result rows, figures, and tables
+- provider-backed ingest by DOI, arXiv ID, and OpenAlex identifier
+- backend-first collection-aware search when a search backend is configured
+- workspace-aware `/answer` and `/api/chat` execution paths
+- a Paperbase structured-evidence tool that the Arxie agent can call directly

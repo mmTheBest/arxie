@@ -52,10 +52,20 @@ class Paper(Base, TimestampMixin):
     canonical_title: Mapped[str] = mapped_column(Text, nullable=False)
     abstract: Mapped[str | None] = mapped_column(Text)
     publication_year: Mapped[int | None] = mapped_column(Integer)
+    venue_id: Mapped[str | None] = mapped_column(ForeignKey("venues.id"))
     venue: Mapped[str | None] = mapped_column(String(255))
     doi: Mapped[str | None] = mapped_column(String(255))
     arxiv_id: Mapped[str | None] = mapped_column(String(128))
     raw_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class Venue(Base, TimestampMixin):
+    __tablename__ = "venues"
+    __table_args__ = (UniqueConstraint("normalized_name", name="uq_venues_normalized_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
 class Author(Base, TimestampMixin):
@@ -233,6 +243,15 @@ class Finding(Base, TimestampMixin):
     paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
     statement: Mapped[str] = mapped_column(Text, nullable=False)
     polarity: Mapped[str | None] = mapped_column(String(64))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class Limitation(Base, TimestampMixin):
+    __tablename__ = "limitations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
+    statement: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
 

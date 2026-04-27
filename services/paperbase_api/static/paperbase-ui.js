@@ -474,6 +474,7 @@
       { label: "Papers", value: summary.paper_count },
       { label: "Extracted", value: summary.extracted_paper_count },
       { label: "Methods", value: summary.methods.length },
+      { label: "Limitations", value: summary.limitations.length },
       { label: "Figures", value: summary.figures.length },
       { label: "Tables", value: summary.tables.length },
     ];
@@ -514,6 +515,15 @@
             .join("") || "<li>No persisted result rows yet.</li>"}
         </ul>
       </div>
+      <div class="detail-group">
+        <strong>Limitations</strong>
+        <ul class="detail-list">
+          ${summary.limitations
+            .slice(0, 4)
+            .map((item) => `<li>${escapeHtml(item.statement)}</li>`)
+            .join("") || "<li>No extracted limitations yet.</li>"}
+        </ul>
+      </div>
     `;
   }
 
@@ -536,6 +546,7 @@
           <span class="pill">Methods ${structured.methods.length}</span>
           <span class="pill">Metrics ${structured.metrics.length}</span>
           <span class="pill">Results ${structured.result_rows.length}</span>
+          <span class="pill">Limitations ${structured.limitations.length}</span>
           <span class="pill">Tricks ${structured.engineering_tricks.length}</span>
           <span class="pill">Figures ${structured.figures.length}</span>
           <span class="pill">Tables ${structured.tables.length}</span>
@@ -554,6 +565,15 @@
             .slice(0, 4)
             .map((item) => `<li>${escapeHtml(item.title)} — ${escapeHtml(item.description)}</li>`)
             .join("") || "<li>No extracted engineering tricks.</li>"}
+        </ul>
+      </div>
+      <div class="detail-group">
+        <strong>Limitations</strong>
+        <ul class="detail-list">
+          ${structured.limitations
+            .slice(0, 4)
+            .map((item) => `<li>${escapeHtml(item.statement)}</li>`)
+            .join("") || "<li>No extracted limitations.</li>"}
         </ul>
       </div>
       <div class="detail-group">

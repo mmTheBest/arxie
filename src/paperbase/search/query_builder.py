@@ -43,6 +43,10 @@ def build_search_query(
     if year_lte is not None:
         bool_query["filter"].append({"range": {"publication_year": {"lte": year_lte}}})
 
+    collection_ids = filters.get("collection_ids")
+    if collection_ids:
+        bool_query["filter"].append({"terms": {"collection_ids": list(collection_ids)}})
+
     venue = filters.get("venue")
     if venue:
         bool_query["filter"].append({"terms": {"venue.keyword": list(venue)}})

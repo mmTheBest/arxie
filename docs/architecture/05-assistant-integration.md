@@ -16,10 +16,15 @@ It queries Paperbase first and uses live provider retrieval second.
   - resolves paper ids from Paperbase before external lookups
   - returns stored Paperbase sections as full text before attempting PDF download
   - can resolve pinned Paperbase papers by id for workspace-scoped synthesis
+  - can resolve stored Paperbase structured evidence for a paper
   - can load saved workspace context from the Paperbase DB when the runtime
     gateway supports it
 - `read_paper_fulltext` in `src/ra/tools/retrieval_tools.py` uses stored sections
   when available, then falls back to PDF download and parse.
+- `get_paper_structured_data` in `src/ra/tools/retrieval_tools.py` gives the
+  agent direct access to stored Paperbase datasets, methods, metrics, result
+  rows, findings, limitations, glossary terms, engineering tricks, figures, and
+  tables.
 - Runtime entry points now construct a Paperbase-aware retriever:
   - `ra.api.app`
   - `ra.agents.research_agent`
@@ -45,6 +50,9 @@ Saved workspaces are no longer only a UI concern.
   collection, saved query, focus note, and pinned papers
 - `ProposalEvidenceQueryRequest` can now take `workspace_id` and reuse the
   workspace collection plus pinned-paper defaults for evidence bucketing
+- `AnswerRequest` and `ChatRequest` can now take `workspace_id` and reuse the
+  saved workspace query, focus note, collection id, and active filters as part
+  of the agent query context
 - `LitReviewAgent` can seed synthesis with pinned papers before broader
   collection or live search retrieval, so workspace state changes the actual
   evidence surface instead of only decorating the UI
@@ -53,13 +61,3 @@ This is the current V1 realization of “return later and continue from the same
 research context.” The assistant still remains tolerant of missing Paperbase
 state, but when a workspace exists it can now drive the retrieval defaults
 directly.
-
-## Remaining Integration Work
-
-The biggest remaining assistant-facing gap is deeper structured-evidence use:
-
-- proposal and lit-review generation should increasingly consume stored result
-  rows, figures, tables, and evidence spans directly instead of only paper
-  titles/abstracts/fulltext sections
-- the chat and answer flows should eventually accept workspace-scoped execution
-  context too, not just the lit-review and proposal evidence paths

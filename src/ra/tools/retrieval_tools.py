@@ -170,6 +170,22 @@ class ReadPaperFullTextArgs(BaseModel):
         return sanitize_identifier(value, field_name="paper_id", max_length=256)
 
 
+class GetPaperStructuredDataArgs(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    paper_id: str = Field(
+        ...,
+        description=(
+            "Paper identifier: Paperbase paper id, DOI, Semantic Scholar paperId, or arXiv id."
+        ),
+    )
+
+    @field_validator("paper_id")
+    @classmethod
+    def _validate_paper_id(cls, value: str) -> str:
+        return sanitize_identifier(value, field_name="paper_id", max_length=256)
+
+
 class GetPaperCitationsArgs(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -437,6 +453,26 @@ def make_retrieval_tools(
     def read_paper_fulltext_sync(paper_id: str) -> str:
         return _run_coroutine_sync(read_paper_fulltext(paper_id=paper_id))
 
+    async def get_paper_structured_data(paper_id: str) -> str:
+        tool_name = "get_paper_structured_data"
+        try:
+            payload = await retriever.get_paper_structured_data(paper_id)
+        except Exception as exc:
+            logger.exception("Tool execution failed: get_paper_structured_data")
+            return _tool_error_payload(tool_name, exc)
+
+        if payload is None:
+            return _tool_named_error_payload(
+                tool_name,
+                "structured_data_unavailable",
+                "No Paperbase structured data is available for the provided identifier.",
+                paper_id=paper_id,
+            )
+        return json.dumps(payload, ensure_ascii=False)
+
+    def get_paper_structured_data_sync(paper_id: str) -> str:
+        return _run_coroutine_sync(get_paper_structured_data(paper_id=paper_id))
+
     async def get_paper_citations(paper_id: str, limit: int = 20) -> str:
         """Fetch papers that cite the given paper (Semantic Scholar)."""
         try:
@@ -650,6 +686,17 @@ def make_retrieval_tools(
             args_schema=ReadPaperFullTextArgs,
             func=read_paper_fulltext_sync,
             coroutine=read_paper_fulltext,
+        ),
+        StructuredTool(
+            name="get_paper_structured_data",
+            description=(
+                "Read structured Paperbase evidence for a paper when available. "
+                "Use this for extracted methods, datasets, metrics, result rows, findings, limitations, figures, and tables. "
+                "Returns JSON with the stored structured bundle."
+            ),
+            args_schema=GetPaperStructuredDataArgs,
+            func=get_paper_structured_data_sync,
+            coroutine=get_paper_structured_data,
         ),
 
         StructuredTool(

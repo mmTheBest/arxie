@@ -51,8 +51,35 @@ def test_paper_repository_upsert_deduplicates_provider_records(tmp_path: Path) -
         assert stored is not None
         assert stored.id == first.id
         assert stored.venue == "NeurIPS"
+        assert stored.venue_id is not None
         assert repository.list_author_names(stored.id) == ["Alice Smith", "Carol Jones"]
         assert repository.list_tags(stored.id) == ["benchmark", "foundation-model"]
+
+
+def test_paper_repository_normalizes_venues_across_papers(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        repository = PaperRepository(session)
+
+        first = repository.upsert(
+            provider="semantic_scholar",
+            external_id="paper-venue-1",
+            canonical_title="Venue paper 1",
+            venue="Nature Methods",
+        )
+        second = repository.upsert(
+            provider="semantic_scholar",
+            external_id="paper-venue-2",
+            canonical_title="Venue paper 2",
+            venue="  nature methods  ",
+        )
+
+        assert first.venue_id is not None
+        assert second.venue_id == first.venue_id
+        assert second.venue == "Nature Methods"
 
 
 def test_collection_and_annotation_repositories_support_curated_local_workflows(

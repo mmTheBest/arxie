@@ -10,7 +10,18 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from paperbase.db.models import Chunk, Dataset, ExtractionRun, Figure, Method, Metric, Paper, Section, TableArtifact
+from paperbase.db.models import (
+    Chunk,
+    CollectionPaper,
+    Dataset,
+    ExtractionRun,
+    Figure,
+    Method,
+    Metric,
+    Paper,
+    Section,
+    TableArtifact,
+)
 from paperbase.db.repositories import PaperRepository
 from paperbase.search.embeddings import embed_text_deterministic
 from paperbase.search.index_templates import (
@@ -135,6 +146,7 @@ class PaperbaseSearchReindexer:
             datasets_by_paper_id = self._load_named_entities_by_paper_id(session, Dataset, paper_ids)
             methods_by_paper_id = self._load_named_entities_by_paper_id(session, Method, paper_ids)
             metrics_by_paper_id = self._load_named_entities_by_paper_id(session, Metric, paper_ids)
+            collection_ids_by_paper_id = self._load_collection_ids_by_paper_id(session, paper_ids)
             extracted_paper_ids = set(
                 session.execute(
                     select(ExtractionRun.paper_id).where(ExtractionRun.status == "completed")
@@ -157,6 +169,7 @@ class PaperbaseSearchReindexer:
                 datasets=datasets_by_paper_id.get(paper.id, []),
                 methods=methods_by_paper_id.get(paper.id, []),
                 metrics=metrics_by_paper_id.get(paper.id, []),
+                collection_ids=collection_ids_by_paper_id.get(paper.id, []),
                 extraction_state="extracted" if paper.id in extracted_paper_ids else "unextracted",
                 embedding_vector=embed_text_deterministic(
                     " ".join(
@@ -186,6 +199,8 @@ class PaperbaseSearchReindexer:
                 .outerjoin(Section, Section.id == Chunk.section_id)
                 .order_by(Chunk.created_at.asc())
             ).all()
+            paper_ids = [paper.id for _, paper, _ in rows]
+            collection_ids_by_paper_id = self._load_collection_ids_by_paper_id(session, paper_ids)
 
         return [
             build_chunk_document(
@@ -194,6 +209,7 @@ class PaperbaseSearchReindexer:
                 title=paper.canonical_title,
                 section_title=section.title if section is not None else None,
                 text=chunk.text,
+                collection_ids=collection_ids_by_paper_id.get(paper.id, []),
                 embedding_vector=embed_text_deterministic(
                     " ".join(
                         filter(
@@ -217,6 +233,8 @@ class PaperbaseSearchReindexer:
                 .join(Paper, Paper.id == Figure.paper_id)
                 .order_by(Figure.created_at.asc())
             ).all()
+            paper_ids = [paper.id for _, paper in rows]
+            collection_ids_by_paper_id = self._load_collection_ids_by_paper_id(session, paper_ids)
 
         return [
             build_figure_document(
@@ -225,6 +243,7 @@ class PaperbaseSearchReindexer:
                 title=paper.canonical_title,
                 figure_label=figure.figure_label,
                 caption=figure.caption,
+                collection_ids=collection_ids_by_paper_id.get(paper.id, []),
                 embedding_vector=embed_text_deterministic(
                     " ".join(filter(None, [paper.canonical_title, figure.figure_label, figure.caption]))
                 ),
@@ -239,6 +258,8 @@ class PaperbaseSearchReindexer:
                 .join(Paper, Paper.id == TableArtifact.paper_id)
                 .order_by(TableArtifact.created_at.asc())
             ).all()
+            paper_ids = [paper.id for _, paper in rows]
+            collection_ids_by_paper_id = self._load_collection_ids_by_paper_id(session, paper_ids)
 
         return [
             build_table_document(
@@ -248,6 +269,7 @@ class PaperbaseSearchReindexer:
                 table_label=table.table_label,
                 caption=table.caption,
                 structured_payload=dict(table.structured_payload_json or {}),
+                collection_ids=collection_ids_by_paper_id.get(paper.id, []),
                 embedding_vector=embed_text_deterministic(
                     " ".join(
                         filter(
@@ -264,6 +286,24 @@ class PaperbaseSearchReindexer:
             )
             for table, paper in rows
         ]
+
+    @staticmethod
+    def _load_collection_ids_by_paper_id(
+        session: Session,
+        paper_ids: Sequence[str],
+    ) -> dict[str, list[str]]:
+        if not paper_ids:
+            return {}
+
+        rows = session.execute(
+            select(CollectionPaper.paper_id, CollectionPaper.collection_id)
+            .where(CollectionPaper.paper_id.in_(paper_ids))
+            .order_by(CollectionPaper.paper_id.asc(), CollectionPaper.created_at.asc())
+        ).all()
+        grouped: dict[str, list[str]] = {paper_id: [] for paper_id in paper_ids}
+        for paper_id, collection_id in rows:
+            grouped.setdefault(paper_id, []).append(collection_id)
+        return grouped
 
     @staticmethod
     def _load_named_entities_by_paper_id(

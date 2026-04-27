@@ -134,7 +134,7 @@ def search_papers(
             )
         )
         has_filter = True
-        search_filters["collection_id"] = safe_collection_id
+        search_filters["collection_ids"] = [safe_collection_id]
 
     if year_gte is not None:
         predicates.append(Paper.publication_year >= year_gte)
@@ -253,13 +253,10 @@ def search_papers(
             message="Provide q or at least one supported filter.",
         )
 
-    if search_backend is not None and collection_id is None:
-        backend_filters = {
-            key: value for key, value in search_filters.items() if key != "collection_id"
-        }
+    if search_backend is not None:
         documents = search_backend.search(
             "paperbase-papers",
-            _search_backend_query(safe_query, filters=backend_filters),
+            _search_backend_query(safe_query, filters=search_filters),
             limit,
         )
         return SearchPapersResponse(
@@ -331,10 +328,13 @@ def search_chunks(
     )
     search_backend = request.app.state.search_backend
 
-    if search_backend is not None and safe_collection_id is None:
+    if search_backend is not None:
         documents = search_backend.search(
             "paperbase-chunks",
-            _search_backend_query(safe_query),
+            _search_backend_query(
+                safe_query,
+                filters={"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
+            ),
             limit,
         )
         return SearchChunksResponse(
@@ -407,9 +407,12 @@ def search_artifacts(
     )
     search_backend = request.app.state.search_backend
 
-    if search_backend is not None and safe_collection_id is None:
+    if search_backend is not None:
         documents: list[SearchArtifactHitResponse] = []
-        query = _search_backend_query(safe_query)
+        query = _search_backend_query(
+            safe_query,
+            filters={"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
+        )
         if safe_kind in {"all", "figure"}:
             for document in search_backend.search("paperbase-figures", query, limit):
                 documents.append(

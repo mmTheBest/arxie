@@ -7,10 +7,11 @@ Paperbase is the persistent source of truth for research data.
 It is not just a cache and not just a vector store. It is the structured database for:
 
 - papers
+- canonical venues
 - canonical author and tag metadata
 - source provenance
 - PDFs and derived artifacts
-- extracted research entities
+- extracted research entities, including limitations
 - evidence links
 - user collections and annotations
 
@@ -44,16 +45,16 @@ Even though v1 is local-first, the schema should preserve future support for:
 The first concrete Paperbase modules are:
 
 - `src/paperbase/config.py` — environment-driven platform configuration
-- `src/paperbase/db/models.py` — canonical relational schema, including normalized `authors`, `paper_authors`, `tags`, and `paper_tags`
+- `src/paperbase/db/models.py` — canonical relational schema, including normalized `venues`, `authors`, `paper_authors`, `tags`, and `paper_tags`
 - `src/paperbase/db/session.py` — engine and session factory helpers
 - `src/paperbase/db/bootstrap.py` — local schema initialization
-- `src/paperbase/db/repositories.py` — first write paths for papers, author/tag metadata, extraction profiles, collections, and annotations
+- `src/paperbase/db/repositories.py` — write paths for papers, venue/author/tag metadata, extraction profiles, collections, and annotations
 
 These modules are intentionally thin. They should encode durable boundaries now without prematurely building API, worker, or ingest orchestration around them.
 
 The first service layer now exists at:
 
 - `services/paperbase_api/app.py` — FastAPI entrypoint for corpus search, fetch, fulltext, figures, and comparison routes
-- `services/paperbase_api/routes/` — route groups for `search`, `papers`, and `compare`
+- `services/paperbase_api/routes/` — route groups for `search`, `papers`, `compare`, `collections`, `ingest`, `extraction`, `workspaces`, and `jobs`
 
 This service should stay independent from `src/ra/api/app.py`. Arxie will consume it through a gateway layer rather than sharing endpoint code directly.

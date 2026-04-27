@@ -99,6 +99,11 @@ class FindingExtraction(BaseModel):
     evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)
 
 
+class LimitationExtraction(BaseModel):
+    statement: str
+    evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)
+
+
 class GlossaryTermExtraction(BaseModel):
     term: str
     definition: str

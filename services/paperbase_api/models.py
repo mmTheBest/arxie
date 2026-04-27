@@ -179,6 +179,12 @@ class FindingArtifactResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class LimitationArtifactResponse(BaseModel):
+    id: str
+    statement: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class EngineeringTrickArtifactResponse(BaseModel):
     id: str
     title: str
@@ -215,6 +221,7 @@ class PaperStructuredDataResponseData(BaseModel):
     result_rows: list[ResultRowArtifactResponse]
     glossary_terms: list[GlossaryTermArtifactResponse]
     findings: list[FindingArtifactResponse]
+    limitations: list[LimitationArtifactResponse]
     engineering_tricks: list[EngineeringTrickArtifactResponse]
     extraction_runs: list[ExtractionRunArtifactResponse]
     evidence_spans: list[EvidenceSpanArtifactResponse]
@@ -470,6 +477,11 @@ class CollectionSummaryEngineeringTrickResponse(BaseModel):
     description: str
 
 
+class CollectionSummaryLimitationResponse(BaseModel):
+    id: str
+    statement: str
+
+
 class CollectionSummaryFigureResponse(BaseModel):
     id: str
     page_number: int | None = None
@@ -505,6 +517,7 @@ class CollectionStructuredSummaryResponseData(BaseModel):
     figures: list[CollectionSummaryFigureResponse]
     tables: list[CollectionSummaryTableResponse]
     glossary_terms: list[CollectionSummaryGlossaryTermResponse]
+    limitations: list[CollectionSummaryLimitationResponse]
     engineering_tricks: list[CollectionSummaryEngineeringTrickResponse]
     top_result_rows: list[CollectionSummaryResultRowResponse]
 

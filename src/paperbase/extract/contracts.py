@@ -11,6 +11,7 @@ from paperbase.schemas.extraction import (
     EngineeringTrickExtraction,
     FindingExtraction,
     GlossaryTermExtraction,
+    LimitationExtraction,
     MethodExtraction,
     MetricExtraction,
     ResultExtraction,
@@ -23,6 +24,7 @@ class StructuredExtractionBundle(BaseModel):
     metrics: list[MetricExtraction] = Field(default_factory=list)
     results: list[ResultExtraction] = Field(default_factory=list)
     findings: list[FindingExtraction] = Field(default_factory=list)
+    limitations: list[LimitationExtraction] = Field(default_factory=list)
     glossary_terms: list[GlossaryTermExtraction] = Field(default_factory=list)
     engineering_tricks: list[EngineeringTrickExtraction] = Field(default_factory=list)
 
@@ -39,6 +41,7 @@ class StructuredExtractionBundle(BaseModel):
             "metrics",
             "results",
             "findings",
+            "limitations",
             "glossary_terms",
             "engineering_tricks",
         ):

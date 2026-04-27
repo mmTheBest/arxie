@@ -9,6 +9,7 @@ from paperbase.db.models import (
     ExtractionRun,
     Figure,
     GlossaryTerm,
+    Limitation,
     Method,
     Metric,
     ResultRow,
@@ -51,6 +52,10 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
                     paper_id=paper.id,
                     term="GRN",
                     definition="Gene regulatory network.",
+                ),
+                Limitation(
+                    paper_id=paper.id,
+                    statement="The benchmark covers a limited number of perturbation settings.",
                 ),
                 Figure(
                     paper_id=paper.id,
@@ -107,6 +112,7 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
     assert payload["figures"][0]["figure_label"] == "Figure 1"
     assert payload["tables"][0]["table_label"] == "Table 1"
     assert payload["glossary_terms"][0]["term"] == "GRN"
+    assert payload["limitations"][0]["statement"] == "The benchmark covers a limited number of perturbation settings."
     assert payload["engineering_tricks"][0]["title"] == "Long-context packing"
     assert payload["top_result_rows"][0]["value_numeric"] == 0.91
 

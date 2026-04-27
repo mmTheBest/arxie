@@ -19,6 +19,7 @@ def build_paper_document(
     datasets: list[str] | None = None,
     methods: list[str] | None = None,
     metrics: list[str] | None = None,
+    collection_ids: list[str] | None = None,
     extraction_state: str = "unextracted",
     embedding_vector: list[float] | None = None,
 ) -> dict[str, object]:
@@ -37,6 +38,7 @@ def build_paper_document(
         "datasets": datasets or [],
         "methods": methods or [],
         "metrics": metrics or [],
+        "collection_ids": collection_ids or [],
         "extraction_state": extraction_state,
         "embedding": embedding_vector or [],
     }
@@ -49,6 +51,7 @@ def build_chunk_document(
     title: str,
     section_title: str | None,
     text: str,
+    collection_ids: list[str] | None = None,
     embedding_vector: list[float] | None = None,
 ) -> dict[str, object]:
     return {
@@ -57,6 +60,7 @@ def build_chunk_document(
         "title": title,
         "section_title": section_title or "",
         "text": text,
+        "collection_ids": collection_ids or [],
         "embedding": embedding_vector or [],
     }
 
@@ -68,6 +72,7 @@ def build_figure_document(
     title: str,
     figure_label: str | None,
     caption: str | None,
+    collection_ids: list[str] | None = None,
     embedding_vector: list[float] | None = None,
 ) -> dict[str, object]:
     return {
@@ -76,6 +81,7 @@ def build_figure_document(
         "title": title,
         "figure_label": figure_label or "",
         "caption": caption or "",
+        "collection_ids": collection_ids or [],
         "embedding": embedding_vector or [],
     }
 
@@ -88,6 +94,7 @@ def build_table_document(
     table_label: str | None,
     caption: str | None,
     structured_payload: dict[str, object] | None = None,
+    collection_ids: list[str] | None = None,
     embedding_vector: list[float] | None = None,
 ) -> dict[str, object]:
     return {
@@ -97,5 +104,6 @@ def build_table_document(
         "table_label": table_label or "",
         "caption": caption or "",
         "structured_payload": structured_payload or {},
+        "collection_ids": collection_ids or [],
         "embedding": embedding_vector or [],
     }

@@ -8,7 +8,7 @@ import logging
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from paperbase.db.models import CollectionPaper
+from paperbase.db.models import CollectionPaper, Dataset, EngineeringTrick, Figure, Finding, GlossaryTerm, Limitation, Method, Metric, ResultRow, TableArtifact
 from paperbase.db.models import Paper as PaperRecord
 from paperbase.db.models import Section as PaperSectionRecord
 from paperbase.db.models import Workspace as WorkspaceRecord
@@ -160,6 +160,112 @@ class PaperbaseGateway:
                 )
                 for section in sections
             ]
+
+    async def get_paper_structured_data(self, identifier: str) -> dict[str, object] | None:
+        return await asyncio.to_thread(self._get_paper_structured_data_sync, identifier)
+
+    def _get_paper_structured_data_sync(self, identifier: str) -> dict[str, object] | None:
+        paper = self._get_paper_sync(identifier)
+        if paper is None:
+            return None
+
+        with self.session_factory() as session:
+            datasets = session.execute(
+                select(Dataset).where(Dataset.paper_id == paper.id).order_by(Dataset.display_name.asc())
+            ).scalars().all()
+            methods = session.execute(
+                select(Method).where(Method.paper_id == paper.id).order_by(Method.display_name.asc())
+            ).scalars().all()
+            metrics = session.execute(
+                select(Metric).where(Metric.paper_id == paper.id).order_by(Metric.display_name.asc())
+            ).scalars().all()
+            findings = session.execute(
+                select(Finding).where(Finding.paper_id == paper.id).order_by(Finding.created_at.asc())
+            ).scalars().all()
+            limitations = session.execute(
+                select(Limitation).where(Limitation.paper_id == paper.id).order_by(Limitation.created_at.asc())
+            ).scalars().all()
+            glossary_terms = session.execute(
+                select(GlossaryTerm).where(GlossaryTerm.paper_id == paper.id).order_by(GlossaryTerm.term.asc())
+            ).scalars().all()
+            engineering_tricks = session.execute(
+                select(EngineeringTrick)
+                .where(EngineeringTrick.paper_id == paper.id)
+                .order_by(EngineeringTrick.title.asc())
+            ).scalars().all()
+            figures = session.execute(
+                select(Figure).where(Figure.paper_id == paper.id).order_by(Figure.page_number.asc())
+            ).scalars().all()
+            tables = session.execute(
+                select(TableArtifact).where(TableArtifact.paper_id == paper.id).order_by(TableArtifact.page_number.asc())
+            ).scalars().all()
+            result_rows = session.execute(
+                select(ResultRow, Dataset, Method, Metric)
+                .outerjoin(Dataset, Dataset.id == ResultRow.dataset_id)
+                .outerjoin(Method, Method.id == ResultRow.method_id)
+                .outerjoin(Metric, Metric.id == ResultRow.metric_id)
+                .where(ResultRow.paper_id == paper.id)
+                .order_by(ResultRow.created_at.asc())
+            ).all()
+
+        return {
+            "paper_id": paper.id,
+            "datasets": [
+                {"id": item.id, "display_name": item.display_name, "metadata": dict(item.metadata_json or {})}
+                for item in datasets
+            ],
+            "methods": [
+                {"id": item.id, "display_name": item.display_name, "metadata": dict(item.metadata_json or {})}
+                for item in methods
+            ],
+            "metrics": [
+                {"id": item.id, "display_name": item.display_name, "metadata": dict(item.metadata_json or {})}
+                for item in metrics
+            ],
+            "findings": [
+                {"id": item.id, "statement": item.statement, "polarity": item.polarity}
+                for item in findings
+            ],
+            "limitations": [
+                {"id": item.id, "statement": item.statement, "metadata": dict(item.metadata_json or {})}
+                for item in limitations
+            ],
+            "glossary_terms": [
+                {"id": item.id, "term": item.term, "definition": item.definition}
+                for item in glossary_terms
+            ],
+            "engineering_tricks": [
+                {"id": item.id, "title": item.title, "description": item.description}
+                for item in engineering_tricks
+            ],
+            "figures": [
+                {"id": item.id, "figure_label": item.figure_label, "caption": item.caption, "page_number": item.page_number}
+                for item in figures
+            ],
+            "tables": [
+                {
+                    "id": item.id,
+                    "table_label": item.table_label,
+                    "caption": item.caption,
+                    "page_number": item.page_number,
+                    "structured_payload": dict(item.structured_payload_json or {}),
+                }
+                for item in tables
+            ],
+            "result_rows": [
+                {
+                    "id": result_row.id,
+                    "dataset": dataset.display_name if dataset is not None else None,
+                    "method": method.display_name if method is not None else None,
+                    "metric": metric.display_name if metric is not None else None,
+                    "value_numeric": result_row.value_numeric,
+                    "value_text": result_row.value_text,
+                    "comparator_text": result_row.comparator_text,
+                    "notes": result_row.notes,
+                }
+                for result_row, dataset, method, metric in result_rows
+            ],
+        }
 
     async def get_papers_by_ids(self, paper_ids: list[str]) -> list[Paper]:
         return await asyncio.to_thread(self._get_papers_by_ids_sync, paper_ids)

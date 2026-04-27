@@ -13,6 +13,7 @@ from paperbase.db.models import (
     ExtractionRun,
     Figure,
     GlossaryTerm,
+    Limitation,
     Method,
     Metric,
     Paper,
@@ -41,6 +42,7 @@ from services.paperbase_api.models import (
     CollectionSummaryEngineeringTrickResponse,
     CollectionSummaryFigureResponse,
     CollectionSummaryGlossaryTermResponse,
+    CollectionSummaryLimitationResponse,
     CollectionSummaryNamedArtifactResponse,
     CollectionSummaryResultRowResponse,
     CollectionSummaryTableResponse,
@@ -341,6 +343,11 @@ def fetch_collection_structured_summary(
         .where(GlossaryTerm.paper_id.in_(member_paper_ids))
         .order_by(GlossaryTerm.term.asc(), GlossaryTerm.created_at.asc())
     ).scalars().all()
+    limitations = session.execute(
+        select(Limitation)
+        .where(Limitation.paper_id.in_(member_paper_ids))
+        .order_by(Limitation.created_at.asc())
+    ).scalars().all()
     engineering_tricks = session.execute(
         select(EngineeringTrick)
         .where(EngineeringTrick.paper_id.in_(member_paper_ids))
@@ -390,6 +397,13 @@ def fetch_collection_structured_summary(
                     definition=item.definition,
                 )
                 for item in glossary_terms
+            ],
+            limitations=[
+                CollectionSummaryLimitationResponse(
+                    id=item.id,
+                    statement=item.statement,
+                )
+                for item in limitations
             ],
             engineering_tricks=[
                 CollectionSummaryEngineeringTrickResponse(

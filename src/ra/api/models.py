@@ -67,6 +67,7 @@ class AnswerRequest(BaseModel):
             "example": {
                 "query": "What are the main limitations of retrieval-augmented generation?",
                 "deep": False,
+                "workspace_id": "workspace-1",
             }
         },
     )
@@ -85,6 +86,12 @@ class AnswerRequest(BaseModel):
             "(initial search, full-text reads, and citation chasing)."
         ),
         examples=[False],
+    )
+    workspace_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=36,
+        description="Optional saved workspace id to reuse collection, query, and focus-note context.",
     )
 
 
@@ -135,6 +142,7 @@ class ChatRequest(BaseModel):
             "example": {
                 "query": "How does this compare to what you said previously?",
                 "session_id": "demo-session-1",
+                "workspace_id": "workspace-1",
             }
         },
     )
@@ -152,6 +160,12 @@ class ChatRequest(BaseModel):
         max_length=128,
         description="Conversation session ID used to preserve multi-turn context.",
         examples=["demo-session-1"],
+    )
+    workspace_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=36,
+        description="Optional saved workspace id to reuse collection, query, and focus-note context.",
     )
 
 

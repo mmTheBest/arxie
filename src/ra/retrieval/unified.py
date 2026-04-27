@@ -115,6 +115,8 @@ class PaperbaseGatewayProtocol(Protocol):
 
     async def get_papers_by_ids(self, paper_ids: list[str]) -> list[Paper]: ...
 
+    async def get_paper_structured_data(self, identifier: str) -> dict[str, object] | None: ...
+
     async def get_stored_sections(self, identifier: str) -> list[Section]: ...
 
     async def get_collection_papers(
@@ -283,6 +285,25 @@ class UnifiedRetriever:
         except Exception:
             logger.debug("Paperbase pinned-paper lookup failed.", exc_info=True)
             return []
+
+    async def get_paper_structured_data(self, identifier: str) -> dict[str, object] | None:
+        if self.paperbase_gateway is None:
+            return None
+
+        try:
+            safe_identifier = sanitize_identifier(
+                identifier,
+                field_name="identifier",
+                max_length=256,
+            )
+            return await self.paperbase_gateway.get_paper_structured_data(safe_identifier)
+        except Exception:
+            logger.debug(
+                "Paperbase structured-data lookup failed for identifier=%r",
+                identifier,
+                exc_info=True,
+            )
+            return None
 
     async def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None:
         if self.paperbase_gateway is None:

@@ -35,6 +35,7 @@ def test_indexer_builds_documents_for_papers_chunks_and_figures() -> None:
         datasets=["scRegNetBench"],
         methods=["scLong"],
         metrics=["AUROC"],
+        collection_ids=["collection-1"],
         extraction_state="extracted",
     )
     chunk_doc = build_chunk_document(
@@ -43,6 +44,7 @@ def test_indexer_builds_documents_for_papers_chunks_and_figures() -> None:
         title="scLong",
         section_title="Methods",
         text="We evaluate AUROC on scRegNetBench.",
+        collection_ids=["collection-1"],
     )
     figure_doc = build_figure_document(
         figure_id="figure-1",
@@ -50,13 +52,17 @@ def test_indexer_builds_documents_for_papers_chunks_and_figures() -> None:
         title="scLong",
         figure_label="Figure 1",
         caption="Model architecture.",
+        collection_ids=["collection-1"],
     )
 
     assert paper_doc["paper_id"] == "paper-1"
     assert paper_doc["provider"] == "local_filesystem"
+    assert paper_doc["collection_ids"] == ["collection-1"]
     assert paper_doc["datasets"] == ["scRegNetBench"]
     assert paper_doc["extraction_state"] == "extracted"
+    assert chunk_doc["collection_ids"] == ["collection-1"]
     assert chunk_doc["section_title"] == "Methods"
+    assert figure_doc["collection_ids"] == ["collection-1"]
     assert figure_doc["figure_label"] == "Figure 1"
 
 
@@ -67,6 +73,7 @@ def test_query_builder_supports_text_filters_and_vector_query() -> None:
         query_text="gene regulatory",
         filters={
             "year_gte": 2024,
+            "collection_ids": ["collection-1"],
             "venue": ["Nature"],
             "authors": ["Alice Smith"],
             "tags": ["scRegNet"],
@@ -80,6 +87,7 @@ def test_query_builder_supports_text_filters_and_vector_query() -> None:
 
     assert query["bool"]["must"][0]["multi_match"]["query"] == "gene regulatory"
     assert {"range": {"publication_year": {"gte": 2024}}} in query["bool"]["filter"]
+    assert {"terms": {"collection_ids": ["collection-1"]}} in query["bool"]["filter"]
     assert {"terms": {"venue.keyword": ["Nature"]}} in query["bool"]["filter"]
     assert {"terms": {"authors.keyword": ["Alice Smith"]}} in query["bool"]["filter"]
     assert {"terms": {"datasets.keyword": ["scRegNetBench"]}} in query["bool"]["filter"]

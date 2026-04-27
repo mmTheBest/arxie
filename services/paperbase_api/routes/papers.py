@@ -14,6 +14,7 @@ from paperbase.db.models import (
     Figure,
     Finding,
     GlossaryTerm,
+    Limitation,
     Method,
     Metric,
     Paper,
@@ -35,6 +36,7 @@ from services.paperbase_api.models import (
     FulltextResponse,
     FulltextResponseData,
     GlossaryTermArtifactResponse,
+    LimitationArtifactResponse,
     PaperDetailResponse,
     PaperStructuredDataResponse,
     PaperStructuredDataResponseData,
@@ -233,6 +235,11 @@ def fetch_paper_structured_data(
         .where(Finding.paper_id == normalized_paper_id)
         .order_by(Finding.created_at.asc())
     ).scalars().all()
+    limitations = session.execute(
+        select(Limitation)
+        .where(Limitation.paper_id == normalized_paper_id)
+        .order_by(Limitation.created_at.asc())
+    ).scalars().all()
     engineering_tricks = session.execute(
         select(EngineeringTrick)
         .where(EngineeringTrick.paper_id == normalized_paper_id)
@@ -348,6 +355,14 @@ def fetch_paper_structured_data(
                     metadata=dict(finding.metadata_json or {}),
                 )
                 for finding in findings
+            ],
+            limitations=[
+                LimitationArtifactResponse(
+                    id=limitation.id,
+                    statement=limitation.statement,
+                    metadata=dict(limitation.metadata_json or {}),
+                )
+                for limitation in limitations
             ],
             engineering_tricks=[
                 EngineeringTrickArtifactResponse(

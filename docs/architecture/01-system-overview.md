@@ -33,3 +33,19 @@ But the architecture should leave room for:
 - `services/paperbase_worker/` — async ingest/extract/index worker
 - `infra/` — local stack and environment setup
 
+## Current V1 Flow
+
+The finished local-first flow is now:
+
+1. import papers from a local library or provider identifiers
+2. persist canonical paper, provenance, venue, author, and tag records
+3. parse stored PDFs into sections, chunks, figures, and tables
+4. extract structured entities such as datasets, methods, metrics, result rows,
+   findings, limitations, glossary terms, and engineering tricks
+5. enqueue background jobs for parse, extraction, provider refresh, and reindex
+6. search the corpus by paper, chunk, or artifact, with backend-first hybrid
+   retrieval when a search backend is configured
+7. save a workspace and reuse it across browse, compare, answer, chat, lit
+   review, and proposal evidence workflows
+
+This is now a real product path, not just a planned decomposition.

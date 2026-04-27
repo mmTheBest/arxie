@@ -436,6 +436,47 @@ async def _resolve_workspace_context(app: FastAPI, workspace_id: str | None) -> 
     return workspace
 
 
+def _workspace_active_filters(workspace: Any) -> dict[str, object]:
+    raw_filters = getattr(workspace, "active_filters", None)
+    if raw_filters is None:
+        raw_filters = getattr(workspace, "active_filters_json", None)
+    if isinstance(raw_filters, dict):
+        return dict(raw_filters)
+    return {}
+
+
+def _compose_workspace_scoped_query(query: str, workspace: Any | None) -> str:
+    if workspace is None:
+        return query
+
+    context_lines: list[str] = []
+    saved_query = getattr(workspace, "saved_query", None)
+    focus_note = getattr(workspace, "focus_note", None)
+    collection_id = getattr(workspace, "collection_id", None)
+    pinned_paper_ids = list(getattr(workspace, "pinned_paper_ids", []) or [])
+    active_filters = _workspace_active_filters(workspace)
+
+    if saved_query:
+        context_lines.append(f"Saved workspace query: {saved_query}")
+    if focus_note:
+        context_lines.append(f"Workspace focus note: {focus_note}")
+    if collection_id:
+        context_lines.append(f"Workspace collection id: {collection_id}")
+    if active_filters:
+        rendered_filters = ", ".join(
+            f"{key}={value}"
+            for key, value in sorted(active_filters.items(), key=lambda item: item[0])
+        )
+        context_lines.append(f"Workspace active filters: {rendered_filters}")
+    if pinned_paper_ids:
+        context_lines.append(f"Workspace pinned paper ids: {', '.join(pinned_paper_ids)}")
+
+    if not context_lines:
+        return query
+
+    return f"{query}\n\nWorkspace context:\n" + "\n".join(f"- {line}" for line in context_lines)
+
+
 def _get_or_create_proposal_session_service(app: FastAPI) -> ProposalSessionService:
     service = getattr(app.state, "proposal_session_service", None)
     if service is None:
@@ -883,8 +924,11 @@ def create_app(
                 message="Failed to initialize answer agent.",
             ) from exc
 
+        workspace = await _resolve_workspace_context(app, payload.workspace_id)
+        scoped_query = _compose_workspace_scoped_query(payload.query, workspace)
+
         try:
-            answer = await agent.arun(payload.query)
+            answer = await agent.arun(scoped_query)
         except ValueError as exc:
             raise RAAPIError(
                 status_code=400,
@@ -932,8 +976,11 @@ def create_app(
                 ) from exc
             chat_agents[session_id] = agent
 
+        workspace = await _resolve_workspace_context(app, payload.workspace_id)
+        scoped_query = _compose_workspace_scoped_query(payload.query, workspace)
+
         try:
-            answer = await _run_agent_arun(agent, query=payload.query, session_id=session_id)
+            answer = await _run_agent_arun(agent, query=scoped_query, session_id=session_id)
         except ValueError as exc:
             raise RAAPIError(
                 status_code=400,

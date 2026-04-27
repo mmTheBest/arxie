@@ -15,6 +15,7 @@ from paperbase.db.models import (
     ExtractionRun,
     Finding,
     GlossaryTerm,
+    Limitation,
     Method,
     Metric,
     ResultRow,
@@ -27,6 +28,7 @@ from paperbase.schemas.extraction import (
     EvidenceSpanPayload,
     FindingExtraction,
     GlossaryTermExtraction,
+    LimitationExtraction,
     MethodExtraction,
     MetricExtraction,
     ResultExtraction,
@@ -239,6 +241,22 @@ class PaperExtractionPipeline:
                     evidence_spans=item.evidence_spans,
                 )
 
+            for item in bundle.limitations:
+                limitation = Limitation(
+                    paper_id=paper_id,
+                    statement=item.statement,
+                )
+                session.add(limitation)
+                session.flush()
+                self._persist_evidence_spans(
+                    session,
+                    paper_id=paper_id,
+                    extraction_run_id=extraction_run_id,
+                    target_type="limitation",
+                    target_id=limitation.id,
+                    evidence_spans=item.evidence_spans,
+                )
+
             for item in bundle.glossary_terms:
                 glossary_term = GlossaryTerm(
                     paper_id=paper_id,
@@ -284,6 +302,7 @@ class PaperExtractionPipeline:
                 "metrics": len(bundle.metrics),
                 "results": len(bundle.results),
                 "findings": len(bundle.findings),
+                "limitations": len(bundle.limitations),
                 "glossary_terms": len(bundle.glossary_terms),
                 "engineering_tricks": len(bundle.engineering_tricks),
             }
@@ -301,6 +320,7 @@ class PaperExtractionPipeline:
         session.execute(delete(ResultRow).where(ResultRow.paper_id == paper_id))
         session.execute(delete(GlossaryTerm).where(GlossaryTerm.paper_id == paper_id))
         session.execute(delete(Finding).where(Finding.paper_id == paper_id))
+        session.execute(delete(Limitation).where(Limitation.paper_id == paper_id))
         session.execute(delete(EngineeringTrick).where(EngineeringTrick.paper_id == paper_id))
         session.execute(delete(Dataset).where(Dataset.paper_id == paper_id))
         session.execute(delete(Method).where(Method.paper_id == paper_id))

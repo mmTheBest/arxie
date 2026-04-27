@@ -56,6 +56,14 @@ Those routes fall back to SQL when no backend is configured, and switch to
 backend-assisted queries with deterministic local embeddings when a search
 backend is available.
 
+Collection-scoped backend search is now first-class too:
+
+- paper, chunk, figure, and table documents all carry `collection_ids`
+- backend query composition can filter by collection membership instead of
+  dropping to SQL whenever a collection is selected
+- SQL fallback remains in place for single-user local-first runs without a
+  configured backend
+
 ## Comparison
 
 Comparison is a database feature, not just an agent prompt.
@@ -107,10 +115,10 @@ The current API now supports that browse layer through:
 - `GET /api/v1/collections/{collection_id}/structured-summary`
 
 That endpoint returns the paper-level extracted datasets, methods, metrics,
-result rows, glossary terms, findings, engineering tricks, extraction runs,
-evidence spans, figures, and tables. It gives the local-first database a usable
-inspection surface before the future UI and richer search indexing layers are
-finished.
+result rows, glossary terms, findings, limitations, engineering tricks,
+extraction runs, evidence spans, figures, and tables. It gives the local-first
+database a usable inspection surface before the future UI and richer search
+indexing layers are finished.
 
 The collection structured summary endpoint now also normalizes obvious metric
 aliases such as long-form `Area Under the Receiver Operating Characteristic
@@ -120,7 +128,9 @@ dedicated comparison tables are added.
 
 The same summary surface now exposes collection-level figure and table slices,
 which the local Paperbase Console uses to render an artifact panel alongside the
-existing structured entity summaries.
+existing structured entity summaries. It now also exposes collection-level
+limitations, so users can browse caveats across a curated field database instead
+of only within one paper at a time.
 
 ## Search Operations Surface
 

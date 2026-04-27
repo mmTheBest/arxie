@@ -13,6 +13,7 @@ from paperbase.db.models import (
     Figure,
     Finding,
     GlossaryTerm,
+    Limitation,
     Method,
     Metric,
     ResultRow,
@@ -163,6 +164,10 @@ def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> No
             statement="scLong improves AUROC on scRegNetBench.",
             polarity="positive",
         )
+        limitation = Limitation(
+            paper_id=paper.id,
+            statement="The evaluation only covers curated benchmark datasets.",
+        )
         trick = EngineeringTrick(
             paper_id=paper.id,
             title="Long-context token packing",
@@ -188,7 +193,9 @@ def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> No
             caption="Benchmark comparison.",
             structured_payload_json={"columns": ["Method", "AUROC"], "rows": 2},
         )
-        session.add_all([dataset, method, metric, glossary, finding, trick, extraction_run, figure, table])
+        session.add_all(
+            [dataset, method, metric, glossary, finding, limitation, trick, extraction_run, figure, table]
+        )
         session.flush()
         session.add(
             ResultRow(
@@ -229,6 +236,7 @@ def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> No
     assert payload["tables"][0]["table_label"] == "Table 1"
     assert payload["glossary_terms"][0]["term"] == "AUROC"
     assert payload["findings"][0]["statement"] == "scLong improves AUROC on scRegNetBench."
+    assert payload["limitations"][0]["statement"] == "The evaluation only covers curated benchmark datasets."
     assert payload["engineering_tricks"][0]["title"] == "Long-context token packing"
     assert payload["extraction_runs"][0]["status"] == "completed"
     assert payload["evidence_spans"][0]["quote_text"] == "AUROC is the primary evaluation metric."

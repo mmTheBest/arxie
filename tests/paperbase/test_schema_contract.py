@@ -6,6 +6,7 @@ from paperbase.db.models import Base
 def test_paperbase_metadata_contains_core_tables() -> None:
     expected_tables = {
         "papers",
+        "venues",
         "authors",
         "paper_authors",
         "tags",
@@ -22,6 +23,7 @@ def test_paperbase_metadata_contains_core_tables() -> None:
         "metrics",
         "result_rows",
         "findings",
+        "limitations",
         "engineering_tricks",
         "evidence_spans",
         "extraction_runs",
@@ -41,9 +43,11 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     extraction_runs = Base.metadata.tables["extraction_runs"]
     annotations = Base.metadata.tables["annotations"]
     papers = Base.metadata.tables["papers"]
+    venues = Base.metadata.tables["venues"]
     authors = Base.metadata.tables["authors"]
     paper_authors = Base.metadata.tables["paper_authors"]
     paper_tags = Base.metadata.tables["paper_tags"]
+    limitations = Base.metadata.tables["limitations"]
     tables = Base.metadata.tables["tables"]
 
     assert "owner_id" in collections.c
@@ -57,6 +61,9 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
 
     assert "provider" in papers.c
     assert "external_id" in papers.c
+    assert "venue_id" in papers.c
+    assert "normalized_name" in venues.c
+    assert "display_name" in venues.c
 
     assert "model_name" in extraction_runs.c
     assert "prompt_version" in extraction_runs.c
@@ -69,5 +76,6 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     assert "display_name" in authors.c
     assert "paper_id" in paper_authors.c
     assert "tag_id" in paper_tags.c
+    assert "statement" in limitations.c
     assert "caption" in tables.c
     assert "structured_payload_json" in tables.c

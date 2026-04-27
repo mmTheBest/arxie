@@ -22,6 +22,7 @@ from paperbase.db.models import (
     PaperSource,
     PaperTag,
     Tag,
+    Venue,
     Workspace,
 )
 
@@ -137,6 +138,7 @@ class PaperRepository:
         tags: Sequence[str] | None = None,
     ) -> Paper:
         paper = self.get_by_provider_id(provider, external_id)
+        venue_display_name, venue_id = self._sync_venue(venue)
         if paper is None:
             paper = Paper(
                 provider=provider,
@@ -144,7 +146,8 @@ class PaperRepository:
                 canonical_title=canonical_title,
                 abstract=abstract,
                 publication_year=publication_year,
-                venue=venue,
+                venue_id=venue_id,
+                venue=venue_display_name,
                 doi=doi,
                 arxiv_id=arxiv_id,
                 raw_metadata=raw_metadata or {},
@@ -154,7 +157,8 @@ class PaperRepository:
             paper.canonical_title = canonical_title
             paper.abstract = abstract
             paper.publication_year = publication_year
-            paper.venue = venue
+            paper.venue_id = venue_id
+            paper.venue = venue_display_name
             paper.doi = doi
             paper.arxiv_id = arxiv_id
             paper.raw_metadata = raw_metadata or paper.raw_metadata
@@ -195,7 +199,9 @@ class PaperRepository:
         if publication_year is not None:
             paper.publication_year = publication_year
         if venue:
-            paper.venue = venue
+            venue_display_name, venue_id = self._sync_venue(venue)
+            paper.venue_id = venue_id
+            paper.venue = venue_display_name
         if doi:
             paper.doi = doi
         if arxiv_id:
@@ -264,6 +270,25 @@ class PaperRepository:
                     tag_id=tag.id,
                 )
             )
+
+    def _sync_venue(self, venue_name: str | None) -> tuple[str | None, str | None]:
+        if venue_name is None:
+            return None, None
+
+        cleaned_name = " ".join(venue_name.strip().split())
+        if not cleaned_name:
+            return None, None
+
+        normalized_name = _normalize_entity_name(cleaned_name)
+        venue = self.session.execute(
+            select(Venue).where(Venue.normalized_name == normalized_name)
+        ).scalar_one_or_none()
+        if venue is None:
+            venue = Venue(normalized_name=normalized_name, display_name=cleaned_name)
+            self.session.add(venue)
+            self.session.flush()
+
+        return venue.display_name, venue.id
 
 
 class ExtractionProfileRepository:
