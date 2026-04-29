@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -35,6 +36,40 @@ def _run_compose(args: list[str]) -> None:
     subprocess.run(command, cwd=_repo_root(), check=True)
 
 
+def _ensure_container_runtime() -> None:
+    try:
+        subprocess.run(
+            ["docker", "info"],
+            cwd=_repo_root(),
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    except subprocess.CalledProcessError as exc:
+        context = subprocess.run(
+            ["docker", "context", "show"],
+            cwd=_repo_root(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if context == "colima" and shutil.which("colima"):
+            typer.echo("Starting Colima for the active Docker context…")
+            subprocess.run(["colima", "start"], cwd=_repo_root(), check=True)
+            subprocess.run(
+                ["docker", "info"],
+                cwd=_repo_root(),
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        raise RuntimeError(
+            "Docker is not available. Start Docker Desktop or Colima, then retry."
+        ) from exc
+
+
 def _wait_until_ready(base_url: str, timeout_seconds: float) -> None:
     deadline = time.monotonic() + timeout_seconds
     ready_url = urljoin(base_url.rstrip("/") + "/", "readyz")
@@ -63,6 +98,7 @@ def run(
 ) -> None:
     """Boot the local Docker stack and open the Arxie workspace."""
 
+    _ensure_container_runtime()
     _run_compose(["up", "-d", "postgres", "elasticsearch", "minio", "redis"])
     _run_compose(["run", "--rm", "paperbase-migrate"])
     _run_compose(["up", "-d", "paperbase-api", "paperbase-worker"])
@@ -111,11 +147,12 @@ def install_shortcut(
     resolved_output = output.expanduser()
     resolved_output.parent.mkdir(parents=True, exist_ok=True)
     repo_root = _repo_root()
+    launcher_path = str(Path(python_path).expanduser().with_name("arxie-local"))
     script = "\n".join(
         [
             "#!/bin/zsh",
             f'cd "{repo_root}"',
-            f'exec "{python_path}" -m paperbase.launcher.cli run',
+            f'exec "{launcher_path}" run',
             "",
         ]
     )
@@ -131,4 +168,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
