@@ -14,8 +14,20 @@ from urllib.parse import urljoin
 
 import httpx
 import typer
+from dotenv import dotenv_values
 
 app = typer.Typer(help="Convenience launcher for the local Arxie workspace.")
+
+_TRANSIENT_COMPOSE_ERROR_MARKERS = (
+    "failed to do request",
+    "unexpected eof while reading",
+    "ssl: unexpected_eof_while_reading",
+    "tls handshake timeout",
+    "connection reset by peer",
+    "temporary failure in name resolution",
+    "i/o timeout",
+    '": eof',
+)
 
 
 def _repo_root() -> Path:
@@ -31,9 +43,136 @@ def _workspace_url(base_url: str) -> str:
     return urljoin(normalized, "app")
 
 
-def _run_compose(args: list[str]) -> None:
+def _canonical_checkout_root() -> Path | None:
+    repo_root = _repo_root()
+    for parent in (repo_root, *repo_root.parents):
+        if parent.name == ".worktrees":
+            return parent.parent
+    return None
+
+
+def _compose_env_file() -> Path | None:
+    explicit_env_file = (os.environ.get("ARXIE_ENV_FILE") or "").strip()
+    if explicit_env_file:
+        resolved = Path(explicit_env_file).expanduser()
+        if resolved.exists():
+            return resolved
+        return None
+
+    repo_root = _repo_root()
+    for candidate in [repo_root / ".env"]:
+        if candidate.exists():
+            return candidate
+
+    canonical_root = _canonical_checkout_root()
+    if canonical_root is not None:
+        candidate = canonical_root / ".env"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _compose_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env_file = _compose_env_file()
+    if env_file is None:
+        return env
+    for key, value in dotenv_values(env_file).items():
+        if value is not None and key not in env:
+            env[key] = value
+    return env
+
+
+def _run_compose(args: list[str], *, env: dict[str, str] | None = None) -> None:
     command = ["docker", "compose", "-f", str(_compose_file()), *args]
-    subprocess.run(command, cwd=_repo_root(), check=True)
+    for attempt in range(3):
+        try:
+            subprocess.run(
+                command,
+                cwd=_repo_root(),
+                check=True,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            return
+        except subprocess.CalledProcessError as exc:
+            combined_output = "\n".join(part for part in (exc.stdout, exc.stderr) if part)
+            if combined_output:
+                typer.echo(combined_output, nl=False)
+                if not combined_output.endswith("\n"):
+                    typer.echo()
+            if attempt < 2 and _is_transient_compose_failure(combined_output):
+                typer.echo(
+                    "Transient Docker/build network failure detected. Retrying Arxie startup step…",
+                    err=True,
+                )
+                time.sleep(3.0)
+                continue
+            raise
+
+
+def _is_transient_compose_failure(output: str) -> bool:
+    lowered_output = output.lower()
+    return any(marker in lowered_output for marker in _TRANSIENT_COMPOSE_ERROR_MARKERS)
+
+
+def _ensure_runtime_services_running(
+    services: list[str],
+    *,
+    env: dict[str, str] | None = None,
+) -> None:
+    command = [
+        "docker",
+        "compose",
+        "-f",
+        str(_compose_file()),
+        "ps",
+        "--services",
+        "--status",
+        "running",
+        *services,
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=_repo_root(),
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    running_services = {line.strip() for line in completed.stdout.splitlines() if line.strip()}
+    missing_services = [service for service in services if service not in running_services]
+    if not missing_services:
+        return
+
+    logs_result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(_compose_file()),
+            "logs",
+            "--tail=80",
+            *services,
+        ],
+        cwd=_repo_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    logs_output = "\n".join(
+        part.strip()
+        for part in (logs_result.stdout, logs_result.stderr)
+        if part and part.strip()
+    )
+    detail = f"\n{logs_output}" if logs_output else ""
+    raise RuntimeError(
+        "Arxie services did not stay running after startup: "
+        + ", ".join(missing_services)
+        + detail
+    )
 
 
 def _ensure_container_runtime() -> None:
@@ -98,10 +237,12 @@ def run(
 ) -> None:
     """Boot the local Docker stack and open the Arxie workspace."""
 
+    compose_env = _compose_env()
     _ensure_container_runtime()
-    _run_compose(["up", "-d", "postgres", "elasticsearch", "minio", "redis"])
-    _run_compose(["run", "--rm", "paperbase-migrate"])
-    _run_compose(["up", "-d", "paperbase-api", "paperbase-worker"])
+    _run_compose(["up", "-d", "postgres", "elasticsearch", "minio", "redis"], env=compose_env)
+    _run_compose(["run", "--rm", "paperbase-migrate"], env=compose_env)
+    _run_compose(["up", "-d", "paperbase-api", "paperbase-worker"], env=compose_env)
+    _ensure_runtime_services_running(["paperbase-api", "paperbase-worker"], env=compose_env)
     _wait_until_ready(base_url, timeout_seconds)
 
     workspace_url = _workspace_url(base_url)

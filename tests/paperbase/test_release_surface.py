@@ -47,11 +47,44 @@ def test_dockerfile_and_compose_include_runtime_services() -> None:
     assert "env/paperbase.env" in compose_text
 
 
+def test_local_elasticsearch_heap_is_sized_for_single_user_launches() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    elasticsearch_env = (
+        repo_root / "infra" / "env" / "elasticsearch.env"
+    ).read_text(encoding="utf-8")
+
+    assert "ES_JAVA_OPTS=-Xms512m -Xmx512m" in elasticsearch_env
+
+
 def test_pyproject_exposes_local_launcher_entrypoint() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     pyproject_text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
 
     assert 'arxie-local = "paperbase.launcher.cli:main"' in pyproject_text
+
+
+def test_pyproject_pins_production_langchain_stack() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    pyproject_text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+
+    for dependency in [
+        '"langchain==1.2.10"',
+        '"langchain-core==1.2.16"',
+        '"langchain-openai==1.1.10"',
+        '"langchain-community==0.4.1"',
+        '"langsmith==0.7.7"',
+    ]:
+        assert dependency in pyproject_text
+
+
+def test_pyproject_does_not_pull_sentence_transformers_into_base_runtime() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    pyproject_text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+
+    dependencies_block = pyproject_text.split("[project.optional-dependencies]", maxsplit=1)[0]
+
+    assert '"sentence-transformers>=' not in dependencies_block
+    assert "local-embeddings = [" in pyproject_text
 
 
 def test_release_surface_removes_legacy_runtime_and_prd_files() -> None:

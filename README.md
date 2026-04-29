@@ -41,6 +41,12 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+If you specifically want local embedding-model dependencies on the host, install:
+
+```bash
+pip install -e .[local-embeddings]
+```
+
 ### 2. Configure
 
 ```bash
@@ -112,6 +118,11 @@ arxie-local install-shortcut
 
 `arxie-local install-shortcut` writes a double-clickable `Arxie.command` launcher
 to your Desktop by default.
+
+On the first launch, Arxie may need a few minutes to start Colima, build the
+application images, and boot the local stack. The shipped local Compose profile
+is tuned for a single-user machine, including a smaller Elasticsearch heap so
+the default stack can run on modest laptop memory.
 
 ### 5. Use Your Own Local Paper Collection
 
