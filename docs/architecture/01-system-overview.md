@@ -79,3 +79,8 @@ The production stack now expects:
 
 The code still supports SQLite fallback for local development and tests, but the
 intended deployed surface is the full self-hosted stack.
+
+For the single-user launcher path, search readiness is intentionally
+non-blocking. If the local Elasticsearch container is unavailable, Arxie still
+comes up over the canonical DB/object-store/runtime surface and uses its
+database-backed fallback paths until backend search is restored.

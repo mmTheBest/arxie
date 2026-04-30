@@ -124,6 +124,11 @@ application images, and boot the local stack. The shipped local Compose profile
 is tuned for a single-user machine, including a smaller Elasticsearch heap so
 the default stack can run on modest laptop memory.
 
+For the single-user local path, Arxie does not hard-block readiness on the
+search backend. If Elasticsearch is temporarily unavailable, the launcher can
+still open `/app`, and the workspace falls back to the database-backed browse
+and search surfaces until backend search is healthy again.
+
 ### 5. Use Your Own Local Paper Collection
 
 The browser workspace is now enough for the single-user local workflow:

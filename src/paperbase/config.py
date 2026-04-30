@@ -11,6 +11,7 @@ from typing import Mapping
 class PaperbaseConfig:
     database_url: str = "sqlite:///data/paperbase.db"
     elasticsearch_url: str = "http://localhost:9200"
+    require_search_backend: bool = False
     redis_url: str = "redis://localhost:6379/0"
     worker_queue_backend: str = "db"
     worker_queue_name: str = "paperbase:jobs"
@@ -36,6 +37,9 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
     """Load Paperbase runtime configuration from environment variables."""
 
     resolved_env = env or os.environ
+    require_search_backend_raw = (
+        resolved_env.get("PAPERBASE_REQUIRE_SEARCH_BACKEND") or "false"
+    ).strip().lower()
     return PaperbaseConfig(
         database_url=(
             resolved_env.get("PAPERBASE_DATABASE_URL")
@@ -44,6 +48,7 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         elasticsearch_url=(
             resolved_env.get("PAPERBASE_ELASTICSEARCH_URL") or "http://localhost:9200"
         ).strip(),
+        require_search_backend=require_search_backend_raw in {"1", "true", "yes", "on"},
         redis_url=(resolved_env.get("PAPERBASE_REDIS_URL") or "redis://localhost:6379/0").strip(),
         worker_queue_backend=(
             resolved_env.get("PAPERBASE_WORKER_QUEUE_BACKEND") or "db"

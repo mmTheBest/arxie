@@ -62,6 +62,7 @@ class DependencyChecker:
         return DependencyCheckResult(name="database", ok=True, detail="ok")
 
     def _check_search(self) -> DependencyCheckResult:
+        required = self.config.require_search_backend
         try:
             if self.search_backend is not None and hasattr(self.search_backend, "base_url"):
                 response = self.http_client.get(str(getattr(self.search_backend, "base_url")))
@@ -69,8 +70,8 @@ class DependencyChecker:
             else:
                 self._tcp_probe(self.config.elasticsearch_url)
         except Exception as exc:  # noqa: BLE001
-            return DependencyCheckResult(name="search", ok=False, detail=str(exc))
-        return DependencyCheckResult(name="search", ok=True, detail="ok")
+            return DependencyCheckResult(name="search", ok=False, detail=str(exc), required=required)
+        return DependencyCheckResult(name="search", ok=True, detail="ok", required=required)
 
     def _check_redis(self) -> DependencyCheckResult:
         try:

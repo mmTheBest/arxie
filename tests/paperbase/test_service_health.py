@@ -35,6 +35,24 @@ class _UnhealthyDependencyChecker:
         )
 
 
+class _DegradedSearchDependencyChecker:
+    def check(self) -> ReadinessReport:
+        return ReadinessReport(
+            ready=True,
+            dependencies=[
+                DependencyCheckResult(name="database", ok=True, detail="ok", required=True),
+                DependencyCheckResult(
+                    name="search",
+                    ok=False,
+                    detail="oom-killed",
+                    required=False,
+                ),
+                DependencyCheckResult(name="redis", ok=True, detail="ok", required=True),
+                DependencyCheckResult(name="object_store", ok=True, detail="ok", required=True),
+            ],
+        )
+
+
 def test_health_and_livez_report_service_metadata() -> None:
     client = TestClient(create_app(dependency_checker=_HealthyDependencyChecker()))
 
@@ -79,4 +97,20 @@ def test_readyz_returns_503_when_required_dependency_is_unavailable() -> None:
         "ok": False,
         "detail": "connection refused",
         "required": True,
+    }
+
+
+def test_readyz_allows_degraded_local_search_when_not_required() -> None:
+    client = TestClient(create_app(dependency_checker=_DegradedSearchDependencyChecker()))
+
+    response = client.get("/readyz")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["dependencies"][1] == {
+        "name": "search",
+        "ok": False,
+        "detail": "oom-killed",
+        "required": False,
     }

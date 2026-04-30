@@ -10,6 +10,7 @@ def test_env_example_exposes_paperbase_runtime_configuration() -> None:
     expected_keys = [
         "PAPERBASE_DATABASE_URL=",
         "PAPERBASE_ELASTICSEARCH_URL=",
+        "PAPERBASE_REQUIRE_SEARCH_BACKEND=",
         "PAPERBASE_REDIS_URL=",
         "PAPERBASE_WORKER_QUEUE_BACKEND=",
         "PAPERBASE_WORKER_QUEUE_NAME=",
