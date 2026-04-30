@@ -43,6 +43,13 @@ def _workspace_url(base_url: str) -> str:
     return urljoin(normalized, "app")
 
 
+def _core_local_services(*, with_search: bool) -> list[str]:
+    services = ["postgres", "minio", "redis"]
+    if with_search:
+        services.append("elasticsearch")
+    return services
+
+
 def _canonical_checkout_root() -> Path | None:
     repo_root = _repo_root()
     for parent in (repo_root, *repo_root.parents):
@@ -232,14 +239,20 @@ def _wait_until_ready(base_url: str, timeout_seconds: float) -> None:
 @app.command("run")
 def run(
     no_browser: bool = typer.Option(False, "--no-browser", help="Start Arxie without opening a browser."),
+    with_search: bool = typer.Option(
+        False,
+        "--with-search",
+        help="Also start the backend search service for a heavier local stack.",
+    ),
     base_url: str = typer.Option("http://localhost:8080", help="Base URL for the local Arxie API/UI."),
     timeout_seconds: float = typer.Option(120.0, "--timeout", min=10.0, help="Seconds to wait for readiness."),
 ) -> None:
     """Boot the local Docker stack and open the Arxie workspace."""
 
     compose_env = _compose_env()
+    compose_env["PAPERBASE_REQUIRE_SEARCH_BACKEND"] = "true" if with_search else "false"
     _ensure_container_runtime()
-    _run_compose(["up", "-d", "postgres", "elasticsearch", "minio", "redis"], env=compose_env)
+    _run_compose(["up", "-d", *_core_local_services(with_search=with_search)], env=compose_env)
     _run_compose(["run", "--rm", "paperbase-migrate"], env=compose_env)
     _run_compose(["up", "-d", "paperbase-api", "paperbase-worker"], env=compose_env)
     _ensure_runtime_services_running(["paperbase-api", "paperbase-worker"], env=compose_env)

@@ -106,7 +106,13 @@ If you want a more app-like local workflow, use the launcher command:
 arxie-local run
 ```
 
-That boots the local Docker stack, waits for readiness, and opens `/app`.
+That boots the lighter single-user local stack, waits for readiness, and opens
+`/app`. By default it starts PostgreSQL, MinIO, Redis, the API, and the worker.
+If you explicitly want the heavier backend-search service too, use:
+
+```bash
+arxie-local run --with-search
+```
 
 Other useful shortcuts:
 
@@ -125,9 +131,10 @@ is tuned for a single-user machine, including a smaller Elasticsearch heap so
 the default stack can run on modest laptop memory.
 
 For the single-user local path, Arxie does not hard-block readiness on the
-search backend. If Elasticsearch is temporarily unavailable, the launcher can
-still open `/app`, and the workspace falls back to the database-backed browse
-and search surfaces until backend search is healthy again.
+search backend. The default launcher path skips Elasticsearch entirely so parse,
+extraction, and the dashboard remain reliable on a modest laptop. If you later
+start Arxie with `--with-search`, the workspace can use the backend search
+surface when Elasticsearch is healthy.
 
 ### 5. Use Your Own Local Paper Collection
 

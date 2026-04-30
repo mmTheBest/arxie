@@ -12,11 +12,17 @@ from paperbase.search.embeddings import build_embedding_provider
 from services.paperbase_api.app import create_app
 
 
+def _build_search_backend(config):
+    if not config.require_search_backend:
+        return None
+    return ElasticsearchSearchBackend(base_url=config.elasticsearch_url)
+
+
 def create_runtime_app():
     config = load_paperbase_config()
     return create_app(
         session_factory=make_session_factory(config.database_url),
-        search_backend=ElasticsearchSearchBackend(base_url=config.elasticsearch_url),
+        search_backend=_build_search_backend(config),
         job_dispatcher=build_job_queue(config),
         embedding_provider=build_embedding_provider(config),
     )

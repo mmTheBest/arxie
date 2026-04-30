@@ -42,7 +42,7 @@ def test_run_command_starts_stack_waits_for_ready_and_opens_browser(monkeypatch)
 
     assert result.exit_code == 0
     assert compose_calls == [
-        ["up", "-d", "postgres", "elasticsearch", "minio", "redis"],
+        ["up", "-d", "postgres", "minio", "redis"],
         ["run", "--rm", "paperbase-migrate"],
         ["up", "-d", "paperbase-api", "paperbase-worker"],
     ]
@@ -50,6 +50,35 @@ def test_run_command_starts_stack_waits_for_ready_and_opens_browser(monkeypatch)
     assert ready_calls == [("http://localhost:8080", 120.0)]
     assert opened_urls == ["http://localhost:8080/app"]
     assert "Arxie is ready at http://localhost:8080/app" in result.stdout
+
+
+def test_run_command_can_opt_into_backend_search_services(monkeypatch) -> None:
+    runner = CliRunner()
+    compose_calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "paperbase.launcher.cli._run_compose",
+        lambda args, env=None: compose_calls.append(list(args)),
+    )
+    monkeypatch.setattr("paperbase.launcher.cli._ensure_container_runtime", lambda: None)
+    monkeypatch.setattr("paperbase.launcher.cli._compose_env", lambda: {})
+    monkeypatch.setattr(
+        "paperbase.launcher.cli._ensure_runtime_services_running",
+        lambda services, env=None: None,
+    )
+    monkeypatch.setattr(
+        "paperbase.launcher.cli._wait_until_ready",
+        lambda base_url, timeout_seconds: None,
+    )
+    monkeypatch.setattr(
+        "paperbase.launcher.cli.webbrowser.open",
+        lambda url: None,
+    )
+
+    result = runner.invoke(app, ["run", "--with-search"])
+
+    assert result.exit_code == 0
+    assert compose_calls[0] == ["up", "-d", "postgres", "minio", "redis", "elasticsearch"]
 
 
 def test_run_command_supports_no_browser(monkeypatch) -> None:

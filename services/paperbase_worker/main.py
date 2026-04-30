@@ -15,6 +15,12 @@ from services.paperbase_api.routes.extraction import default_extraction_client_f
 from services.paperbase_worker.runtime import PaperbaseWorker
 
 
+def _build_search_backend(config):
+    if not config.require_search_backend:
+        return None
+    return ElasticsearchSearchBackend(base_url=config.elasticsearch_url)
+
+
 def build_worker() -> PaperbaseWorker:
     config = load_paperbase_config()
     job_queue = build_job_queue(config)
@@ -22,7 +28,7 @@ def build_worker() -> PaperbaseWorker:
     object_store.ensure_bucket()
     return PaperbaseWorker(
         session_factory=make_session_factory(config.database_url),
-        search_backend=ElasticsearchSearchBackend(base_url=config.elasticsearch_url),
+        search_backend=_build_search_backend(config),
         extraction_client_factory=default_extraction_client_factory,
         job_consumer=job_queue,
         job_dispatcher=job_queue,

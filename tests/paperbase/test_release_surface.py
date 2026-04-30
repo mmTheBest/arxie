@@ -57,6 +57,17 @@ def test_local_elasticsearch_heap_is_sized_for_single_user_launches() -> None:
     assert "ES_JAVA_OPTS=-Xms512m -Xmx512m" in elasticsearch_env
 
 
+def test_local_api_and_worker_do_not_hard_depend_on_elasticsearch_service() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    compose_text = (repo_root / "infra" / "docker-compose.paperbase.yml").read_text(encoding="utf-8")
+
+    api_block = compose_text.split("  paperbase-api:\n", maxsplit=1)[1].split("\n  paperbase-worker:\n", maxsplit=1)[0]
+    worker_block = compose_text.split("  paperbase-worker:\n", maxsplit=1)[1].split("\n  postgres:\n", maxsplit=1)[0]
+
+    assert "elasticsearch:" not in api_block
+    assert "elasticsearch:" not in worker_block
+
+
 def test_pyproject_exposes_local_launcher_entrypoint() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     pyproject_text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")

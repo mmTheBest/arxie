@@ -27,8 +27,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      elasticsearch:
-        condition: service_started
       minio:
         condition: service_started
       redis:
@@ -53,8 +51,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      elasticsearch:
-        condition: service_started
       minio:
         condition: service_started
       redis:
