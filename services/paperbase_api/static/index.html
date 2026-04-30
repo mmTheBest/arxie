@@ -8,210 +8,415 @@
     <script defer src="/ui/paperbase-ui.js"></script>
   </head>
   <body>
-    <div class="page-shell">
-      <header class="hero">
-        <div class="hero-copy">
+    <div id="app-shell" class="app-shell" data-active-view="workspace">
+      <header class="app-header">
+        <div class="brand-copy">
           <p class="eyebrow">Arxie</p>
           <h1>Arxie Workspace</h1>
           <p class="hero-text">
-            Work across a durable paperbase instead of starting from scratch each session.
-            Save a research context, search a field, inspect evidence, and queue long-running corpus jobs.
+            Move through one persistent research workspace: build a collection, search within it,
+            inspect evidence, compare methods, and save an investigation you can return to later.
           </p>
         </div>
-        <div class="hero-actions">
-          <button id="reindex-button" class="action-button action-button-primary">
-            Queue Reindex
-          </button>
-          <p id="status-banner" class="status-banner">Loading collections and jobs…</p>
+        <div class="header-status">
+          <p class="status-label">Current system status</p>
+          <p id="status-banner" class="status-banner">Loading workspace state…</p>
         </div>
       </header>
 
-      <main class="dashboard-grid">
-        <section class="panel panel-tall" id="workspaces-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Workspaces</p>
-              <h2>Saved research contexts</h2>
-            </div>
-          </div>
-          <div id="workspaces-list" class="stacked-list"></div>
-        </section>
+      <nav id="app-nav" class="app-nav" aria-label="Primary navigation">
+        <button type="button" class="nav-tab" data-view="library">Library</button>
+        <button type="button" class="nav-tab" data-view="workspace">Workspace</button>
+        <button type="button" class="nav-tab" data-view="compare">Compare</button>
+        <button type="button" class="nav-tab" data-view="jobs">Jobs</button>
+        <button type="button" class="nav-tab" data-view="settings">Settings</button>
+      </nav>
 
-        <section class="panel panel-tall" id="collections-panel">
-          <div class="panel-header">
-            <div>
+      <div class="app-body">
+        <aside class="app-sidebar">
+          <section class="sidebar-section">
+            <div class="sidebar-header">
               <p class="panel-kicker">Collections</p>
-              <h2>Curated databases</h2>
+              <h2>Paper libraries</h2>
             </div>
-            <div class="button-row">
-              <button id="parse-button" class="action-button">Queue Parse</button>
-              <button id="extract-button" class="action-button">Queue Extraction</button>
+            <div id="sidebar-collections-list" class="stacked-list"></div>
+          </section>
+          <section class="sidebar-section">
+            <div class="sidebar-header">
+              <p class="panel-kicker">Workspaces</p>
+              <h2>Saved investigations</h2>
             </div>
-          </div>
-          <form id="local-library-upload-form" class="inline-form-stack">
-            <div class="inline-form-copy">
-              <p class="panel-kicker">Recommended Import</p>
-              <h3>Upload a local PDF folder</h3>
-              <p class="muted">
-                Best for the default Docker stack. Select a folder from your machine and Arxie will ingest it into a collection.
-              </p>
-            </div>
-            <label class="field-label" for="local-library-upload-input">PDF folder</label>
-            <input
-              id="local-library-upload-input"
-              name="files"
-              type="file"
-              accept=".pdf,application/pdf"
-              webkitdirectory
-              directory
-              multiple
-            />
-            <label class="field-label" for="local-library-upload-title-input">Collection title</label>
-            <input
-              id="local-library-upload-title-input"
-              name="collection_title"
-              type="text"
-              placeholder="e.g. scRegNet local corpus"
-              autocomplete="off"
-            />
-            <label class="field-label" for="local-library-upload-description-input">Description</label>
-            <textarea
-              id="local-library-upload-description-input"
-              name="collection_description"
-              rows="3"
-              placeholder="Optional note about this uploaded paper collection"
-            ></textarea>
-            <button id="local-library-upload-button" type="submit" class="action-button action-button-primary">
-              Upload PDF Folder
-            </button>
-          </form>
-          <form id="local-library-form" class="inline-form-stack">
-            <div class="inline-form-copy">
-              <p class="panel-kicker">Advanced Import</p>
-              <h3>Import by host filesystem path</h3>
-              <p class="muted">
-                Use this when the API and worker can already see the same host path, such as local-process mode.
-              </p>
-            </div>
-            <label class="field-label" for="local-library-source-input">Source directory</label>
-            <input
-              id="local-library-source-input"
-              name="source_dir"
-              type="text"
-              placeholder="/Users/you/Papers/MyField"
-              autocomplete="off"
-            />
-            <label class="field-label" for="local-library-title-input">Collection title</label>
-            <input
-              id="local-library-title-input"
-              name="collection_title"
-              type="text"
-              placeholder="e.g. scRegNet local corpus"
-              autocomplete="off"
-            />
-            <label class="field-label" for="local-library-description-input">Description</label>
-            <textarea
-              id="local-library-description-input"
-              name="collection_description"
-              rows="3"
-              placeholder="Optional note about this local paper collection"
-            ></textarea>
-            <button id="local-library-import-button" type="submit" class="action-button action-button-primary">
-              Import Local Folder
-            </button>
-          </form>
-          <div id="collections-list" class="stacked-list"></div>
-        </section>
-
-        <section class="panel panel-tall" id="papers-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Papers</p>
-              <h2>Browse and search</h2>
-            </div>
-            <form id="search-form" class="search-form">
-              <input
-                id="paper-search-input"
-                name="q"
-                type="search"
-                placeholder="Search title or abstract"
-                autocomplete="off"
-              />
-              <button type="submit" class="action-button">Search</button>
-            </form>
-          </div>
-          <div id="paper-list" class="stacked-list"></div>
-        </section>
-
-        <section class="panel panel-wide" id="summary-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Workspace surface</p>
-              <h2>Research context and paper detail</h2>
-            </div>
-          </div>
-          <div class="summary-grid">
-            <div class="summary-card" id="workspace-detail-panel">
-              <h3>Workspace context</h3>
-              <label class="field-label" for="workspace-title-input">Workspace title</label>
-              <input id="workspace-title-input" type="text" placeholder="e.g. scRegNet benchmark review" />
-              <label class="field-label" for="workspace-focus-input">Focus note</label>
-              <textarea id="workspace-focus-input" rows="5" placeholder="What is this workspace trying to answer?"></textarea>
-              <div id="workspace-meta" class="detail-group"></div>
-              <button id="save-workspace-button" class="action-button action-button-primary">
-                Save Workspace
-              </button>
-            </div>
-            <div class="summary-card">
-              <h3>Collection snapshot</h3>
-              <div id="collection-summary"></div>
-            </div>
-            <div class="summary-card">
-              <h3>Paper detail</h3>
-              <div id="paper-detail"></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel panel-wide" id="search-surfaces-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Hybrid search</p>
-              <h2>Chunks and artifact hits</h2>
-            </div>
-          </div>
-          <div class="summary-grid">
-            <div class="summary-card">
-              <h3>Chunk hits</h3>
-              <div id="chunk-search-surface"></div>
-            </div>
-            <div class="summary-card">
-              <h3>Artifact hits</h3>
-              <div id="artifact-search-surface"></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel panel-wide" id="artifacts-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Artifacts</p>
-              <h2>Figures and tables</h2>
-            </div>
-          </div>
-          <div id="artifact-surface" class="summary-grid"></div>
-        </section>
-
-        <aside class="panel panel-jobs" id="jobs-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Jobs</p>
-              <h2>Background execution</h2>
-            </div>
-          </div>
-          <div id="jobs-list" class="stacked-list"></div>
+            <div id="sidebar-workspaces-list" class="stacked-list"></div>
+          </section>
         </aside>
-      </main>
+
+        <main class="app-main">
+          <section id="library-view" class="module-view" data-view="library">
+            <div class="module-header">
+              <div>
+                <p class="panel-kicker">Library</p>
+                <h2>Build and manage curated paper collections</h2>
+              </div>
+              <div id="library-selected-collection-meta" class="module-meta"></div>
+            </div>
+
+            <div class="library-grid">
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Recommended Import</p>
+                    <h3>Upload a local PDF folder</h3>
+                  </div>
+                </div>
+                <p class="muted">
+                  Best for the default Docker stack. Select a folder from your machine and Arxie
+                  will ingest it into a collection.
+                </p>
+                <form id="local-library-upload-form" class="inline-form-stack">
+                  <label class="field-label" for="local-library-upload-input">PDF folder</label>
+                  <input
+                    id="local-library-upload-input"
+                    name="files"
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    webkitdirectory
+                    directory
+                    multiple
+                  />
+                  <label class="field-label" for="local-library-upload-title-input">Collection title</label>
+                  <input
+                    id="local-library-upload-title-input"
+                    name="collection_title"
+                    type="text"
+                    placeholder="e.g. scRegNet local corpus"
+                    autocomplete="off"
+                  />
+                  <label class="field-label" for="local-library-upload-description-input">Description</label>
+                  <textarea
+                    id="local-library-upload-description-input"
+                    name="collection_description"
+                    rows="4"
+                    placeholder="Optional note about this uploaded paper collection"
+                  ></textarea>
+                  <button
+                    id="local-library-upload-button"
+                    type="submit"
+                    class="action-button action-button-primary"
+                  >
+                    Upload PDF Folder
+                  </button>
+                </form>
+              </section>
+
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Advanced Import</p>
+                    <h3>Import by host filesystem path</h3>
+                  </div>
+                </div>
+                <p class="muted">
+                  Use this when the API and worker can already see the same host path, such as
+                  local-process mode.
+                </p>
+                <form id="local-library-form" class="inline-form-stack">
+                  <label class="field-label" for="local-library-source-input">Source directory</label>
+                  <input
+                    id="local-library-source-input"
+                    name="source_dir"
+                    type="text"
+                    placeholder="/Users/you/Papers/MyField"
+                    autocomplete="off"
+                  />
+                  <label class="field-label" for="local-library-title-input">Collection title</label>
+                  <input
+                    id="local-library-title-input"
+                    name="collection_title"
+                    type="text"
+                    placeholder="e.g. scRegNet local corpus"
+                    autocomplete="off"
+                  />
+                  <label class="field-label" for="local-library-description-input">Description</label>
+                  <textarea
+                    id="local-library-description-input"
+                    name="collection_description"
+                    rows="4"
+                    placeholder="Optional note about this local paper collection"
+                  ></textarea>
+                  <button
+                    id="local-library-import-button"
+                    type="submit"
+                    class="action-button action-button-primary"
+                  >
+                    Import Local Folder
+                  </button>
+                </form>
+              </section>
+            </div>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="panel-kicker">Collection Operations</p>
+                  <h3>Prepare the selected collection</h3>
+                </div>
+                <div class="button-row">
+                  <button id="parse-button" class="action-button" type="button">Queue Parse</button>
+                  <button id="extract-button" class="action-button" type="button">Queue Extraction</button>
+                </div>
+              </div>
+              <div id="library-collections-grid" class="card-grid"></div>
+            </section>
+          </section>
+
+          <section id="workspace-view" class="module-view" data-view="workspace">
+            <div class="module-header">
+              <div>
+                <p class="panel-kicker">Workspace</p>
+                <h2 id="workspace-collection-title">Search one collection and inspect evidence</h2>
+              </div>
+              <div class="module-actions">
+                <button id="workspace-open-compare-button" type="button" class="action-button">
+                  Open Compare
+                </button>
+              </div>
+            </div>
+
+            <div class="workspace-toolbar panel">
+              <div class="workspace-toolbar-copy">
+                <p class="workspace-toolbar-label">Saved query</p>
+                <p id="workspace-search-meta" class="muted">
+                  Run a search inside the selected collection, then save the investigation.
+                </p>
+              </div>
+              <form id="search-form" class="search-form">
+                <input
+                  id="paper-search-input"
+                  name="q"
+                  type="search"
+                  placeholder="Search title, abstract, or evidence keywords"
+                  autocomplete="off"
+                />
+                <button type="submit" class="action-button action-button-primary">Search</button>
+              </form>
+            </div>
+
+            <div class="workspace-grid">
+              <section class="panel workspace-panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Results</p>
+                    <h3>Papers in the current slice</h3>
+                  </div>
+                </div>
+                <div id="paper-list" class="stacked-list"></div>
+              </section>
+
+              <section class="panel workspace-panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Evidence</p>
+                    <h3>Chunk and artifact hits</h3>
+                  </div>
+                </div>
+                <div class="evidence-grid">
+                  <div class="surface-card">
+                    <h4>Chunk hits</h4>
+                    <div id="chunk-search-surface"></div>
+                  </div>
+                  <div class="surface-card">
+                    <h4>Artifact hits</h4>
+                    <div id="artifact-search-surface"></div>
+                  </div>
+                </div>
+              </section>
+
+              <aside id="workspace-detail-panel" class="panel workspace-detail-panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Current investigation</p>
+                    <h3>Workspace context</h3>
+                  </div>
+                </div>
+
+                <label class="field-label" for="workspace-title-input">Workspace title</label>
+                <input
+                  id="workspace-title-input"
+                  type="text"
+                  placeholder="e.g. scRegNet benchmark review"
+                />
+                <label class="field-label" for="workspace-focus-input">Focus note</label>
+                <textarea
+                  id="workspace-focus-input"
+                  rows="5"
+                  placeholder="What question is this workspace trying to answer?"
+                ></textarea>
+                <div id="workspace-meta" class="detail-group"></div>
+                <button id="save-workspace-button" class="action-button action-button-primary" type="button">
+                  Save Workspace
+                </button>
+
+                <div class="detail-divider"></div>
+
+                <div class="detail-section">
+                  <h4>Collection snapshot</h4>
+                  <div id="collection-summary"></div>
+                </div>
+
+                <div class="detail-divider"></div>
+
+                <div class="detail-section">
+                  <h4>Paper detail</h4>
+                  <div id="paper-detail"></div>
+                </div>
+              </aside>
+            </div>
+          </section>
+
+          <section id="compare-view" class="module-view" data-view="compare">
+            <div class="module-header">
+              <div>
+                <p class="panel-kicker">Compare</p>
+                <h2>Compare structured evidence across the active collection</h2>
+              </div>
+              <div id="compare-collection-context" class="module-meta"></div>
+            </div>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="panel-kicker">Comparison Controls</p>
+                  <h3>Choose the slice you want to compare</h3>
+                </div>
+                <button id="compare-refresh-button" type="button" class="action-button action-button-primary">
+                  Refresh Compare View
+                </button>
+              </div>
+              <div class="compare-controls">
+                <div>
+                  <label class="field-label" for="compare-dataset-input">Dataset</label>
+                  <input id="compare-dataset-input" type="text" placeholder="e.g. mESC" />
+                </div>
+                <div>
+                  <label class="field-label" for="compare-metric-input">Metric</label>
+                  <input id="compare-metric-input" type="text" placeholder="e.g. AUROC" />
+                </div>
+                <div>
+                  <label class="field-label" for="compare-method-input">Method focus</label>
+                  <input id="compare-method-input" type="text" placeholder="Optional method family" />
+                </div>
+              </div>
+            </section>
+
+            <div class="compare-grid">
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Results</p>
+                    <h3>Metric-ranked result rows</h3>
+                  </div>
+                </div>
+                <div id="compare-results-surface"></div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Methods</p>
+                    <h3>Method summaries</h3>
+                  </div>
+                </div>
+                <div id="compare-methods-surface"></div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Engineering Tricks</p>
+                    <h3>Implementation patterns</h3>
+                  </div>
+                </div>
+                <div id="compare-tricks-surface"></div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Artifacts</p>
+                    <h3>Figures and tables</h3>
+                  </div>
+                </div>
+                <div class="artifact-grid">
+                  <div class="surface-card">
+                    <h4>Figures</h4>
+                    <div id="compare-figures-surface"></div>
+                  </div>
+                  <div class="surface-card">
+                    <h4>Tables</h4>
+                    <div id="compare-tables-surface"></div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section id="jobs-view" class="module-view" data-view="jobs">
+            <div class="module-header">
+              <div>
+                <p class="panel-kicker">Jobs</p>
+                <h2>Queue long-running corpus operations</h2>
+              </div>
+              <div class="button-row">
+                <button id="refresh-jobs-button" class="action-button" type="button">Refresh Jobs</button>
+                <button id="reindex-button" class="action-button action-button-primary" type="button">
+                  Queue Reindex
+                </button>
+              </div>
+            </div>
+
+            <section class="panel">
+              <div id="jobs-list" class="stacked-list"></div>
+            </section>
+          </section>
+
+          <section id="settings-view" class="module-view" data-view="settings">
+            <div class="module-header">
+              <div>
+                <p class="panel-kicker">Settings</p>
+                <h2>Local runtime notes and current context</h2>
+              </div>
+            </div>
+
+            <div class="settings-grid">
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Current Context</p>
+                    <h3>Workspace and collection state</h3>
+                  </div>
+                </div>
+                <div id="settings-summary"></div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Local Operation</p>
+                    <h3>How this single-user install behaves</h3>
+                  </div>
+                </div>
+                <ul class="detail-list">
+                  <li>Use Library to import a folder and create a curated collection.</li>
+                  <li>Queue Parse and Queue Extraction before expecting rich compare results.</li>
+                  <li>Use Workspace as the main daily screen for search, reading, and saving context.</li>
+                  <li>Use Compare after you have a prepared collection with extracted entities.</li>
+                  <li>Use Jobs to monitor long-running ingest, parse, extraction, and reindex work.</li>
+                </ul>
+              </section>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
   </body>
 </html>

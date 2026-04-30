@@ -9,11 +9,15 @@
     searchChunks: "/api/v1/search/chunks",
     searchArtifacts: "/api/v1/search/artifacts",
     reindex: "/api/v1/search/reindex",
+    compareResults: "/api/v1/compare/results",
+    compareMethods: "/api/v1/compare/methods",
+    compareEngineeringTricks: "/api/v1/compare/engineering-tricks",
     compareFigures: "/api/v1/compare/figures",
     compareTables: "/api/v1/compare/tables",
   };
 
   const state = {
+    activeView: "workspace",
     workspaces: [],
     selectedWorkspace: null,
     collections: [],
@@ -23,29 +27,30 @@
     selectedPaper: null,
     selectedPaperStructured: null,
     collectionSummary: null,
-    collectionFigures: [],
-    collectionTables: [],
     chunkSearchHits: [],
     artifactSearchHits: [],
     jobs: [],
+    compare: {
+      collectionId: null,
+      dataset: "",
+      metric: "",
+      method: "",
+      results: [],
+      methods: [],
+      engineeringTricks: [],
+      figures: [],
+      tables: [],
+    },
     pollHandle: null,
   };
 
   const elements = {
-    workspacesList: document.getElementById("workspaces-list"),
-    collectionsList: document.getElementById("collections-list"),
-    paperList: document.getElementById("paper-list"),
-    workspaceTitleInput: document.getElementById("workspace-title-input"),
-    workspaceFocusInput: document.getElementById("workspace-focus-input"),
-    workspaceMeta: document.getElementById("workspace-meta"),
-    collectionSummary: document.getElementById("collection-summary"),
-    paperDetail: document.getElementById("paper-detail"),
-    artifactSurface: document.getElementById("artifact-surface"),
-    chunkSearchSurface: document.getElementById("chunk-search-surface"),
-    artifactSearchSurface: document.getElementById("artifact-search-surface"),
-    jobsList: document.getElementById("jobs-list"),
-    searchForm: document.getElementById("search-form"),
-    searchInput: document.getElementById("paper-search-input"),
+    appShell: document.getElementById("app-shell"),
+    navTabs: Array.from(document.querySelectorAll("#app-nav [data-view]")),
+    sidebarCollectionsList: document.getElementById("sidebar-collections-list"),
+    sidebarWorkspacesList: document.getElementById("sidebar-workspaces-list"),
+    statusBanner: document.getElementById("status-banner"),
+    librarySelectedCollectionMeta: document.getElementById("library-selected-collection-meta"),
     localLibraryUploadForm: document.getElementById("local-library-upload-form"),
     localLibraryUploadInput: document.getElementById("local-library-upload-input"),
     localLibraryUploadTitleInput: document.getElementById("local-library-upload-title-input"),
@@ -56,11 +61,37 @@
     localLibraryTitleInput: document.getElementById("local-library-title-input"),
     localLibraryDescriptionInput: document.getElementById("local-library-description-input"),
     localLibraryImportButton: document.getElementById("local-library-import-button"),
-    saveWorkspaceButton: document.getElementById("save-workspace-button"),
-    extractButton: document.getElementById("extract-button"),
     parseButton: document.getElementById("parse-button"),
+    extractButton: document.getElementById("extract-button"),
+    libraryCollectionsGrid: document.getElementById("library-collections-grid"),
+    workspaceCollectionTitle: document.getElementById("workspace-collection-title"),
+    workspaceSearchMeta: document.getElementById("workspace-search-meta"),
+    workspaceOpenCompareButton: document.getElementById("workspace-open-compare-button"),
+    searchForm: document.getElementById("search-form"),
+    searchInput: document.getElementById("paper-search-input"),
+    paperList: document.getElementById("paper-list"),
+    chunkSearchSurface: document.getElementById("chunk-search-surface"),
+    artifactSearchSurface: document.getElementById("artifact-search-surface"),
+    workspaceTitleInput: document.getElementById("workspace-title-input"),
+    workspaceFocusInput: document.getElementById("workspace-focus-input"),
+    workspaceMeta: document.getElementById("workspace-meta"),
+    saveWorkspaceButton: document.getElementById("save-workspace-button"),
+    collectionSummary: document.getElementById("collection-summary"),
+    paperDetail: document.getElementById("paper-detail"),
+    compareCollectionContext: document.getElementById("compare-collection-context"),
+    compareDatasetInput: document.getElementById("compare-dataset-input"),
+    compareMetricInput: document.getElementById("compare-metric-input"),
+    compareMethodInput: document.getElementById("compare-method-input"),
+    compareRefreshButton: document.getElementById("compare-refresh-button"),
+    compareResultsSurface: document.getElementById("compare-results-surface"),
+    compareMethodsSurface: document.getElementById("compare-methods-surface"),
+    compareTricksSurface: document.getElementById("compare-tricks-surface"),
+    compareFiguresSurface: document.getElementById("compare-figures-surface"),
+    compareTablesSurface: document.getElementById("compare-tables-surface"),
+    refreshJobsButton: document.getElementById("refresh-jobs-button"),
     reindexButton: document.getElementById("reindex-button"),
-    statusBanner: document.getElementById("status-banner"),
+    jobsList: document.getElementById("jobs-list"),
+    settingsSummary: document.getElementById("settings-summary"),
   };
 
   function setStatus(message) {
@@ -72,8 +103,19 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;")
+      .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function formatValue(value) {
+    if (value === null || value === undefined || value === "") {
+      return "n/a";
+    }
+    return String(value);
+  }
+
+  function uniqueStrings(values) {
+    return Array.from(new Set(values.filter(Boolean)));
   }
 
   async function fetchJson(url, options) {
@@ -85,400 +127,83 @@
     return payload;
   }
 
-  async function loadCollections() {
-    const payload = await fetchJson(endpoints.collections);
-    state.collections = payload.data || [];
-    if (!state.selectedCollection && state.collections.length > 0) {
-      state.selectedCollection = state.collections[0];
-      await loadCollectionSurface(state.selectedCollection.id);
-    } else if (state.selectedCollection) {
-      await loadCollectionSurface(state.selectedCollection.id);
-    } else {
-      renderCollections();
-      renderEmptyCollectionState();
+  function activateView(viewName) {
+    state.activeView = viewName;
+    if (elements.appShell) {
+      elements.appShell.dataset.activeView = viewName;
     }
-    renderCollections();
-  }
-
-  async function loadWorkspaces(preferredWorkspaceId) {
-    const payload = await fetchJson(endpoints.workspaces);
-    state.workspaces = payload.data || [];
-
-    const workspaceId = preferredWorkspaceId
-      || (state.selectedWorkspace && state.selectedWorkspace.id)
-      || (state.workspaces[0] && state.workspaces[0].id);
-
-    renderWorkspaces();
-    if (workspaceId) {
-      await loadWorkspace(workspaceId);
-      return;
-    }
-    renderWorkspaceDetail();
-  }
-
-  async function loadWorkspace(workspaceId) {
-    const payload = await fetchJson(`${endpoints.workspaces}/${workspaceId}`);
-    state.selectedWorkspace = payload.data;
-    renderWorkspaces();
-    renderWorkspaceDetail();
-
-    if (state.selectedWorkspace.collection_id) {
-      await loadCollectionSurface(state.selectedWorkspace.collection_id);
-    }
-
-    elements.searchInput.value = state.selectedWorkspace.saved_query || "";
-    if (state.selectedWorkspace.saved_query) {
-      await searchPapers(state.selectedWorkspace.saved_query);
-    } else {
-      state.searchResults = [];
-      state.chunkSearchHits = [];
-      state.artifactSearchHits = [];
-      renderPapers();
-      renderSearchSurfaces();
-    }
-
-    if (state.selectedWorkspace.pinned_papers && state.selectedWorkspace.pinned_papers.length > 0) {
-      await loadPaperDetail(state.selectedWorkspace.pinned_papers[0].id);
-    }
-
-    renderWorkspaceDetail();
-  }
-
-  async function loadCollectionSurface(collectionId) {
-    const [collectionPayload, papersPayload, summaryPayload, figuresPayload, tablesPayload] = await Promise.all([
-      fetchJson(`/api/v1/collections/${collectionId}`),
-      fetchJson(`/api/v1/collections/${collectionId}/papers`),
-      fetchJson(`/api/v1/collections/${collectionId}/structured-summary`),
-      fetchJson(endpoints.compareFigures, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collection_id: collectionId, limit: 8 }),
-      }),
-      fetchJson(endpoints.compareTables, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collection_id: collectionId, limit: 8 }),
-      }),
-    ]);
-
-    state.selectedCollection = collectionPayload.data;
-    state.papers = papersPayload.data || [];
-    state.searchResults = [];
-    state.collectionSummary = summaryPayload.data;
-    state.collectionFigures = figuresPayload.data || [];
-    state.collectionTables = tablesPayload.data || [];
-    state.selectedPaper = null;
-    state.selectedPaperStructured = null;
-
-    renderCollections();
-    renderPapers();
-    renderCollectionSummary();
-    renderPaperDetail();
-    renderArtifactSurface();
-    updateActionButtons();
-  }
-
-  async function searchPapers(query) {
-    if (!query.trim()) {
-      state.searchResults = [];
-      state.chunkSearchHits = [];
-      state.artifactSearchHits = [];
-      renderPapers();
-      renderSearchSurfaces();
-      return;
-    }
-
-    const params = new URLSearchParams({ q: query.trim() });
-    if (state.selectedCollection) {
-      params.set("collection_id", state.selectedCollection.id);
-    }
-    const [paperPayload, chunkPayload, artifactPayload] = await Promise.all([
-      fetchJson(`${endpoints.search}?${params.toString()}`),
-      fetchJson(`${endpoints.searchChunks}?${params.toString()}`),
-      fetchJson(`${endpoints.searchArtifacts}?${params.toString()}&kind=all`),
-    ]);
-    state.searchResults = paperPayload.data || [];
-    state.chunkSearchHits = chunkPayload.data || [];
-    state.artifactSearchHits = artifactPayload.data || [];
-    renderPapers();
-    renderSearchSurfaces();
-  }
-
-  async function loadPaperDetail(paperId) {
-    const [paperPayload, structuredPayload] = await Promise.all([
-      fetchJson(`/api/v1/papers/${paperId}`),
-      fetchJson(`/api/v1/papers/${paperId}/structured-data`),
-    ]);
-
-    state.selectedPaper = paperPayload.data;
-    state.selectedPaperStructured = structuredPayload.data;
-    renderPaperDetail();
-  }
-
-  async function loadJobs() {
-    const previouslyHadActiveJobs = state.jobs.some((job) => job.status === "pending" || job.status === "running");
-    const payload = await fetchJson(`${endpoints.jobs}?limit=20`);
-    state.jobs = payload.data || [];
-    const hasActiveJobs = state.jobs.some((job) => job.status === "pending" || job.status === "running");
-    renderJobs();
-    updatePolling();
-    if (previouslyHadActiveJobs && !hasActiveJobs) {
-      await refreshAfterJobCompletion();
-    }
-  }
-
-  async function queueReindex() {
-    const payload = await fetchJson(endpoints.reindex, { method: "POST" });
-    state.jobs.unshift(payload.data);
-    renderJobs();
-    updatePolling();
-    setStatus("Queued a corpus reindex job.");
-  }
-
-  async function queueLocalLibraryIngest() {
-    const sourceDir = elements.localLibrarySourceInput.value.trim();
-    if (!sourceDir) {
-      throw new Error("A local source directory is required.");
-    }
-
-    const collectionTitle = elements.localLibraryUploadTitleInput.value.trim();
-    const collectionDescription = elements.localLibraryUploadDescriptionInput.value.trim();
-    const payload = await fetchJson(endpoints.localLibraryIngest, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source_dir: sourceDir,
-        collection_title: collectionTitle || null,
-        collection_description: collectionDescription || null,
-      }),
+    document.querySelectorAll(".module-view").forEach((section) => {
+      const isActive = section.getAttribute("data-view") === viewName;
+      section.hidden = !isActive;
     });
-
-    state.jobs.unshift(payload.data);
-    renderJobs();
-    updatePolling();
-    setStatus(`Queued local import from ${sourceDir}.`);
-  }
-
-  async function queueLocalLibraryUploadIngest() {
-    const files = Array.from(elements.localLibraryUploadInput.files || []);
-    if (files.length === 0) {
-      throw new Error("Select at least one PDF file or folder to upload.");
-    }
-
-    const collectionTitle = elements.localLibraryTitleInput.value.trim();
-    const collectionDescription = elements.localLibraryDescriptionInput.value.trim();
-    const formData = new FormData();
-    for (const file of files) {
-      const relativePath = file.webkitRelativePath || file.name;
-      formData.append("files", file, relativePath);
-    }
-    if (collectionTitle) {
-      formData.append("collection_title", collectionTitle);
-    }
-    if (collectionDescription) {
-      formData.append("collection_description", collectionDescription);
-    }
-
-    const response = await fetch(endpoints.localLibraryUpload, {
-      method: "POST",
-      body: formData,
+    elements.navTabs.forEach((button) => {
+      const isActive = button.getAttribute("data-view") === viewName;
+      button.dataset.active = isActive ? "true" : "false";
+      button.setAttribute("aria-current", isActive ? "page" : "false");
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.message || `Request failed: ${response.status}`);
-    }
-
-    state.jobs.unshift(payload.data);
-    renderJobs();
-    updatePolling();
-    setStatus(`Queued upload import for ${files.length} file(s).`);
   }
 
-  async function queueExtraction() {
+  function membershipPaperList() {
+    return state.papers.map((membership) => membership.paper);
+  }
+
+  function visiblePaperList() {
+    return state.searchResults.length > 0 ? state.searchResults : membershipPaperList();
+  }
+
+  function selectedCollectionPill() {
     if (!state.selectedCollection) {
-      return;
+      return '<span class="pill">No collection selected</span>';
     }
-
-    const body = {
-      prompt_version: "paperbase-v1",
-      schema_version: "paperbase-v1",
-    };
-
-    if (state.selectedCollection.extraction_profile_id) {
-      body.extraction_profile_id = state.selectedCollection.extraction_profile_id;
-    } else {
-      body.schema_payload = {
-        datasets: true,
-        methods: true,
-        metrics: true,
-        results: true,
-        engineering_tricks: true,
-      };
-    }
-
-    const payload = await fetchJson(
-      `/api/v1/collections/${state.selectedCollection.id}/extract`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    );
-    state.jobs.unshift(payload.data);
-    renderJobs();
-    updatePolling();
-    setStatus(`Queued extraction for ${state.selectedCollection.title}.`);
+    return `<span class="pill">${escapeHtml(state.selectedCollection.title)}</span>`;
   }
 
-  async function queueParse() {
-    if (!state.selectedCollection) {
-      return;
-    }
-
-    const payload = await fetchJson(
-      `/api/v1/collections/${state.selectedCollection.id}/parse`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      },
-    );
-    state.jobs.unshift(payload.data);
-    renderJobs();
-    updatePolling();
-    setStatus(`Queued parse for ${state.selectedCollection.title}.`);
-  }
-
-  async function saveWorkspace() {
-    const title = elements.workspaceTitleInput.value.trim()
-      || (state.selectedCollection ? `${state.selectedCollection.title} workspace` : "Arxie workspace");
-    const body = {
-      title,
-      description: state.selectedWorkspace ? state.selectedWorkspace.description : null,
-      collection_id: state.selectedCollection ? state.selectedCollection.id : null,
-      saved_query: elements.searchInput.value.trim() || null,
-      focus_note: elements.workspaceFocusInput.value.trim() || null,
-      active_filters: state.selectedWorkspace ? (state.selectedWorkspace.active_filters || {}) : {},
-      pinned_paper_ids: state.selectedPaper ? [state.selectedPaper.id] : [],
-    };
-
-    if (state.selectedWorkspace) {
-      await fetchJson(`${endpoints.workspaces}/${state.selectedWorkspace.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      await loadWorkspaces(state.selectedWorkspace.id);
-      setStatus(`Updated workspace ${title}.`);
-      return;
-    }
-
-    const payload = await fetchJson(endpoints.workspaces, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    await loadWorkspaces(payload.data.id);
-    setStatus(`Saved workspace ${title}.`);
-  }
-
-  function resolvePreferredCollectionIdFromJobs() {
-    for (const job of state.jobs) {
-      if (job.status !== "completed") {
-        continue;
-      }
-      if (job.job_type === "local_library_ingest") {
-        if (job.result && job.result.collection_id) {
-          return job.result.collection_id;
-        }
-        if (job.payload && job.payload.collection_title) {
-          const matchingCollection = state.collections.find((collection) => collection.title === job.payload.collection_title);
-          if (matchingCollection) {
-            return matchingCollection.id;
-          }
-        }
-      }
-      if ((job.job_type === "collection_parse" || job.job_type === "collection_extract") && job.result && job.result.collection_id) {
-        return job.result.collection_id;
-      }
-    }
-    return state.selectedCollection ? state.selectedCollection.id : null;
-  }
-
-  async function refreshAfterJobCompletion() {
-    const preferredCollectionId = resolvePreferredCollectionIdFromJobs();
-    const preferredWorkspaceId = state.selectedWorkspace ? state.selectedWorkspace.id : null;
-
-    await loadCollections();
-    if (
-      preferredCollectionId
-      && (!state.selectedCollection || state.selectedCollection.id !== preferredCollectionId)
-    ) {
-      const matchingCollection = state.collections.find((collection) => collection.id === preferredCollectionId);
-      if (matchingCollection) {
-        await loadCollectionSurface(preferredCollectionId);
-      }
-    }
-    await loadWorkspaces(preferredWorkspaceId);
-  }
-
-  function updateActionButtons() {
-    elements.extractButton.disabled = !state.selectedCollection;
-    elements.parseButton.disabled = !state.selectedCollection;
-    elements.localLibraryImportButton.disabled = false;
-  }
-
-  function renderCollections() {
+  function renderCollectionsSidebar() {
     if (state.collections.length === 0) {
-      elements.collectionsList.innerHTML = '<div class="list-card muted">No collections yet.</div>';
-      updateActionButtons();
+      elements.sidebarCollectionsList.innerHTML = '<div class="list-card muted">No collections yet.</div>';
       return;
     }
 
-    elements.collectionsList.innerHTML = state.collections
+    elements.sidebarCollectionsList.innerHTML = state.collections
       .map((collection) => {
         const active = state.selectedCollection && state.selectedCollection.id === collection.id;
         return `
-          <div class="list-card" data-active="${active ? "true" : "false"}">
-            <button type="button" data-collection-id="${collection.id}">
+          <div class="list-card list-card-compact" data-active="${active ? "true" : "false"}">
+            <button type="button" data-sidebar-collection-id="${collection.id}">
               <div class="list-title">${escapeHtml(collection.title)}</div>
-              <div class="muted">${escapeHtml(collection.description || "Curated field database")}</div>
-              <div class="pill-row">
-                <span class="pill">${escapeHtml(collection.scope_type)}</span>
-                ${(collection.tags || []).slice(0, 3).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}
-              </div>
+              <div class="muted">${escapeHtml(collection.description || "Curated collection")}</div>
             </button>
           </div>
         `;
       })
       .join("");
 
-    elements.collectionsList.querySelectorAll("[data-collection-id]").forEach((button) => {
+    elements.sidebarCollectionsList.querySelectorAll("[data-sidebar-collection-id]").forEach((button) => {
       button.addEventListener("click", async () => {
-        const collectionId = button.getAttribute("data-collection-id");
+        const collectionId = button.getAttribute("data-sidebar-collection-id");
         if (!collectionId) {
           return;
         }
-        setStatus("Loading collection surface…");
+        setStatus("Loading collection…");
         await loadCollectionSurface(collectionId);
+        activateView("workspace");
         setStatus(`Loaded ${state.selectedCollection.title}.`);
       });
     });
-    updateActionButtons();
   }
 
-  function renderWorkspaces() {
+  function renderWorkspacesSidebar() {
     if (state.workspaces.length === 0) {
-      elements.workspacesList.innerHTML = '<div class="list-card muted">No saved workspaces yet. Search a collection and save the current context.</div>';
+      elements.sidebarWorkspacesList.innerHTML = '<div class="list-card muted">No saved workspaces yet.</div>';
       return;
     }
 
-    elements.workspacesList.innerHTML = state.workspaces
+    elements.sidebarWorkspacesList.innerHTML = state.workspaces
       .map((workspace) => {
         const active = state.selectedWorkspace && state.selectedWorkspace.id === workspace.id;
         return `
-          <div class="list-card" data-active="${active ? "true" : "false"}">
-            <button type="button" data-workspace-id="${workspace.id}">
+          <div class="list-card list-card-compact" data-active="${active ? "true" : "false"}">
+            <button type="button" data-sidebar-workspace-id="${workspace.id}">
               <div class="list-title">${escapeHtml(workspace.title)}</div>
               <div class="muted">${escapeHtml(workspace.saved_query || workspace.description || "Saved research context")}</div>
             </button>
@@ -487,65 +212,128 @@
       })
       .join("");
 
-    elements.workspacesList.querySelectorAll("[data-workspace-id]").forEach((button) => {
+    elements.sidebarWorkspacesList.querySelectorAll("[data-sidebar-workspace-id]").forEach((button) => {
       button.addEventListener("click", async () => {
-        const workspaceId = button.getAttribute("data-workspace-id");
+        const workspaceId = button.getAttribute("data-sidebar-workspace-id");
         if (!workspaceId) {
           return;
         }
         setStatus("Loading workspace…");
-        await loadWorkspace(workspaceId);
+        await openWorkspace(workspaceId);
+        activateView("workspace");
         setStatus(`Loaded ${state.selectedWorkspace.title}.`);
       });
     });
   }
 
-  function renderWorkspaceDetail() {
-    if (!elements.workspaceTitleInput || !elements.workspaceFocusInput || !elements.workspaceMeta) {
+  function renderLibraryCollections() {
+    if (state.collections.length === 0) {
+      elements.libraryCollectionsGrid.innerHTML = '<div class="list-card muted">Import a folder to create your first collection.</div>';
+      elements.librarySelectedCollectionMeta.innerHTML = '<span class="pill">No collection selected</span>';
       return;
     }
 
-    if (state.selectedWorkspace) {
-      elements.workspaceTitleInput.value = state.selectedWorkspace.title || "";
-      elements.workspaceFocusInput.value = state.selectedWorkspace.focus_note || "";
-      elements.workspaceMeta.innerHTML = `
-        <div class="detail-group">
-          <strong>Collection</strong>
-          <div class="muted">${escapeHtml((state.selectedWorkspace.collection && state.selectedWorkspace.collection.title) || (state.selectedCollection && state.selectedCollection.title) || "No collection linked")}</div>
-        </div>
-        <div class="detail-group">
-          <strong>Saved query</strong>
-          <div class="muted">${escapeHtml(state.selectedWorkspace.saved_query || "No saved query yet")}</div>
-        </div>
-        <div class="detail-group">
-          <strong>Pinned papers</strong>
-          <div class="pill-row">
-            ${(state.selectedWorkspace.pinned_papers || []).map((paper) => `<span class="pill">${escapeHtml(paper.title)}</span>`).join("") || '<span class="muted">No pinned papers yet.</span>'}
-          </div>
-        </div>
-      `;
+    elements.librarySelectedCollectionMeta.innerHTML = selectedCollectionPill();
+    elements.libraryCollectionsGrid.innerHTML = state.collections
+      .map((collection) => {
+        const active = state.selectedCollection && state.selectedCollection.id === collection.id;
+        return `
+          <article class="collection-card" data-active="${active ? "true" : "false"}">
+            <div class="collection-card-copy">
+              <p class="panel-kicker">${escapeHtml(collection.scope_type)}</p>
+              <h4>${escapeHtml(collection.title)}</h4>
+              <p class="muted">${escapeHtml(collection.description || "Curated field database")}</p>
+              <div class="pill-row">
+                ${(collection.tags || []).slice(0, 4).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("") || '<span class="pill">No tags</span>'}
+              </div>
+            </div>
+            <div class="button-row button-row-left">
+              <button type="button" class="action-button" data-library-open-id="${collection.id}">Open</button>
+              <button type="button" class="action-button" data-library-compare-id="${collection.id}">Compare</button>
+              <button type="button" class="action-button" data-library-parse-id="${collection.id}">Parse</button>
+              <button type="button" class="action-button" data-library-extract-id="${collection.id}">Extract</button>
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+
+    elements.libraryCollectionsGrid.querySelectorAll("[data-library-open-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const collectionId = button.getAttribute("data-library-open-id");
+        if (!collectionId) {
+          return;
+        }
+        setStatus("Opening collection workspace…");
+        await loadCollectionSurface(collectionId);
+        activateView("workspace");
+        setStatus(`Loaded ${state.selectedCollection.title}.`);
+      });
+    });
+
+    elements.libraryCollectionsGrid.querySelectorAll("[data-library-compare-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const collectionId = button.getAttribute("data-library-compare-id");
+        if (!collectionId) {
+          return;
+        }
+        setStatus("Opening compare view…");
+        await loadCollectionSurface(collectionId);
+        await refreshCompare();
+        activateView("compare");
+        setStatus(`Prepared compare view for ${state.selectedCollection.title}.`);
+      });
+    });
+
+    elements.libraryCollectionsGrid.querySelectorAll("[data-library-parse-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const collectionId = button.getAttribute("data-library-parse-id");
+        if (!collectionId) {
+          return;
+        }
+        if (!state.selectedCollection || state.selectedCollection.id !== collectionId) {
+          await loadCollectionSurface(collectionId);
+        }
+        await queueParse();
+      });
+    });
+
+    elements.libraryCollectionsGrid.querySelectorAll("[data-library-extract-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const collectionId = button.getAttribute("data-library-extract-id");
+        if (!collectionId) {
+          return;
+        }
+        if (!state.selectedCollection || state.selectedCollection.id !== collectionId) {
+          await loadCollectionSurface(collectionId);
+        }
+        await queueExtraction();
+      });
+    });
+  }
+
+  function renderWorkspaceHeader() {
+    if (!state.selectedCollection) {
+      elements.workspaceCollectionTitle.textContent = "Search one collection and inspect evidence";
+      elements.workspaceSearchMeta.textContent = "Choose a collection in Library to start a focused workspace.";
       return;
     }
 
-    elements.workspaceTitleInput.value = state.selectedCollection ? `${state.selectedCollection.title} workspace` : "";
-    elements.workspaceFocusInput.value = "";
-    elements.workspaceMeta.innerHTML = `
-      <div class="detail-group">
-        <strong>Collection</strong>
-        <div class="muted">${escapeHtml((state.selectedCollection && state.selectedCollection.title) || "Choose a collection to start a workspace")}</div>
-      </div>
-      <div class="detail-group">
-        <strong>Saved query</strong>
-        <div class="muted">Run a search, open a paper, then save the current research context.</div>
-      </div>
-    `;
+    elements.workspaceCollectionTitle.textContent = `Collection: ${state.selectedCollection.title}`;
+    const query = elements.searchInput.value.trim();
+    elements.workspaceSearchMeta.textContent = query
+      ? `Active query: ${query}`
+      : "Run a search inside the active collection, then open a paper or save the context.";
   }
 
   function renderPapers() {
-    const items = state.searchResults.length > 0 ? state.searchResults : state.papers.map((membership) => membership.paper);
-
+    const items = visiblePaperList();
+    if (!state.selectedCollection) {
+      elements.paperList.innerHTML = '<div class="list-card muted">Select a collection to begin.</div>';
+      return;
+    }
     if (items.length === 0) {
-      elements.paperList.innerHTML = '<div class="list-card muted">No papers match the current view.</div>';
+      elements.paperList.innerHTML = '<div class="list-card muted">No papers match the current slice.</div>';
       return;
     }
 
@@ -553,11 +341,13 @@
       .map((paper) => {
         const active = state.selectedPaper && state.selectedPaper.id === paper.id;
         const meta = [paper.publication_year, paper.venue].filter(Boolean).join(" / ");
+        const authorLine = (paper.authors || []).slice(0, 3).join(", ");
         return `
           <div class="list-card" data-active="${active ? "true" : "false"}">
             <button type="button" data-paper-id="${paper.id}">
               <div class="list-title">${escapeHtml(paper.title)}</div>
-              <div class="muted">${escapeHtml(meta || paper.provider)}</div>
+              <div class="muted">${escapeHtml(meta || paper.provider || "Paper record")}</div>
+              <div class="muted">${escapeHtml(authorLine || "Unknown authors")}</div>
               <div class="pill-row">
                 ${(paper.tags || []).slice(0, 4).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}
               </div>
@@ -580,9 +370,43 @@
     });
   }
 
+  function renderWorkspaceDetail() {
+    elements.workspaceTitleInput.value = state.selectedWorkspace
+      ? state.selectedWorkspace.title || ""
+      : (state.selectedCollection ? `${state.selectedCollection.title} workspace` : "");
+    elements.workspaceFocusInput.value = state.selectedWorkspace ? (state.selectedWorkspace.focus_note || "") : "";
+    elements.saveWorkspaceButton.textContent = state.selectedWorkspace ? "Update Workspace" : "Save Workspace";
+
+    if (!state.selectedCollection && !state.selectedWorkspace) {
+      elements.workspaceMeta.innerHTML = '<div class="muted">Choose a collection, run a search, then save the research context.</div>';
+      return;
+    }
+
+    const pinnedTitles = state.selectedWorkspace && state.selectedWorkspace.pinned_papers
+      ? state.selectedWorkspace.pinned_papers.map((paper) => `<span class="pill">${escapeHtml(paper.title)}</span>`).join("")
+      : "";
+
+    elements.workspaceMeta.innerHTML = `
+      <div class="detail-group">
+        <strong>Linked collection</strong>
+        <div class="muted">${escapeHtml((state.selectedWorkspace && state.selectedWorkspace.collection && state.selectedWorkspace.collection.title) || (state.selectedCollection && state.selectedCollection.title) || "None")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Saved query</strong>
+        <div class="muted">${escapeHtml((state.selectedWorkspace && state.selectedWorkspace.saved_query) || elements.searchInput.value.trim() || "No saved query yet")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Pinned papers</strong>
+        <div class="pill-row">
+          ${pinnedTitles || '<span class="muted">Open a paper to pin it on save.</span>'}
+        </div>
+      </div>
+    `;
+  }
+
   function renderCollectionSummary() {
     if (!state.selectedCollection || !state.collectionSummary) {
-      renderEmptyCollectionState();
+      elements.collectionSummary.innerHTML = '<div class="muted">No collection summary yet.</div>';
       return;
     }
 
@@ -598,16 +422,12 @@
 
     elements.collectionSummary.innerHTML = `
       <div class="metric-grid">
-        ${metricBoxes
-          .map(
-            (item) => `
-              <div class="metric-box">
-                <span class="metric-value">${escapeHtml(item.value)}</span>
-                <div class="muted">${escapeHtml(item.label)}</div>
-              </div>
-            `,
-          )
-          .join("")}
+        ${metricBoxes.map((item) => `
+          <div class="metric-box">
+            <span class="metric-value">${escapeHtml(item.value)}</span>
+            <div class="muted">${escapeHtml(item.label)}</div>
+          </div>
+        `).join("")}
       </div>
       <div class="detail-group">
         <div class="list-title">${escapeHtml(state.selectedCollection.title)}</div>
@@ -615,30 +435,20 @@
       </div>
       <div class="detail-group">
         <strong>Datasets</strong>
-        <div class="pill-row">${summary.datasets.slice(0, 6).map((item) => `<span class="pill">${escapeHtml(item.display_name)}</span>`).join("") || '<span class="muted">No extracted datasets yet.</span>'}</div>
+        <div class="pill-row">
+          ${summary.datasets.slice(0, 6).map((item) => `<span class="pill">${escapeHtml(item.display_name)}</span>`).join("") || '<span class="muted">No datasets yet.</span>'}
+        </div>
       </div>
       <div class="detail-group">
         <strong>Metrics</strong>
-        <div class="pill-row">${summary.metrics.slice(0, 6).map((item) => `<span class="pill">${escapeHtml(item.display_name)}</span>`).join("") || '<span class="muted">No extracted metrics yet.</span>'}</div>
-      </div>
-      <div class="detail-group">
-        <strong>Top result rows</strong>
-        <ul class="detail-list">
-          ${summary.top_result_rows
-            .slice(0, 5)
-            .map(
-              (row) => `<li>${escapeHtml(row.paper_title)} — ${escapeHtml(row.method || "Unknown method")} / ${escapeHtml(row.metric || "Unknown metric")} / ${escapeHtml(row.value_numeric ?? row.value_text ?? "n/a")}</li>`,
-            )
-            .join("") || "<li>No persisted result rows yet.</li>"}
-        </ul>
+        <div class="pill-row">
+          ${summary.metrics.slice(0, 6).map((item) => `<span class="pill">${escapeHtml(item.display_name)}</span>`).join("") || '<span class="muted">No metrics yet.</span>'}
+        </div>
       </div>
       <div class="detail-group">
         <strong>Limitations</strong>
         <ul class="detail-list">
-          ${summary.limitations
-            .slice(0, 4)
-            .map((item) => `<li>${escapeHtml(item.statement)}</li>`)
-            .join("") || "<li>No extracted limitations yet.</li>"}
+          ${summary.limitations.slice(0, 4).map((item) => `<li>${escapeHtml(item.statement)}</li>`).join("") || "<li>No extracted limitations yet.</li>"}
         </ul>
       </div>
     `;
@@ -651,92 +461,55 @@
     }
 
     const structured = state.selectedPaperStructured;
+    const evidencePreview = structured.evidence_spans
+      .slice(0, 3)
+      .map((item) => `<li>${escapeHtml(item.quote_text || "Evidence span")} ${item.page_number ? `(p. ${escapeHtml(item.page_number)})` : ""}</li>`)
+      .join("");
+
     elements.paperDetail.innerHTML = `
       <div class="detail-group">
         <div class="list-title">${escapeHtml(state.selectedPaper.title)}</div>
         <div class="muted">${escapeHtml((state.selectedPaper.authors || []).join(", ") || "Unknown authors")}</div>
       </div>
       <div class="detail-group">
-        <strong>Artifacts</strong>
+        <strong>Structured surface</strong>
         <div class="pill-row">
           <span class="pill">Datasets ${structured.datasets.length}</span>
           <span class="pill">Methods ${structured.methods.length}</span>
           <span class="pill">Metrics ${structured.metrics.length}</span>
           <span class="pill">Results ${structured.result_rows.length}</span>
           <span class="pill">Limitations ${structured.limitations.length}</span>
-          <span class="pill">Tricks ${structured.engineering_tricks.length}</span>
-          <span class="pill">Figures ${structured.figures.length}</span>
-          <span class="pill">Tables ${structured.tables.length}</span>
         </div>
       </div>
       <div class="detail-group">
         <strong>Methods</strong>
         <ul class="detail-list">
-          ${structured.methods.slice(0, 5).map((item) => `<li>${escapeHtml(item.display_name)}</li>`).join("") || "<li>No extracted methods.</li>"}
+          ${structured.methods.slice(0, 4).map((item) => `<li>${escapeHtml(item.display_name)}</li>`).join("") || "<li>No extracted methods.</li>"}
         </ul>
       </div>
       <div class="detail-group">
-        <strong>Engineering tricks</strong>
+        <strong>Result rows</strong>
         <ul class="detail-list">
-          ${structured.engineering_tricks
-            .slice(0, 4)
-            .map((item) => `<li>${escapeHtml(item.title)} — ${escapeHtml(item.description)}</li>`)
-            .join("") || "<li>No extracted engineering tricks.</li>"}
+          ${structured.result_rows.slice(0, 4).map((item) => `<li>${escapeHtml(item.method || "Unknown method")} / ${escapeHtml(item.metric || "Unknown metric")} / ${escapeHtml(formatValue(item.value_numeric ?? item.value_text))}</li>`).join("") || "<li>No result rows yet.</li>"}
         </ul>
       </div>
       <div class="detail-group">
         <strong>Limitations</strong>
         <ul class="detail-list">
-          ${structured.limitations
-            .slice(0, 4)
-            .map((item) => `<li>${escapeHtml(item.statement)}</li>`)
-            .join("") || "<li>No extracted limitations.</li>"}
+          ${structured.limitations.slice(0, 4).map((item) => `<li>${escapeHtml(item.statement)}</li>`).join("") || "<li>No extracted limitations.</li>"}
         </ul>
       </div>
       <div class="detail-group">
-        <strong>Figures</strong>
+        <strong>Figures and tables</strong>
         <ul class="detail-list">
-          ${structured.figures
-            .slice(0, 4)
-            .map((item) => `<li>${escapeHtml(item.figure_label || "Figure")} — ${escapeHtml(item.caption || "No caption")}</li>`)
-            .join("") || "<li>No figure artifacts.</li>"}
+          ${structured.figures.slice(0, 2).map((item) => `<li>${escapeHtml(item.figure_label || "Figure")} — ${escapeHtml(item.caption || "No caption")}</li>`).join("")}
+          ${structured.tables.slice(0, 2).map((item) => `<li>${escapeHtml(item.table_label || "Table")} — ${escapeHtml(item.caption || "No caption")}</li>`).join("") || "<li>No extracted artifacts.</li>"}
         </ul>
       </div>
       <div class="detail-group">
-        <strong>Tables</strong>
+        <strong>Evidence preview</strong>
         <ul class="detail-list">
-          ${structured.tables
-            .slice(0, 4)
-            .map((item) => `<li>${escapeHtml(item.table_label || "Table")} — ${escapeHtml(item.caption || "No caption")}</li>`)
-            .join("") || "<li>No table artifacts.</li>"}
-        </ul>
-      </div>
-    `;
-  }
-
-  function renderArtifactSurface() {
-    if (!state.selectedCollection) {
-      elements.artifactSurface.innerHTML = '<div class="summary-card muted">Select a collection to inspect figures and tables.</div>';
-      return;
-    }
-
-    elements.artifactSurface.innerHTML = `
-      <div class="summary-card">
-        <h3>Figures</h3>
-        <ul class="detail-list">
-          ${state.collectionFigures
-            .slice(0, 6)
-            .map((item) => `<li>${escapeHtml(item.paper_title)} — ${escapeHtml(item.figure_label || "Figure")} / ${escapeHtml(item.caption || "No caption")}</li>`)
-            .join("") || "<li>No figures in this slice.</li>"}
-        </ul>
-      </div>
-      <div class="summary-card">
-        <h3>Tables</h3>
-        <ul class="detail-list">
-          ${state.collectionTables
-            .slice(0, 6)
-            .map((item) => `<li>${escapeHtml(item.paper_title)} — ${escapeHtml(item.table_label || "Table")} / ${escapeHtml(item.caption || "No caption")}</li>`)
-            .join("") || "<li>No tables in this slice.</li>"}
+          ${evidencePreview || "<li>No evidence spans persisted yet.</li>"}
         </ul>
       </div>
     `;
@@ -746,24 +519,127 @@
     elements.chunkSearchSurface.innerHTML = state.chunkSearchHits.length > 0
       ? `
         <ul class="detail-list">
-          ${state.chunkSearchHits
-            .slice(0, 6)
-            .map((item) => `<li>${escapeHtml(item.paper_title)}${item.section_title ? ` / ${escapeHtml(item.section_title)}` : ""} — ${escapeHtml(item.text)}</li>`)
-            .join("")}
+          ${state.chunkSearchHits.slice(0, 6).map((item) => `
+            <li>
+              <strong>${escapeHtml(item.paper_title)}</strong>
+              ${item.section_title ? `<span class="muted"> / ${escapeHtml(item.section_title)}</span>` : ""}
+              <div>${escapeHtml(item.text)}</div>
+            </li>
+          `).join("")}
         </ul>
       `
-      : '<div class="muted">Run a paper search to inspect chunk-level hits.</div>';
+      : '<div class="muted">Run a search to inspect chunk-level evidence.</div>';
 
     elements.artifactSearchSurface.innerHTML = state.artifactSearchHits.length > 0
       ? `
         <ul class="detail-list">
-          ${state.artifactSearchHits
-            .slice(0, 6)
-            .map((item) => `<li>${escapeHtml(item.paper_title)} — ${escapeHtml(item.artifact_type)} / ${escapeHtml(item.label || "Untitled")} / ${escapeHtml(item.caption || "No caption")}</li>`)
-            .join("")}
+          ${state.artifactSearchHits.slice(0, 6).map((item) => `
+            <li>
+              <strong>${escapeHtml(item.paper_title)}</strong>
+              <span class="muted"> / ${escapeHtml(item.artifact_type)} / ${escapeHtml(item.label || "Untitled")}</span>
+              <div>${escapeHtml(item.caption || "No caption")}</div>
+            </li>
+          `).join("")}
         </ul>
       `
-      : '<div class="muted">Run a paper search to inspect figure and table hits.</div>';
+      : '<div class="muted">Run a search to inspect figure and table hits.</div>';
+  }
+
+  function renderCompareHeader() {
+    if (!state.selectedCollection) {
+      elements.compareCollectionContext.innerHTML = '<span class="pill">Select a collection first</span>';
+      return;
+    }
+    elements.compareCollectionContext.innerHTML = `
+      <span class="pill">${escapeHtml(state.selectedCollection.title)}</span>
+      ${state.collectionSummary ? `<span class="pill">${escapeHtml(state.collectionSummary.paper_count)} papers</span>` : ""}
+    `;
+  }
+
+  function renderCompareSurfaces() {
+    renderCompareHeader();
+
+    if (!state.selectedCollection) {
+      const emptyMessage = '<div class="muted">Select a collection to compare structured evidence.</div>';
+      elements.compareResultsSurface.innerHTML = emptyMessage;
+      elements.compareMethodsSurface.innerHTML = emptyMessage;
+      elements.compareTricksSurface.innerHTML = emptyMessage;
+      elements.compareFiguresSurface.innerHTML = emptyMessage;
+      elements.compareTablesSurface.innerHTML = emptyMessage;
+      return;
+    }
+
+    elements.compareDatasetInput.value = state.compare.dataset;
+    elements.compareMetricInput.value = state.compare.metric;
+    elements.compareMethodInput.value = state.compare.method;
+
+    elements.compareResultsSurface.innerHTML = state.compare.results.length > 0
+      ? `
+        <ul class="detail-list">
+          ${state.compare.results.slice(0, 8).map((item) => `
+            <li>
+              <strong>${escapeHtml(item.paper_title)}</strong>
+              <div>${escapeHtml(item.method || "Unknown method")} / ${escapeHtml(item.metric)} / ${escapeHtml(formatValue(item.value_numeric ?? item.value_text))}</div>
+              ${item.evidence_spans && item.evidence_spans.length > 0 ? `<div class="muted">${escapeHtml(item.evidence_spans[0].quote_text || "Evidence available")}</div>` : ""}
+            </li>
+          `).join("")}
+        </ul>
+      `
+      : '<div class="muted">Provide dataset and metric, then refresh the compare view.</div>';
+
+    elements.compareMethodsSurface.innerHTML = state.compare.methods.length > 0
+      ? `
+        <ul class="detail-list">
+          ${state.compare.methods.slice(0, 8).map((item) => `
+            <li>
+              <strong>${escapeHtml(item.method)}</strong>
+              <div>${escapeHtml(item.paper_count)} papers / ${escapeHtml(item.result_count)} result rows</div>
+              ${item.best_result ? `<div class="muted">Best: ${escapeHtml(item.best_result.paper_title)} / ${escapeHtml(item.best_result.metric || "metric")} / ${escapeHtml(formatValue(item.best_result.value_numeric ?? item.best_result.value_text))}</div>` : ""}
+            </li>
+          `).join("")}
+        </ul>
+      `
+      : '<div class="muted">No method summaries yet for the current collection.</div>';
+
+    elements.compareTricksSurface.innerHTML = state.compare.engineeringTricks.length > 0
+      ? `
+        <ul class="detail-list">
+          ${state.compare.engineeringTricks.slice(0, 8).map((item) => `
+            <li>
+              <strong>${escapeHtml(item.title)}</strong>
+              <div>${escapeHtml(item.description)}</div>
+              <div class="muted">${escapeHtml(item.paper_count)} paper(s)</div>
+            </li>
+          `).join("")}
+        </ul>
+      `
+      : '<div class="muted">No engineering-trick summaries available yet.</div>';
+
+    elements.compareFiguresSurface.innerHTML = state.compare.figures.length > 0
+      ? `
+        <ul class="detail-list">
+          ${state.compare.figures.slice(0, 6).map((item) => `
+            <li>
+              <strong>${escapeHtml(item.paper_title)}</strong>
+              <div>${escapeHtml(item.figure_label || "Figure")} / ${escapeHtml(item.caption || "No caption")}</div>
+            </li>
+          `).join("")}
+        </ul>
+      `
+      : '<div class="muted">No figure artifacts in the current compare slice.</div>';
+
+    elements.compareTablesSurface.innerHTML = state.compare.tables.length > 0
+      ? `
+        <ul class="detail-list">
+          ${state.compare.tables.slice(0, 6).map((item) => `
+            <li>
+              <strong>${escapeHtml(item.paper_title)}</strong>
+              <div>${escapeHtml(item.table_label || "Table")} / ${escapeHtml(item.caption || "No caption")}</div>
+            </li>
+          `).join("")}
+        </ul>
+      `
+      : '<div class="muted">No table artifacts in the current compare slice.</div>';
   }
 
   function renderJobs() {
@@ -773,27 +649,516 @@
     }
 
     elements.jobsList.innerHTML = state.jobs
-      .map(
-        (job) => `
-          <div class="list-card">
-            <div class="job-status" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</div>
-            <div class="list-title">${escapeHtml(job.job_type)}</div>
-            <div class="job-meta">${escapeHtml(job.created_at || "queued")}</div>
-            <div class="muted">${escapeHtml(JSON.stringify(job.result || job.payload || {}))}</div>
-            ${job.error_message ? `<div class="muted">${escapeHtml(job.error_message)}</div>` : ""}
-          </div>
-        `,
-      )
+      .map((job) => `
+        <div class="list-card">
+          <div class="job-status" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</div>
+          <div class="list-title">${escapeHtml(job.job_type)}</div>
+          <div class="job-meta">${escapeHtml(job.created_at || "queued")}</div>
+          <div class="muted">${escapeHtml(JSON.stringify(job.result || job.payload || {}))}</div>
+          ${job.error_message ? `<div class="muted">${escapeHtml(job.error_message)}</div>` : ""}
+        </div>
+      `)
       .join("");
   }
 
-  function renderEmptyCollectionState() {
-    elements.collectionSummary.innerHTML = '<div class="muted">Select a collection to inspect its structured surface.</div>';
-    elements.paperList.innerHTML = '<div class="list-card muted">Select a collection to see its papers.</div>';
-    elements.paperDetail.innerHTML = '<div class="muted">Select a paper to inspect its structured surface.</div>';
-    elements.artifactSurface.innerHTML = '<div class="summary-card muted">Select a collection to inspect figures and tables.</div>';
-    elements.chunkSearchSurface.innerHTML = '<div class="muted">Run a paper search to inspect chunk-level hits.</div>';
-    elements.artifactSearchSurface.innerHTML = '<div class="muted">Run a paper search to inspect figure and table hits.</div>';
+  function renderSettings() {
+    const selectedPaperTitle = state.selectedPaper ? state.selectedPaper.title : null;
+    elements.settingsSummary.innerHTML = `
+      <div class="detail-group">
+        <strong>Selected collection</strong>
+        <div class="muted">${escapeHtml((state.selectedCollection && state.selectedCollection.title) || "None")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Selected workspace</strong>
+        <div class="muted">${escapeHtml((state.selectedWorkspace && state.selectedWorkspace.title) || "None")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Selected paper</strong>
+        <div class="muted">${escapeHtml(selectedPaperTitle || "None")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Current view</strong>
+        <div class="muted">${escapeHtml(state.activeView)}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Saved query</strong>
+        <div class="muted">${escapeHtml(elements.searchInput.value.trim() || "None")}</div>
+      </div>
+    `;
+  }
+
+  function renderAll() {
+    renderCollectionsSidebar();
+    renderWorkspacesSidebar();
+    renderLibraryCollections();
+    renderWorkspaceHeader();
+    renderPapers();
+    renderWorkspaceDetail();
+    renderCollectionSummary();
+    renderPaperDetail();
+    renderSearchSurfaces();
+    renderCompareSurfaces();
+    renderJobs();
+    renderSettings();
+    updateActionButtons();
+  }
+
+  function updateActionButtons() {
+    const collectionSelected = Boolean(state.selectedCollection);
+    elements.parseButton.disabled = !collectionSelected;
+    elements.extractButton.disabled = !collectionSelected;
+    elements.workspaceOpenCompareButton.disabled = !collectionSelected;
+    elements.saveWorkspaceButton.disabled = !collectionSelected;
+    elements.compareRefreshButton.disabled = !collectionSelected;
+  }
+
+  function seedCompareDraft() {
+    const currentCollectionId = state.selectedCollection ? state.selectedCollection.id : null;
+    const collectionChanged = state.compare.collectionId !== currentCollectionId;
+    if (collectionChanged) {
+      state.compare.collectionId = currentCollectionId;
+      state.compare.results = [];
+      state.compare.methods = [];
+      state.compare.engineeringTricks = [];
+      state.compare.figures = [];
+      state.compare.tables = [];
+      state.compare.dataset = "";
+      state.compare.metric = "";
+      state.compare.method = "";
+    }
+    if (!state.collectionSummary) {
+      return;
+    }
+    if (!state.compare.dataset && state.collectionSummary.datasets.length > 0) {
+      state.compare.dataset = state.collectionSummary.datasets[0].display_name;
+    }
+    if (!state.compare.metric && state.collectionSummary.metrics.length > 0) {
+      state.compare.metric = state.collectionSummary.metrics[0].display_name;
+    }
+    if (!state.compare.method && state.collectionSummary.methods.length > 0) {
+      state.compare.method = state.collectionSummary.methods[0].display_name;
+    }
+  }
+
+  async function loadCollections(preferredCollectionId) {
+    const payload = await fetchJson(endpoints.collections);
+    state.collections = payload.data || [];
+
+    if (state.collections.length === 0) {
+      state.selectedCollection = null;
+      state.papers = [];
+      state.searchResults = [];
+      state.selectedPaper = null;
+      state.selectedPaperStructured = null;
+      state.collectionSummary = null;
+      state.chunkSearchHits = [];
+      state.artifactSearchHits = [];
+      state.compare = {
+        collectionId: null,
+        dataset: "",
+        metric: "",
+        method: "",
+        results: [],
+        methods: [],
+        engineeringTricks: [],
+        figures: [],
+        tables: [],
+      };
+      renderAll();
+      return;
+    }
+
+    const collectionIdToOpen = preferredCollectionId
+      || (state.selectedCollection && state.collections.some((item) => item.id === state.selectedCollection.id)
+        ? state.selectedCollection.id
+        : state.collections[0].id);
+    await loadCollectionSurface(collectionIdToOpen);
+  }
+
+  async function loadCollectionSurface(collectionId, options) {
+    const [collectionPayload, papersPayload, summaryPayload] = await Promise.all([
+      fetchJson(`${endpoints.collections}/${collectionId}`),
+      fetchJson(`${endpoints.collections}/${collectionId}/papers`),
+      fetchJson(`${endpoints.collections}/${collectionId}/structured-summary`),
+    ]);
+
+    state.selectedCollection = collectionPayload.data;
+    state.papers = papersPayload.data || [];
+    state.collectionSummary = summaryPayload.data;
+    state.searchResults = [];
+    state.chunkSearchHits = [];
+    state.artifactSearchHits = [];
+    state.selectedPaper = null;
+    state.selectedPaperStructured = null;
+    const retainWorkspace = Boolean(options && options.retainWorkspace);
+    if (
+      !retainWorkspace
+      && state.selectedWorkspace
+      && state.selectedWorkspace.collection_id
+      && state.selectedWorkspace.collection_id !== collectionId
+    ) {
+      state.selectedWorkspace = null;
+    }
+    seedCompareDraft();
+    renderAll();
+  }
+
+  async function loadWorkspaces(options) {
+    const payload = await fetchJson(endpoints.workspaces);
+    state.workspaces = payload.data || [];
+
+    const preferredWorkspaceId = options && options.preferredWorkspaceId ? options.preferredWorkspaceId : null;
+    const shouldReloadSelected = !preferredWorkspaceId && state.selectedWorkspace
+      && state.workspaces.some((item) => item.id === state.selectedWorkspace.id);
+
+    if (preferredWorkspaceId) {
+      await openWorkspace(preferredWorkspaceId, { activate: false });
+      return;
+    }
+    if (shouldReloadSelected) {
+      await openWorkspace(state.selectedWorkspace.id, { activate: false });
+      return;
+    }
+    if (state.selectedWorkspace && !state.workspaces.some((item) => item.id === state.selectedWorkspace.id)) {
+      state.selectedWorkspace = null;
+    }
+    renderAll();
+  }
+
+  async function openWorkspace(workspaceId, options) {
+    const payload = await fetchJson(`${endpoints.workspaces}/${workspaceId}`);
+    state.selectedWorkspace = payload.data;
+
+    if (state.selectedWorkspace.collection_id) {
+      await loadCollectionSurface(state.selectedWorkspace.collection_id, { retainWorkspace: true });
+    }
+
+    elements.searchInput.value = state.selectedWorkspace.saved_query || "";
+    if (state.selectedWorkspace.saved_query) {
+      await searchPapers(state.selectedWorkspace.saved_query);
+    } else {
+      state.searchResults = [];
+      state.chunkSearchHits = [];
+      state.artifactSearchHits = [];
+    }
+
+    if (state.selectedWorkspace.pinned_papers && state.selectedWorkspace.pinned_papers.length > 0) {
+      await loadPaperDetail(state.selectedWorkspace.pinned_papers[0].id);
+    }
+
+    renderAll();
+    if (!options || options.activate !== false) {
+      activateView("workspace");
+    }
+  }
+
+  async function searchPapers(query) {
+    const trimmed = query.trim();
+    renderWorkspaceHeader();
+    if (!trimmed) {
+      state.searchResults = [];
+      state.chunkSearchHits = [];
+      state.artifactSearchHits = [];
+      renderAll();
+      return;
+    }
+
+    const params = new URLSearchParams({ q: trimmed });
+    if (state.selectedCollection) {
+      params.set("collection_id", state.selectedCollection.id);
+    }
+
+    const [paperPayload, chunkPayload, artifactPayload] = await Promise.all([
+      fetchJson(`${endpoints.search}?${params.toString()}`),
+      fetchJson(`${endpoints.searchChunks}?${params.toString()}`),
+      fetchJson(`${endpoints.searchArtifacts}?${params.toString()}&kind=all`),
+    ]);
+
+    state.searchResults = paperPayload.data || [];
+    state.chunkSearchHits = chunkPayload.data || [];
+    state.artifactSearchHits = artifactPayload.data || [];
+    renderAll();
+  }
+
+  async function loadPaperDetail(paperId) {
+    const [paperPayload, structuredPayload] = await Promise.all([
+      fetchJson(`/api/v1/papers/${paperId}`),
+      fetchJson(`/api/v1/papers/${paperId}/structured-data`),
+    ]);
+
+    state.selectedPaper = paperPayload.data;
+    state.selectedPaperStructured = structuredPayload.data;
+    renderAll();
+  }
+
+  async function loadJobs() {
+    const previouslyHadActiveJobs = state.jobs.some((job) => job.status === "pending" || job.status === "running");
+    const payload = await fetchJson(`${endpoints.jobs}?limit=20`);
+    state.jobs = payload.data || [];
+    renderAll();
+    updatePolling();
+    const hasActiveJobs = state.jobs.some((job) => job.status === "pending" || job.status === "running");
+    if (previouslyHadActiveJobs && !hasActiveJobs) {
+      await refreshAfterJobCompletion();
+    }
+  }
+
+  async function queueReindex() {
+    const payload = await fetchJson(endpoints.reindex, { method: "POST" });
+    state.jobs.unshift(payload.data);
+    renderAll();
+    updatePolling();
+    setStatus("Queued a corpus reindex job.");
+  }
+
+  async function queueLocalLibraryIngest() {
+    const sourceDir = elements.localLibrarySourceInput.value.trim();
+    if (!sourceDir) {
+      throw new Error("A local source directory is required.");
+    }
+
+    const collectionTitle = elements.localLibraryTitleInput.value.trim();
+    const collectionDescription = elements.localLibraryDescriptionInput.value.trim();
+    const payload = await fetchJson(endpoints.localLibraryIngest, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_dir: sourceDir,
+        collection_title: collectionTitle || null,
+        collection_description: collectionDescription || null,
+      }),
+    });
+
+    state.jobs.unshift(payload.data);
+    renderAll();
+    updatePolling();
+    setStatus(`Queued local import from ${sourceDir}.`);
+  }
+
+  async function queueLocalLibraryUploadIngest() {
+    const files = Array.from(elements.localLibraryUploadInput.files || []);
+    if (files.length === 0) {
+      throw new Error("Select at least one PDF file or folder to upload.");
+    }
+
+    const collectionTitle = elements.localLibraryUploadTitleInput.value.trim();
+    const collectionDescription = elements.localLibraryUploadDescriptionInput.value.trim();
+    const formData = new FormData();
+    for (const file of files) {
+      const relativePath = file.webkitRelativePath || file.name;
+      formData.append("files", file, relativePath);
+    }
+    if (collectionTitle) {
+      formData.append("collection_title", collectionTitle);
+    }
+    if (collectionDescription) {
+      formData.append("collection_description", collectionDescription);
+    }
+
+    const response = await fetch(endpoints.localLibraryUpload, {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || `Request failed: ${response.status}`);
+    }
+
+    state.jobs.unshift(payload.data);
+    renderAll();
+    updatePolling();
+    setStatus(`Queued upload import for ${files.length} file(s).`);
+  }
+
+  async function queueExtraction() {
+    if (!state.selectedCollection) {
+      return;
+    }
+
+    const body = {
+      prompt_version: "paperbase-v1",
+      schema_version: "paperbase-v1",
+    };
+    if (state.selectedCollection.extraction_profile_id) {
+      body.extraction_profile_id = state.selectedCollection.extraction_profile_id;
+    } else {
+      body.schema_payload = {
+        datasets: true,
+        methods: true,
+        metrics: true,
+        results: true,
+        engineering_tricks: true,
+        limitations: true,
+      };
+    }
+
+    const payload = await fetchJson(`/api/v1/collections/${state.selectedCollection.id}/extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    state.jobs.unshift(payload.data);
+    renderAll();
+    updatePolling();
+    setStatus(`Queued extraction for ${state.selectedCollection.title}.`);
+  }
+
+  async function queueParse() {
+    if (!state.selectedCollection) {
+      return;
+    }
+    const payload = await fetchJson(`/api/v1/collections/${state.selectedCollection.id}/parse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    state.jobs.unshift(payload.data);
+    renderAll();
+    updatePolling();
+    setStatus(`Queued parse for ${state.selectedCollection.title}.`);
+  }
+
+  async function saveWorkspace() {
+    const title = elements.workspaceTitleInput.value.trim()
+      || (state.selectedCollection ? `${state.selectedCollection.title} workspace` : "Arxie workspace");
+    const payload = {
+      title,
+      description: state.selectedWorkspace ? state.selectedWorkspace.description : null,
+      collection_id: state.selectedCollection ? state.selectedCollection.id : null,
+      saved_query: elements.searchInput.value.trim() || null,
+      focus_note: elements.workspaceFocusInput.value.trim() || null,
+      active_filters: state.selectedWorkspace ? (state.selectedWorkspace.active_filters || {}) : {},
+      pinned_paper_ids: state.selectedPaper ? [state.selectedPaper.id] : [],
+    };
+
+    if (state.selectedWorkspace) {
+      await fetchJson(`${endpoints.workspaces}/${state.selectedWorkspace.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      await loadWorkspaces({ preferredWorkspaceId: state.selectedWorkspace.id });
+      setStatus(`Updated workspace ${title}.`);
+      return;
+    }
+
+    const response = await fetchJson(endpoints.workspaces, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await loadWorkspaces({ preferredWorkspaceId: response.data.id });
+    setStatus(`Saved workspace ${title}.`);
+  }
+
+  async function refreshCompare() {
+    if (!state.selectedCollection) {
+      renderCompareSurfaces();
+      return;
+    }
+
+    state.compare.dataset = elements.compareDatasetInput.value.trim();
+    state.compare.metric = elements.compareMetricInput.value.trim();
+    state.compare.method = elements.compareMethodInput.value.trim();
+
+    const collectionId = state.selectedCollection.id;
+    const comparePromises = [
+      fetchJson(endpoints.compareMethods, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collection_id: collectionId,
+          dataset: state.compare.dataset || null,
+          metric: state.compare.metric || null,
+          limit: 8,
+        }),
+      }),
+      fetchJson(endpoints.compareEngineeringTricks, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collection_id: collectionId,
+          method: state.compare.method || null,
+          limit: 8,
+        }),
+      }),
+      fetchJson(endpoints.compareFigures, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collection_id: collectionId,
+          method: state.compare.method || null,
+          limit: 8,
+        }),
+      }),
+      fetchJson(endpoints.compareTables, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collection_id: collectionId,
+          method: state.compare.method || null,
+          limit: 8,
+        }),
+      }),
+    ];
+
+    if (state.compare.dataset && state.compare.metric) {
+      comparePromises.unshift(
+        fetchJson(endpoints.compareResults, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            collection_id: collectionId,
+            dataset: state.compare.dataset,
+            metric: state.compare.metric,
+            include_evidence: true,
+          }),
+        }),
+      );
+    } else {
+      comparePromises.unshift(Promise.resolve({ data: [] }));
+    }
+
+    const [resultsPayload, methodsPayload, tricksPayload, figuresPayload, tablesPayload] = await Promise.all(comparePromises);
+    state.compare.results = resultsPayload.data || [];
+    state.compare.methods = methodsPayload.data || [];
+    state.compare.engineeringTricks = tricksPayload.data || [];
+    state.compare.figures = figuresPayload.data || [];
+    state.compare.tables = tablesPayload.data || [];
+    renderAll();
+  }
+
+  function resolvePreferredCollectionIdFromJobs() {
+    for (const job of state.jobs) {
+      if (job.status !== "completed") {
+        continue;
+      }
+      if (job.job_type === "local_library_ingest") {
+        if (job.result && job.result.collection_id) {
+          return job.result.collection_id;
+        }
+        if (job.payload && job.payload.collection_title) {
+          const match = state.collections.find((collection) => collection.title === job.payload.collection_title);
+          if (match) {
+            return match.id;
+          }
+        }
+      }
+      if ((job.job_type === "collection_parse" || job.job_type === "collection_extract") && job.result && job.result.collection_id) {
+        return job.result.collection_id;
+      }
+    }
+    return state.selectedCollection ? state.selectedCollection.id : null;
+  }
+
+  async function refreshAfterJobCompletion() {
+    const preferredCollectionId = resolvePreferredCollectionIdFromJobs();
+    const preferredWorkspaceId = state.selectedWorkspace ? state.selectedWorkspace.id : null;
+    await loadCollections(preferredCollectionId);
+    await loadWorkspaces(preferredWorkspaceId ? { preferredWorkspaceId } : undefined);
+    if (state.activeView === "compare" && state.selectedCollection) {
+      await refreshCompare();
+    }
   }
 
   function updatePolling() {
@@ -813,18 +1178,38 @@
 
   async function initialize() {
     try {
+      activateView("workspace");
       setStatus("Loading Arxie workspace…");
       await loadCollections();
       await loadWorkspaces();
       await loadJobs();
-      renderPaperDetail();
-      renderWorkspaceDetail();
-      updateActionButtons();
+      renderAll();
+      activateView(state.selectedCollection ? "workspace" : "library");
       setStatus("Arxie workspace ready.");
     } catch (error) {
       setStatus(error.message);
     }
   }
+
+  elements.navTabs.forEach((button) => {
+    button.addEventListener("click", async () => {
+      const nextView = button.getAttribute("data-view");
+      if (!nextView) {
+        return;
+      }
+      if (nextView === "compare" && state.selectedCollection) {
+        try {
+          setStatus("Refreshing compare view…");
+          await refreshCompare();
+          setStatus("Compare view ready.");
+        } catch (error) {
+          setStatus(error.message);
+        }
+      }
+      activateView(nextView);
+      renderSettings();
+    });
+  });
 
   elements.searchForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -837,25 +1222,12 @@
     }
   });
 
-  elements.reindexButton.addEventListener("click", async () => {
+  elements.workspaceOpenCompareButton.addEventListener("click", async () => {
     try {
-      await queueReindex();
-    } catch (error) {
-      setStatus(error.message);
-    }
-  });
-
-  elements.extractButton.addEventListener("click", async () => {
-    try {
-      await queueExtraction();
-    } catch (error) {
-      setStatus(error.message);
-    }
-  });
-
-  elements.parseButton.addEventListener("click", async () => {
-    try {
-      await queueParse();
+      setStatus("Opening compare view…");
+      await refreshCompare();
+      activateView("compare");
+      setStatus("Compare view ready.");
     } catch (error) {
       setStatus(error.message);
     }
@@ -869,10 +1241,45 @@
     }
   });
 
+  elements.reindexButton.addEventListener("click", async () => {
+    try {
+      await queueReindex();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.refreshJobsButton.addEventListener("click", async () => {
+    try {
+      setStatus("Refreshing jobs…");
+      await loadJobs();
+      setStatus("Jobs refreshed.");
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.parseButton.addEventListener("click", async () => {
+    try {
+      await queueParse();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.extractButton.addEventListener("click", async () => {
+    try {
+      await queueExtraction();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
   elements.localLibraryForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
       await queueLocalLibraryIngest();
+      activateView("jobs");
     } catch (error) {
       setStatus(error.message);
     }
@@ -882,6 +1289,17 @@
     event.preventDefault();
     try {
       await queueLocalLibraryUploadIngest();
+      activateView("jobs");
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.compareRefreshButton.addEventListener("click", async () => {
+    try {
+      setStatus("Refreshing compare view…");
+      await refreshCompare();
+      setStatus("Compare view updated.");
     } catch (error) {
       setStatus(error.message);
     }

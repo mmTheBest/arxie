@@ -47,16 +47,27 @@ web surface:
 - `/` is the public Arxie homepage
 - `/app` is the saved-workspace UI over the local Paperbase APIs
 
-That UI is still intentionally thin: it sits directly on the workspaces,
-collections, papers, chunk/artifact search, and jobs APIs so the product can
-ship a real research workspace before a larger frontend stack is introduced.
+That UI is still intentionally thin, but it is now organized around product
+modules instead of one mixed dashboard:
+
+- `Library`
+- `Workspace`
+- `Compare`
+- `Jobs`
+- `Settings`
+
+It still sits directly on the workspaces, collections, papers, chunk/artifact
+search, compare, and jobs APIs so the product can ship a real research
+workspace before a larger frontend stack is introduced.
 
 For the supported single-user local workflow, `/app` is now enough to:
 
 - upload a local PDF folder into a new collection
-- queue parse and extraction jobs for that collection
-- monitor background job completion
-- browse the resulting papers, structured evidence, and saved workspace state
+- queue parse and extraction jobs for that collection from `Library`
+- monitor background job completion in `Jobs`
+- browse the resulting papers and evidence in `Workspace`
+- inspect structured comparison slices in `Compare`
+- save the investigation as a reusable workspace state
 
 The workspace app also includes figure and table browse/comparison surfaces, so
 collaborators can inspect visual evidence without dropping into raw PDFs or ad

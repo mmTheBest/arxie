@@ -129,15 +129,17 @@ the default stack can run on modest laptop memory.
 The browser workspace is now enough for the single-user local workflow:
 
 1. open `http://localhost:8080/app`
-2. in **Collections**, use **Upload PDF Folder**
+2. start in **Library** and use **Upload PDF Folder**
 3. select a local folder containing PDFs and optionally set a collection title
-4. wait for the ingest job to finish in **Jobs**
-5. select the imported collection, then run **Queue Parse**
+4. switch to **Jobs** and wait for the ingest job to finish
+5. return to **Library**, open the imported collection, then run **Queue Parse**
 6. run **Queue Extraction** once parse is complete
-7. browse papers, chunk hits, artifacts, limitations, and saved workspaces from the same dashboard
+7. use **Workspace** to search the collection and inspect paper-level evidence
+8. use **Compare** to inspect results, methods, tricks, figures, and tables
+9. save the investigation as a reusable workspace context
 
 If you are running the API and worker directly on the host instead of in Docker,
-the dashboard also exposes an advanced absolute-path import form.
+the Library module also exposes an advanced absolute-path import form.
 
 For scripted or operator-driven ingestion, see [docs/runbooks/paperbase-ingest.md](docs/runbooks/paperbase-ingest.md).
 

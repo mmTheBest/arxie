@@ -29,15 +29,17 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "text/html" in shell_response.headers["content-type"]
     html = shell_response.text
     assert "Arxie Workspace" in html
-    assert 'id="workspaces-panel"' in html
+    assert 'id="app-shell"' in html
+    assert 'id="app-nav"' in html
+    assert 'id="sidebar-collections-list"' in html
+    assert 'id="sidebar-workspaces-list"' in html
+    assert 'id="library-view"' in html
+    assert 'id="workspace-view"' in html
+    assert 'id="compare-view"' in html
+    assert 'id="jobs-view"' in html
+    assert 'id="settings-view"' in html
     assert 'id="workspace-detail-panel"' in html
     assert 'id="save-workspace-button"' in html
-    assert 'id="collections-panel"' in html
-    assert 'id="papers-panel"' in html
-    assert 'id="summary-panel"' in html
-    assert 'id="search-surfaces-panel"' in html
-    assert 'id="artifacts-panel"' in html
-    assert 'id="jobs-panel"' in html
     assert 'id="parse-button"' in html
     assert 'id="local-library-upload-form"' in html
     assert 'id="local-library-upload-input"' in html
@@ -48,6 +50,11 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="local-library-source-input"' in html
     assert 'id="local-library-title-input"' in html
     assert 'id="local-library-import-button"' in html
+    assert 'data-view="library"' in html
+    assert 'data-view="workspace"' in html
+    assert 'data-view="compare"' in html
+    assert 'data-view="jobs"' in html
+    assert 'data-view="settings"' in html
     assert "/ui/paperbase-ui.css" in html
     assert "/ui/paperbase-ui.js" in html
 
@@ -59,6 +66,9 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "/api/v1/search/artifacts" in script_response.text
     assert "/api/v1/compare/figures" in script_response.text
     assert "/api/v1/compare/tables" in script_response.text
+    assert "/api/v1/compare/results" in script_response.text
+    assert "/api/v1/compare/methods" in script_response.text
+    assert "/api/v1/compare/engineering-tricks" in script_response.text
     assert "/api/v1/ingest/local-library-upload" in script_response.text
     assert "/api/v1/ingest/local-library" in script_response.text
     assert "local_library_ingest" in script_response.text
@@ -66,6 +76,7 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "/parse" in script_response.text
     assert "/api/v1/papers/" in script_response.text
     assert "/tables" in script_response.text
+    assert "activeView" in script_response.text
 
     assert style_response.status_code == 200
     assert "--paperbase-bg" in style_response.text

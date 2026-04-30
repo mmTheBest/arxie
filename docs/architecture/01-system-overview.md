@@ -52,9 +52,18 @@ The finished local-first flow is now:
 
 This is now a real product path, not just a planned decomposition.
 
-For the single-user local path, the intended front door is `/app`: the user can
-upload a local PDF directory there, watch the ingest job complete, then queue
-parse and extraction from the same dashboard without dropping to scripts.
+For the single-user local path, the intended front door is `/app`. The shipped
+UI is now module-based rather than one operator console:
+
+- `Library` for import, collection selection, and parse/extract operations
+- `Workspace` for collection-scoped search, reading, and saving research context
+- `Compare` for structured evidence comparison across the active collection
+- `Jobs` for monitoring ingest, parse, extraction, and reindex activity
+- `Settings` for current local runtime context
+
+That means a user can import a local PDF directory, prepare the collection,
+search within it, compare extracted evidence, and save the investigation
+without dropping to scripts.
 
 ## Self-Hosted Runtime
 
