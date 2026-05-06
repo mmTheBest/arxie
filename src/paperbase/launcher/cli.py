@@ -239,6 +239,11 @@ def _wait_until_ready(base_url: str, timeout_seconds: float) -> None:
 @app.command("run")
 def run(
     no_browser: bool = typer.Option(False, "--no-browser", help="Start Arxie without opening a browser."),
+    rebuild: bool = typer.Option(
+        False,
+        "--rebuild",
+        help="Rebuild Arxie application images before startup. Use after dependency changes.",
+    ),
     with_search: bool = typer.Option(
         False,
         "--with-search",
@@ -253,8 +258,10 @@ def run(
     compose_env["PAPERBASE_REQUIRE_SEARCH_BACKEND"] = "true" if with_search else "false"
     _ensure_container_runtime()
     _run_compose(["up", "-d", *_core_local_services(with_search=with_search)], env=compose_env)
+    if rebuild:
+        _run_compose(["build", "paperbase-migrate", "paperbase-api", "paperbase-worker"], env=compose_env)
     _run_compose(["run", "--rm", "paperbase-migrate"], env=compose_env)
-    _run_compose(["up", "-d", "paperbase-api", "paperbase-worker"], env=compose_env)
+    _run_compose(["up", "-d", "--force-recreate", "paperbase-api", "paperbase-worker"], env=compose_env)
     _ensure_runtime_services_running(["paperbase-api", "paperbase-worker"], env=compose_env)
     _wait_until_ready(base_url, timeout_seconds)
 

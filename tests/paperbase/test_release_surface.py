@@ -68,6 +68,14 @@ def test_local_api_and_worker_do_not_hard_depend_on_elasticsearch_service() -> N
     assert "elasticsearch:" not in worker_block
 
 
+def test_local_compose_mounts_application_source_for_fast_shortcut_restarts() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    compose_text = (repo_root / "infra" / "docker-compose.paperbase.yml").read_text(encoding="utf-8")
+
+    for mount in ["../src:/app/src", "../services:/app/services"]:
+        assert compose_text.count(mount) >= 3
+
+
 def test_pyproject_exposes_local_launcher_entrypoint() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     pyproject_text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")

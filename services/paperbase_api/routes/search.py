@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import re
+
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import String, cast, exists, func, not_, or_, select
 from sqlalchemy.orm import Session
@@ -42,6 +45,18 @@ from services.paperbase_api.models import (
 from services.paperbase_api.routes.jobs import background_job_to_response
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
+logger = logging.getLogger(__name__)
+_SEARCH_STOPWORDS = {
+    "and",
+    "are",
+    "for",
+    "from",
+    "into",
+    "the",
+    "using",
+    "with",
+}
+_SEARCH_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
 def _search_backend_query(
@@ -57,6 +72,59 @@ def _search_backend_query(
         query_text=query_text,
         filters=filters,
         embedding_vector=embedding_vector,
+    )
+
+
+def _try_search_backend(
+    *,
+    search_backend: object | None,
+    index_name: str,
+    query_text: str | None,
+    filters: dict[str, object] | None,
+    embedding_provider: object | None,
+    limit: int,
+) -> list[dict[str, object]] | None:
+    if search_backend is None:
+        return None
+    try:
+        query = _search_backend_query(
+            query_text,
+            filters=filters,
+            embedding_provider=embedding_provider,
+        )
+        return search_backend.search(index_name, query, limit)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Search backend query failed for index=%s; falling back to SQL search: %s",
+            index_name,
+            exc,
+        )
+        return None
+
+
+def _base_paper_search_statement():
+    return select(Paper)
+
+
+def _search_like_patterns(query_text: str) -> list[str]:
+    lowered_query = query_text.lower()
+    patterns = [f"%{lowered_query}%"]
+    for token in _SEARCH_TOKEN_RE.findall(lowered_query):
+        if len(token) < 3 or token in _SEARCH_STOPWORDS:
+            continue
+        pattern = f"%{token}%"
+        if pattern not in patterns:
+            patterns.append(pattern)
+    return patterns[:16]
+
+
+def _text_search_predicate(columns: list[object], patterns: list[str]):
+    return or_(
+        *(
+            func.lower(cast(func.coalesce(column, ""), String)).like(pattern)
+            for pattern in patterns
+            for column in columns
+        )
     )
 
 
@@ -109,7 +177,7 @@ def search_papers(
     extraction_state: str | None = Query(None, min_length=1, max_length=32),
     session: Session = Depends(get_session),
 ) -> SearchPapersResponse:
-    statement = select(Paper).distinct()
+    statement = _base_paper_search_statement()
     predicates: list[object] = []
     has_filter = False
     search_filters: dict[str, object] = {}
@@ -118,11 +186,10 @@ def search_papers(
     safe_query: str | None = None
     if q is not None:
         safe_query = sanitize_user_text(q, field_name="q", max_length=1000)
-        pattern = f"%{safe_query.lower()}%"
         predicates.append(
-            or_(
-                func.lower(Paper.canonical_title).like(pattern),
-                func.lower(cast(func.coalesce(Paper.abstract, ""), String)).like(pattern),
+            _text_search_predicate(
+                [Paper.canonical_title, Paper.abstract],
+                _search_like_patterns(safe_query),
             )
         )
         has_filter = True
@@ -261,16 +328,15 @@ def search_papers(
             message="Provide q or at least one supported filter.",
         )
 
-    if search_backend is not None:
-        documents = search_backend.search(
-            "paperbase-papers",
-            _search_backend_query(
-                safe_query,
-                filters=search_filters,
-                embedding_provider=request.app.state.embedding_provider,
-            ),
-            limit,
-        )
+    documents = _try_search_backend(
+        search_backend=search_backend,
+        index_name="paperbase-papers",
+        query_text=safe_query,
+        filters=search_filters,
+        embedding_provider=request.app.state.embedding_provider,
+        limit=limit,
+    )
+    if documents is not None:
         return SearchPapersResponse(
             data=[
                 PaperSummaryResponse(
@@ -340,16 +406,15 @@ def search_chunks(
     )
     search_backend = request.app.state.search_backend
 
-    if search_backend is not None:
-        documents = search_backend.search(
-            "paperbase-chunks",
-            _search_backend_query(
-                safe_query,
-                filters={"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
-                embedding_provider=request.app.state.embedding_provider,
-            ),
-            limit,
-        )
+    documents = _try_search_backend(
+        search_backend=search_backend,
+        index_name="paperbase-chunks",
+        query_text=safe_query,
+        filters={"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
+        embedding_provider=request.app.state.embedding_provider,
+        limit=limit,
+    )
+    if documents is not None:
         return SearchChunksResponse(
             data=[
                 SearchChunkHitResponse(
@@ -363,16 +428,15 @@ def search_chunks(
             ]
         )
 
-    pattern = f"%{safe_query.lower()}%"
+    patterns = _search_like_patterns(safe_query)
     statement = (
         select(Chunk, Paper, Section)
         .join(Paper, Paper.id == Chunk.paper_id)
         .outerjoin(Section, Section.id == Chunk.section_id)
         .where(
-            or_(
-                func.lower(cast(func.coalesce(Chunk.text, ""), String)).like(pattern),
-                func.lower(cast(func.coalesce(Paper.canonical_title, ""), String)).like(pattern),
-                func.lower(cast(func.coalesce(Section.title, ""), String)).like(pattern),
+            _text_search_predicate(
+                [Chunk.text, Paper.canonical_title, Section.title],
+                patterns,
             )
         )
         .order_by(Chunk.created_at.asc())
@@ -422,39 +486,59 @@ def search_artifacts(
 
     if search_backend is not None:
         documents: list[SearchArtifactHitResponse] = []
-        query = _search_backend_query(
-            safe_query,
-            filters={"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
-            embedding_provider=request.app.state.embedding_provider,
-        )
+        backend_failed = False
+        filters = {"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None
         if safe_kind in {"all", "figure"}:
-            for document in search_backend.search("paperbase-figures", query, limit):
-                documents.append(
-                    SearchArtifactHitResponse(
-                        artifact_type="figure",
-                        artifact_id=str(document.get("figure_id", "")),
-                        paper_id=str(document.get("paper_id", "")),
-                        paper_title=str(document.get("title", "")),
-                        label=(str(document.get("figure_label")) if document.get("figure_label") else None),
-                        caption=(str(document.get("caption")) if document.get("caption") else None),
+            figure_documents = _try_search_backend(
+                search_backend=search_backend,
+                index_name="paperbase-figures",
+                query_text=safe_query,
+                filters=filters,
+                embedding_provider=request.app.state.embedding_provider,
+                limit=limit,
+            )
+            if figure_documents is None:
+                backend_failed = True
+            else:
+                for document in figure_documents:
+                    documents.append(
+                        SearchArtifactHitResponse(
+                            artifact_type="figure",
+                            artifact_id=str(document.get("figure_id", "")),
+                            paper_id=str(document.get("paper_id", "")),
+                            paper_title=str(document.get("title", "")),
+                            label=(str(document.get("figure_label")) if document.get("figure_label") else None),
+                            caption=(str(document.get("caption")) if document.get("caption") else None),
+                        )
                     )
-                )
-        if safe_kind in {"all", "table"}:
-            for document in search_backend.search("paperbase-tables", query, limit):
-                documents.append(
-                    SearchArtifactHitResponse(
-                        artifact_type="table",
-                        artifact_id=str(document.get("table_id", "")),
-                        paper_id=str(document.get("paper_id", "")),
-                        paper_title=str(document.get("title", "")),
-                        label=(str(document.get("table_label")) if document.get("table_label") else None),
-                        caption=(str(document.get("caption")) if document.get("caption") else None),
-                        structured_payload=dict(document.get("structured_payload") or {}),
+        if safe_kind in {"all", "table"} and not backend_failed:
+            table_documents = _try_search_backend(
+                search_backend=search_backend,
+                index_name="paperbase-tables",
+                query_text=safe_query,
+                filters=filters,
+                embedding_provider=request.app.state.embedding_provider,
+                limit=limit,
+            )
+            if table_documents is None:
+                backend_failed = True
+            else:
+                for document in table_documents:
+                    documents.append(
+                        SearchArtifactHitResponse(
+                            artifact_type="table",
+                            artifact_id=str(document.get("table_id", "")),
+                            paper_id=str(document.get("paper_id", "")),
+                            paper_title=str(document.get("title", "")),
+                            label=(str(document.get("table_label")) if document.get("table_label") else None),
+                            caption=(str(document.get("caption")) if document.get("caption") else None),
+                            structured_payload=dict(document.get("structured_payload") or {}),
+                        )
                     )
-                )
-        return SearchArtifactsResponse(data=documents[:limit])
+        if not backend_failed:
+            return SearchArtifactsResponse(data=documents[:limit])
 
-    pattern = f"%{safe_query.lower()}%"
+    patterns = _search_like_patterns(safe_query)
     items: list[SearchArtifactHitResponse] = []
 
     if safe_kind in {"all", "figure"}:
@@ -462,10 +546,9 @@ def search_artifacts(
             select(Figure, Paper)
             .join(Paper, Paper.id == Figure.paper_id)
             .where(
-                or_(
-                    func.lower(cast(func.coalesce(Figure.caption, ""), String)).like(pattern),
-                    func.lower(cast(func.coalesce(Figure.figure_label, ""), String)).like(pattern),
-                    func.lower(cast(func.coalesce(Paper.canonical_title, ""), String)).like(pattern),
+                _text_search_predicate(
+                    [Figure.caption, Figure.figure_label, Paper.canonical_title],
+                    patterns,
                 )
             )
             .order_by(Figure.created_at.asc())
@@ -494,10 +577,9 @@ def search_artifacts(
             select(TableArtifact, Paper)
             .join(Paper, Paper.id == TableArtifact.paper_id)
             .where(
-                or_(
-                    func.lower(cast(func.coalesce(TableArtifact.caption, ""), String)).like(pattern),
-                    func.lower(cast(func.coalesce(TableArtifact.table_label, ""), String)).like(pattern),
-                    func.lower(cast(func.coalesce(Paper.canonical_title, ""), String)).like(pattern),
+                _text_search_predicate(
+                    [TableArtifact.caption, TableArtifact.table_label, Paper.canonical_title],
+                    patterns,
                 )
             )
             .order_by(TableArtifact.created_at.asc())

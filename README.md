@@ -119,6 +119,7 @@ Other useful shortcuts:
 ```bash
 arxie-local open
 arxie-local down
+arxie-local run --rebuild
 arxie-local install-shortcut
 ```
 
@@ -132,9 +133,11 @@ the default stack can run on modest laptop memory.
 
 For the single-user local path, Arxie does not hard-block readiness on the
 search backend. The default launcher path skips Elasticsearch entirely so parse,
-extraction, and the dashboard remain reliable on a modest laptop. If you later
-start Arxie with `--with-search`, the workspace can use the backend search
-surface when Elasticsearch is healthy.
+extraction, and the dashboard remain reliable on a modest laptop. The local
+Compose services mount the current `src/` and `services/` directories, so code
+updates are picked up on restart. Use `arxie-local run --rebuild` only after
+dependency or Dockerfile changes. If you later start Arxie with `--with-search`,
+the workspace can use the backend search surface when Elasticsearch is healthy.
 
 ### 5. Use Your Own Local Paper Collection
 

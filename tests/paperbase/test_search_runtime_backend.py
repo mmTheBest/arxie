@@ -27,6 +27,12 @@ class FakeSearchBackend:
         return list(self.search_results.get(index_name, []))
 
 
+class FailingSearchBackend:
+    def search(self, index_name: str, query: dict[str, object], size: int) -> list[dict[str, object]]:
+        del index_name, query, size
+        raise RuntimeError("search backend unavailable")
+
+
 class FakeEmbeddingProvider:
     def embed(self, text: str) -> list[float]:
         del text
@@ -250,3 +256,87 @@ def test_search_api_uses_configured_backend_for_chunk_and_artifact_surfaces(tmp_
     assert {"terms": {"collection_ids": ["collection-1"]}} in backend.search_calls[0][1]["query"]["bool"]["filter"]
     assert backend.search_calls[0][1]["knn"]["field"] == "embedding"
     assert {call[0] for call in backend.search_calls[1:]} == {"paperbase-figures", "paperbase-tables"}
+
+
+def test_search_api_falls_back_to_sql_when_configured_backend_is_unavailable(tmp_path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="paper-1",
+            canonical_title="Prior knowledge gene regulatory network inference",
+            abstract="Benchmark evaluation for single-cell gene regulatory networks.",
+            publication_year=2026,
+            venue="Nature",
+            authors=["Alice Smith"],
+            tags=["scRegNet"],
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated field corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper.id)
+        session.add_all(
+            [
+                Section(
+                    paper_id=paper.id,
+                    title="Methods",
+                    ordinal=1,
+                    text="We evaluate AUROC on benchmark gene regulatory networks.",
+                ),
+                Chunk(
+                    paper_id=paper.id,
+                    section_id=None,
+                    ordinal=1,
+                    text="We evaluate AUROC on benchmark gene regulatory networks.",
+                ),
+                Figure(
+                    paper_id=paper.id,
+                    page_number=2,
+                    figure_label="Figure 1",
+                    caption="Benchmark architecture for GRN inference.",
+                ),
+                TableArtifact(
+                    paper_id=paper.id,
+                    page_number=3,
+                    table_label="Table 1",
+                    caption="Benchmark comparison table.",
+                    structured_payload_json={"rows": 2},
+                ),
+            ]
+        )
+        session.commit()
+        collection_id = collection.id
+        paper_id = paper.id
+
+    client = TestClient(
+        create_app(
+            session_factory=session_factory,
+            search_backend=FailingSearchBackend(),
+            embedding_provider=FakeEmbeddingProvider(),
+        )
+    )
+
+    paper_response = client.get(
+        "/api/v1/search/papers",
+        params={"q": "gene regulatory", "collection_id": collection_id},
+    )
+    chunk_response = client.get(
+        "/api/v1/search/chunks",
+        params={"q": "AUROC", "collection_id": collection_id},
+    )
+    artifact_response = client.get(
+        "/api/v1/search/artifacts",
+        params={"q": "benchmark", "collection_id": collection_id, "kind": "all"},
+    )
+
+    assert paper_response.status_code == 200
+    assert chunk_response.status_code == 200
+    assert artifact_response.status_code == 200
+    assert paper_response.json()["data"][0]["id"] == paper_id
+    assert chunk_response.json()["data"][0]["paper_id"] == paper_id
+    assert {item["artifact_type"] for item in artifact_response.json()["data"]} == {"figure", "table"}

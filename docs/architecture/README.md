@@ -78,7 +78,8 @@ The current release surface also exposes:
 - first-class `limitations` alongside findings, result rows, figures, and tables
 - provider-backed ingest by DOI, arXiv ID, and OpenAlex identifier
 - an `arxie-local` launcher command for single-user local boot/open/stop flows,
-  with a lighter default stack and optional `--with-search` backend search
+  with mounted local source, a lighter default stack, optional `--rebuild`, and
+  optional `--with-search` backend search
 - backend-first collection-aware search when a search backend is configured
 - workspace-aware `/answer` and `/api/chat` execution paths
 - a Paperbase structured-evidence tool that the Arxie agent can call directly

@@ -12,6 +12,9 @@ services:
       postgres:
         condition: service_healthy
     command: ["paperbase-db", "upgrade"]
+    volumes:
+      - ../src:/app/src:ro
+      - ../services:/app/services:ro
 
   paperbase-api:
     build:
@@ -35,6 +38,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      - ../src:/app/src:ro
+      - ../services:/app/services:ro
       - paperbase-app-data:/app/data
 
   paperbase-worker:
@@ -57,6 +62,8 @@ services:
         condition: service_started
     command: ["paperbase-worker"]
     volumes:
+      - ../src:/app/src:ro
+      - ../services:/app/services:ro
       - paperbase-app-data:/app/data
 
   postgres:
