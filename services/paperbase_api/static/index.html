@@ -157,13 +157,16 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <p class="panel-kicker">Collection Operations</p>
-                  <h3>Prepare the selected collection</h3>
+                  <p class="panel-kicker">Collections</p>
+                  <h3>Choose a collection and follow the next readiness step</h3>
                 </div>
-                <div class="button-row">
-                  <button id="parse-button" class="action-button" type="button">Queue Parse</button>
-                  <button id="extract-button" class="action-button" type="button">Queue Extraction</button>
-                </div>
+                <details class="advanced-actions-menu">
+                  <summary>More</summary>
+                  <div class="button-row">
+                    <button id="parse-button" class="action-button" type="button">Queue Parse</button>
+                    <button id="extract-button" class="action-button" type="button">Queue Extraction</button>
+                  </div>
+                </details>
               </div>
               <div id="library-collections-grid" class="card-grid"></div>
             </section>
@@ -181,6 +184,8 @@
                 </button>
               </div>
             </div>
+
+            <div id="workspace-readiness-banner" class="readiness-banner"></div>
 
             <div class="workspace-toolbar panel">
               <div class="workspace-toolbar-copy">
@@ -281,6 +286,8 @@
               </div>
               <div id="compare-collection-context" class="module-meta"></div>
             </div>
+
+            <div id="compare-readiness-banner" class="readiness-banner"></div>
 
             <section class="panel">
               <div class="panel-header">
@@ -402,16 +409,10 @@
                 <div class="panel-header">
                   <div>
                     <p class="panel-kicker">Local Operation</p>
-                    <h3>How this single-user install behaves</h3>
+                    <h3>Runtime and backend configuration</h3>
                   </div>
                 </div>
-                <ul class="detail-list">
-                  <li>Use Library to import a folder and create a curated collection.</li>
-                  <li>Queue Parse and Queue Extraction before expecting rich compare results.</li>
-                  <li>Use Workspace as the main daily screen for search, reading, and saving context.</li>
-                  <li>Use Compare after you have a prepared collection with extracted entities.</li>
-                  <li>Use Jobs to monitor long-running ingest, parse, extraction, and reindex work.</li>
-                </ul>
+                <div id="settings-runtime-summary"></div>
               </section>
             </div>
           </section>

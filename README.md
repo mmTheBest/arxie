@@ -20,6 +20,7 @@ This repository now ships the `v0.2.0` product surface described in the April 14
   in the self-hosted stack, plus explicit local fallbacks for development
 - compare results, methods, tricks, figures, and tables across a corpus slice
 - save workspaces with a collection, query, focus note, filters, and pinned papers
+- see each collection's readiness for search and structured comparison before choosing the next action
 - run Arxie answer, chat, literature review, and proposal evidence flows against that saved context
 
 ## Current Scope
@@ -147,10 +148,10 @@ The browser workspace is now enough for the single-user local workflow:
 2. start in **Library** and use **Upload PDF Folder**
 3. select a local folder containing PDFs and optionally set a collection title
 4. switch to **Jobs** and wait for the ingest job to finish
-5. return to **Library**, open the imported collection, then run **Queue Parse**
-6. run **Queue Extraction** once parse is complete
-7. use **Workspace** to search the collection and inspect paper-level evidence
-8. use **Compare** to inspect results, methods, tricks, figures, and tables
+5. return to **Library** and use **Run Next Step** on the imported collection
+6. repeat **Run Next Step** until the collection shows **Evidence ready**
+7. use **Open Workspace** to search the collection and inspect paper-level evidence
+8. use **Compare** once extraction is ready to inspect results, methods, tricks, figures, and tables
 9. save the investigation as a reusable workspace context
 
 If you are running the API and worker directly on the host instead of in Docker,

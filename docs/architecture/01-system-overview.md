@@ -55,15 +55,19 @@ This is now a real product path, not just a planned decomposition.
 For the single-user local path, the intended front door is `/app`. The shipped
 UI is now module-based rather than one operator console:
 
-- `Library` for import, collection selection, and parse/extract operations
-- `Workspace` for collection-scoped search, reading, and saving research context
-- `Compare` for structured evidence comparison across the active collection
-- `Jobs` for monitoring ingest, parse, extraction, and reindex activity
-- `Settings` for current local runtime context
+- `Library` for import, collection selection, readiness, and the guided next preparation step
+- `Workspace` for collection-scoped search, reading, evidence inspection, and saving research context
+- `Compare` for structured evidence comparison across an extraction-ready collection
+- `Jobs` for monitoring and diagnosing ingest, parse, extraction, and reindex activity
+- `Settings` for local runtime, search backend, object-store, worker, and selected context state
 
-That means a user can import a local PDF directory, prepare the collection,
-search within it, compare extracted evidence, and save the investigation
-without dropping to scripts.
+Collection readiness is exposed through the collection API and structured
+summary responses so the browser does not infer preparation state from partial
+UI state. The readiness inputs include paper count, parsed paper count,
+extracted paper count, latest parse/extraction job status, and failed job count.
+That means a user can import a local PDF directory, follow **Run Next Step**
+from imported to text-ready to evidence-ready, search within it, compare
+extracted evidence, and save the investigation without dropping to scripts.
 
 ## Self-Hosted Runtime
 

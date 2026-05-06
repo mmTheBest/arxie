@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from paperbase.db.bootstrap import initialize_database
 from paperbase.db.models import (
+    BackgroundJob,
     Dataset,
     EngineeringTrick,
     ExtractionRun,
@@ -13,6 +14,7 @@ from paperbase.db.models import (
     Method,
     Metric,
     ResultRow,
+    Section,
     TableArtifact,
 )
 from paperbase.db.repositories import CollectionRepository, PaperRepository
@@ -45,6 +47,14 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
         metric = Metric(paper_id=paper.id, normalized_name="auroc", display_name="AUROC")
         session.add_all(
             [
+                Section(
+                    paper_id=paper.id,
+                    title="Methods",
+                    ordinal=1,
+                    page_start=1,
+                    page_end=2,
+                    text="Full text method section.",
+                ),
                 dataset,
                 method,
                 metric,
@@ -82,6 +92,19 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
                     schema_version="schema-v1",
                     status="completed",
                 ),
+                BackgroundJob(
+                    job_type="collection_parse",
+                    status="completed",
+                    payload_json={"collection_id": collection.id},
+                    result_json={"collection_id": collection.id},
+                ),
+                BackgroundJob(
+                    job_type="collection_extract",
+                    status="failed",
+                    payload_json={"collection_id": collection.id},
+                    result_json=None,
+                    error_message="Extractor timed out.",
+                ),
             ]
         )
         session.flush()
@@ -105,7 +128,11 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
     payload = response.json()["data"]
     assert payload["collection_id"] == collection_id
     assert payload["paper_count"] == 1
+    assert payload["parsed_paper_count"] == 1
     assert payload["extracted_paper_count"] == 1
+    assert payload["latest_parse_job_status"] == "completed"
+    assert payload["latest_extraction_job_status"] == "failed"
+    assert payload["failed_job_count"] == 1
     assert payload["datasets"][0]["display_name"] == "scRegNetBench"
     assert payload["methods"][0]["display_name"] == "scLong"
     assert payload["metrics"][0]["display_name"] == "AUROC"

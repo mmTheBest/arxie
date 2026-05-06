@@ -50,11 +50,11 @@ web surface:
 That UI is still intentionally thin, but it is now organized around product
 modules instead of one mixed dashboard:
 
-- `Library`
-- `Workspace`
-- `Compare`
-- `Jobs`
-- `Settings`
+- `Library` owns import, collection selection, readiness labels, and **Run Next Step**
+- `Workspace` owns search, paper reading, evidence inspection, and saved investigations
+- `Compare` owns structured evidence analysis after extraction is ready
+- `Jobs` owns monitoring, failure diagnosis, and advanced reindex operations
+- `Settings` owns local runtime and selected context state
 
 It still sits directly on the workspaces, collections, papers, chunk/artifact
 search, compare, and jobs APIs so the product can ship a real research
@@ -63,7 +63,7 @@ workspace before a larger frontend stack is introduced.
 For the supported single-user local workflow, `/app` is now enough to:
 
 - upload a local PDF folder into a new collection
-- queue parse and extraction jobs for that collection from `Library`
+- follow the collection's guided next step from imported to text-ready to evidence-ready
 - monitor background job completion in `Jobs`
 - browse the resulting papers and evidence in `Workspace`
 - inspect structured comparison slices in `Compare`

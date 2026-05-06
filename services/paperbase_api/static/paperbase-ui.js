@@ -8,6 +8,8 @@
     search: "/api/v1/search/papers",
     searchChunks: "/api/v1/search/chunks",
     searchArtifacts: "/api/v1/search/artifacts",
+    searchStatus: "/api/v1/search/status",
+    readiness: "/readyz",
     reindex: "/api/v1/search/reindex",
     compareResults: "/api/v1/compare/results",
     compareMethods: "/api/v1/compare/methods",
@@ -30,6 +32,10 @@
     chunkSearchHits: [],
     artifactSearchHits: [],
     jobs: [],
+    system: {
+      readiness: null,
+      searchStatus: null,
+    },
     compare: {
       collectionId: null,
       dataset: "",
@@ -66,6 +72,7 @@
     libraryCollectionsGrid: document.getElementById("library-collections-grid"),
     workspaceCollectionTitle: document.getElementById("workspace-collection-title"),
     workspaceSearchMeta: document.getElementById("workspace-search-meta"),
+    workspaceReadinessBanner: document.getElementById("workspace-readiness-banner"),
     workspaceOpenCompareButton: document.getElementById("workspace-open-compare-button"),
     searchForm: document.getElementById("search-form"),
     searchInput: document.getElementById("paper-search-input"),
@@ -79,6 +86,7 @@
     collectionSummary: document.getElementById("collection-summary"),
     paperDetail: document.getElementById("paper-detail"),
     compareCollectionContext: document.getElementById("compare-collection-context"),
+    compareReadinessBanner: document.getElementById("compare-readiness-banner"),
     compareDatasetInput: document.getElementById("compare-dataset-input"),
     compareMetricInput: document.getElementById("compare-metric-input"),
     compareMethodInput: document.getElementById("compare-method-input"),
@@ -92,6 +100,7 @@
     reindexButton: document.getElementById("reindex-button"),
     jobsList: document.getElementById("jobs-list"),
     settingsSummary: document.getElementById("settings-summary"),
+    settingsRuntimeSummary: document.getElementById("settings-runtime-summary"),
   };
 
   function setStatus(message) {
@@ -158,6 +167,155 @@
     return `<span class="pill">${escapeHtml(state.selectedCollection.title)}</span>`;
   }
 
+  function pluralize(count, singular, plural) {
+    return `${count} ${count === 1 ? singular : plural}`;
+  }
+
+  function isActiveJobStatus(status) {
+    return status === "pending" || status === "queued" || status === "running";
+  }
+
+  function collectionIdFromJob(job) {
+    const result = job.result || {};
+    const payload = job.payload || {};
+    return result.collection_id || payload.collection_id || null;
+  }
+
+  function latestCollectionJobStatus(collection, jobs, jobType) {
+    if (!collection) {
+      return null;
+    }
+    const match = jobs.find((job) => collectionIdFromJob(job) === collection.id && job.job_type === jobType);
+    return match ? match.status : null;
+  }
+
+  function collectionFailedJobCount(collection, jobs) {
+    if (!collection) {
+      return 0;
+    }
+    return jobs.filter((job) => collectionIdFromJob(job) === collection.id && job.status === "failed").length;
+  }
+
+  function getCollectionReadiness(collection, summary, jobs) {
+    const paperCount = Number((summary && summary.paper_count) ?? (collection && collection.paper_count) ?? 0);
+    const parsedPaperCount = Number(
+      (summary && summary.parsed_paper_count) ?? (collection && collection.parsed_paper_count) ?? 0,
+    );
+    const extractedPaperCount = Number(
+      (summary && summary.extracted_paper_count) ?? (collection && collection.extracted_paper_count) ?? 0,
+    );
+    const latestParseJobStatus = latestCollectionJobStatus(collection, jobs, "collection_parse")
+      || (summary && summary.latest_parse_job_status)
+      || (collection && collection.latest_parse_job_status);
+    const latestExtractionJobStatus = latestCollectionJobStatus(collection, jobs, "collection_extract")
+      || (summary && summary.latest_extraction_job_status)
+      || (collection && collection.latest_extraction_job_status);
+    const latestJobFromJobs = collection ? jobs.find((job) => collectionIdFromJob(job) === collection.id) : null;
+    const latestJobStatus = (latestJobFromJobs || {}).status
+      || (summary && summary.latest_job_status)
+      || (collection && collection.latest_job_status)
+      || null;
+    const failedJobCount = Math.max(
+      Number((summary && summary.failed_job_count) ?? 0),
+      Number((collection && collection.failed_job_count) ?? 0),
+      collectionFailedJobCount(collection, jobs),
+    );
+
+    const readiness = {
+      status: "imported",
+      label: "Imported",
+      detailLabel: "Needs parse",
+      nextAction: "parse",
+      nextActionLabel: "Run Next Step",
+      nextActionDisabled: paperCount === 0,
+      isReadyForWorkspace: paperCount > 0 && parsedPaperCount >= paperCount,
+      isReadyForCompare: paperCount > 0 && extractedPaperCount >= paperCount,
+      paperCount,
+      parsedPaperCount,
+      extractedPaperCount,
+      latestJobStatus,
+      latestParseJobStatus,
+      latestExtractionJobStatus,
+      failedJobCount,
+      sidebarLine: `${pluralize(paperCount, "paper", "papers")} · Imported · Needs parse`,
+    };
+
+    if (failedJobCount > 0 || latestParseJobStatus === "failed" || latestExtractionJobStatus === "failed") {
+      return {
+        ...readiness,
+        status: "needs_attention",
+        label: "Needs attention",
+        detailLabel: "Failed",
+        nextAction: parsedPaperCount < paperCount ? "parse" : "extract",
+        sidebarLine: `${pluralize(paperCount, "paper", "papers")} · Needs attention`,
+      };
+    }
+
+    if (isActiveJobStatus(latestParseJobStatus) && parsedPaperCount < paperCount) {
+      return {
+        ...readiness,
+        status: "parsing",
+        label: "Parsing",
+        detailLabel: "Text pending",
+        nextAction: "none",
+        nextActionDisabled: true,
+        sidebarLine: `${pluralize(paperCount, "paper", "papers")} · Parsing · Text pending`,
+      };
+    }
+
+    if (isActiveJobStatus(latestExtractionJobStatus) && extractedPaperCount < paperCount) {
+      return {
+        ...readiness,
+        status: "extracting",
+        label: "Extracting",
+        detailLabel: "Evidence pending",
+        nextAction: "none",
+        nextActionDisabled: true,
+        sidebarLine: `${pluralize(paperCount, "paper", "papers")} · Extracting · Evidence pending`,
+      };
+    }
+
+    if (paperCount === 0) {
+      return {
+        ...readiness,
+        nextAction: "none",
+        nextActionDisabled: true,
+        detailLabel: "No papers yet",
+        sidebarLine: "0 papers · Imported",
+      };
+    }
+
+    if (parsedPaperCount < paperCount) {
+      return readiness;
+    }
+
+    if (extractedPaperCount < paperCount) {
+      return {
+        ...readiness,
+        status: "text_ready",
+        label: "Text ready",
+        detailLabel: "Evidence missing",
+        nextAction: "extract",
+        sidebarLine: `${pluralize(paperCount, "paper", "papers")} · Text ready · Evidence missing`,
+      };
+    }
+
+    return {
+      ...readiness,
+      status: "evidence_ready",
+      label: "Evidence ready",
+      detailLabel: "Ready",
+      nextAction: "none",
+      nextActionLabel: "Ready",
+      nextActionDisabled: true,
+      sidebarLine: `${pluralize(paperCount, "paper", "papers")} · Evidence ready`,
+    };
+  }
+
+  function selectedCollectionReadiness() {
+    return getCollectionReadiness(state.selectedCollection, state.collectionSummary, state.jobs);
+  }
+
   function renderCollectionsSidebar() {
     if (state.collections.length === 0) {
       elements.sidebarCollectionsList.innerHTML = '<div class="list-card muted">No collections yet.</div>';
@@ -167,11 +325,15 @@
     elements.sidebarCollectionsList.innerHTML = state.collections
       .map((collection) => {
         const active = state.selectedCollection && state.selectedCollection.id === collection.id;
+        const readiness = getCollectionReadiness(collection, null, state.jobs);
         return `
           <div class="list-card list-card-compact" data-active="${active ? "true" : "false"}">
             <button type="button" data-sidebar-collection-id="${collection.id}">
-              <div class="list-title">${escapeHtml(collection.title)}</div>
-              <div class="muted">${escapeHtml(collection.description || "Curated collection")}</div>
+              <div class="list-card-heading">
+                <span class="status-marker" data-status="${escapeHtml(readiness.status)}"></span>
+                <span class="list-title">${escapeHtml(collection.title)}</span>
+              </div>
+              <div class="muted">${escapeHtml(readiness.sidebarLine)}</div>
             </button>
           </div>
         `;
@@ -201,11 +363,16 @@
     elements.sidebarWorkspacesList.innerHTML = state.workspaces
       .map((workspace) => {
         const active = state.selectedWorkspace && state.selectedWorkspace.id === workspace.id;
+        const collection = state.collections.find((item) => item.id === workspace.collection_id);
+        const readiness = getCollectionReadiness(collection, null, state.jobs);
+        const pinnedCount = (workspace.pinned_paper_ids || []).length;
+        const collectionTitle = collection ? collection.title : "No linked collection";
+        const queryIndicator = workspace.saved_query ? "saved query" : "no saved query";
         return `
           <div class="list-card list-card-compact" data-active="${active ? "true" : "false"}">
             <button type="button" data-sidebar-workspace-id="${workspace.id}">
               <div class="list-title">${escapeHtml(workspace.title)}</div>
-              <div class="muted">${escapeHtml(workspace.saved_query || workspace.description || "Saved research context")}</div>
+              <div class="muted">${escapeHtml(collectionTitle)} · ${escapeHtml(pluralize(pinnedCount, "pinned", "pinned"))} · ${escapeHtml(queryIndicator)} · ${escapeHtml(readiness.label.toLowerCase())}</div>
             </button>
           </div>
         `;
@@ -237,21 +404,47 @@
     elements.libraryCollectionsGrid.innerHTML = state.collections
       .map((collection) => {
         const active = state.selectedCollection && state.selectedCollection.id === collection.id;
+        const readiness = getCollectionReadiness(collection, null, state.jobs);
         return `
           <article class="collection-card" data-active="${active ? "true" : "false"}">
             <div class="collection-card-copy">
-              <p class="panel-kicker">${escapeHtml(collection.scope_type)}</p>
-              <h4>${escapeHtml(collection.title)}</h4>
+              <div class="collection-card-heading">
+                <span class="status-marker" data-status="${escapeHtml(readiness.status)}"></span>
+                <div>
+                  <p class="panel-kicker">${escapeHtml(collection.scope_type)}</p>
+                  <h4>${escapeHtml(collection.title)}</h4>
+                </div>
+              </div>
               <p class="muted">${escapeHtml(collection.description || "Curated field database")}</p>
+              <div class="readiness-card-summary">
+                <span class="pill">${escapeHtml(readiness.label)}</span>
+                <span>${escapeHtml(pluralize(readiness.paperCount, "paper", "papers"))}</span>
+                <span>${escapeHtml(readiness.parsedPaperCount)} parsed</span>
+                <span>${escapeHtml(readiness.extractedPaperCount)} extracted</span>
+                ${readiness.latestJobStatus ? `<span>${escapeHtml(readiness.latestJobStatus)}</span>` : ""}
+              </div>
               <div class="pill-row">
                 ${(collection.tags || []).slice(0, 4).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("") || '<span class="pill">No tags</span>'}
               </div>
             </div>
-            <div class="button-row button-row-left">
-              <button type="button" class="action-button" data-library-open-id="${collection.id}">Open</button>
-              <button type="button" class="action-button" data-library-compare-id="${collection.id}">Compare</button>
-              <button type="button" class="action-button" data-library-parse-id="${collection.id}">Parse</button>
-              <button type="button" class="action-button" data-library-extract-id="${collection.id}">Extract</button>
+            <div class="collection-card-actions">
+              <button type="button" class="action-button action-button-primary" data-library-open-id="${collection.id}">Open Workspace</button>
+              <button
+                type="button"
+                class="action-button"
+                data-library-next-step-id="${collection.id}"
+                data-next-action="${escapeHtml(readiness.nextAction)}"
+                ${readiness.nextActionDisabled ? "disabled" : ""}
+              >
+                ${escapeHtml(readiness.nextActionLabel)}
+              </button>
+              <details class="collection-more" data-library-more-id="${collection.id}">
+                <summary>More</summary>
+                <div class="button-row button-row-left">
+                  <button type="button" class="action-button" data-library-advanced-action="parse" data-library-collection-id="${collection.id}">Queue Parse</button>
+                  <button type="button" class="action-button" data-library-advanced-action="extract" data-library-collection-id="${collection.id}">Queue Extraction</button>
+                </div>
+              </details>
             </div>
           </article>
         `;
@@ -271,43 +464,41 @@
       });
     });
 
-    elements.libraryCollectionsGrid.querySelectorAll("[data-library-compare-id]").forEach((button) => {
+    elements.libraryCollectionsGrid.querySelectorAll("[data-library-next-step-id]").forEach((button) => {
       button.addEventListener("click", async () => {
-        const collectionId = button.getAttribute("data-library-compare-id");
-        if (!collectionId) {
-          return;
-        }
-        setStatus("Opening compare view…");
-        await loadCollectionSurface(collectionId);
-        await refreshCompare();
-        activateView("compare");
-        setStatus(`Prepared compare view for ${state.selectedCollection.title}.`);
-      });
-    });
-
-    elements.libraryCollectionsGrid.querySelectorAll("[data-library-parse-id]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const collectionId = button.getAttribute("data-library-parse-id");
+        const collectionId = button.getAttribute("data-library-next-step-id");
+        const nextAction = button.getAttribute("data-next-action");
         if (!collectionId) {
           return;
         }
         if (!state.selectedCollection || state.selectedCollection.id !== collectionId) {
           await loadCollectionSurface(collectionId);
         }
-        await queueParse();
+        if (nextAction === "parse") {
+          await queueParse();
+        }
+        if (nextAction === "extract") {
+          await queueExtraction();
+        }
       });
     });
 
-    elements.libraryCollectionsGrid.querySelectorAll("[data-library-extract-id]").forEach((button) => {
+    elements.libraryCollectionsGrid.querySelectorAll("[data-library-advanced-action]").forEach((button) => {
       button.addEventListener("click", async () => {
-        const collectionId = button.getAttribute("data-library-extract-id");
+        const collectionId = button.getAttribute("data-library-collection-id");
+        const action = button.getAttribute("data-library-advanced-action");
         if (!collectionId) {
           return;
         }
         if (!state.selectedCollection || state.selectedCollection.id !== collectionId) {
           await loadCollectionSurface(collectionId);
         }
-        await queueExtraction();
+        if (action === "parse") {
+          await queueParse();
+        }
+        if (action === "extract") {
+          await queueExtraction();
+        }
       });
     });
   }
@@ -324,6 +515,39 @@
     elements.workspaceSearchMeta.textContent = query
       ? `Active query: ${query}`
       : "Run a search inside the active collection, then open a paper or save the context.";
+  }
+
+  function renderWorkspaceReadiness() {
+    if (!elements.workspaceReadinessBanner) {
+      return;
+    }
+    if (!state.selectedCollection) {
+      elements.workspaceReadinessBanner.innerHTML = `
+        <div class="readiness-banner-content" data-status="imported">
+          <span class="status-marker" data-status="imported"></span>
+          <span>Select a collection in Library to start a workspace.</span>
+        </div>
+      `;
+      return;
+    }
+
+    const readiness = selectedCollectionReadiness();
+    let message = `${readiness.label}: ${readiness.sidebarLine}.`;
+    if (!readiness.isReadyForWorkspace) {
+      message = "This collection needs parsing before full-text search works.";
+    } else if (!readiness.isReadyForCompare) {
+      message = "This collection needs extraction before structured comparison works.";
+    }
+
+    elements.workspaceReadinessBanner.innerHTML = `
+      <div class="readiness-banner-content" data-status="${escapeHtml(readiness.status)}">
+        <span class="status-marker" data-status="${escapeHtml(readiness.status)}"></span>
+        <span>${escapeHtml(message)}</span>
+      </div>
+    `;
+
+    elements.workspaceOpenCompareButton.dataset.ready = readiness.isReadyForCompare ? "true" : "false";
+    elements.workspaceOpenCompareButton.classList.toggle("action-button-primary", readiness.isReadyForCompare);
   }
 
   function renderPapers() {
@@ -411,11 +635,12 @@
     }
 
     const summary = state.collectionSummary;
+    const readiness = selectedCollectionReadiness();
     const metricBoxes = [
       { label: "Papers", value: summary.paper_count },
+      { label: "Parsed", value: summary.parsed_paper_count },
       { label: "Extracted", value: summary.extracted_paper_count },
       { label: "Methods", value: summary.methods.length },
-      { label: "Limitations", value: summary.limitations.length },
       { label: "Figures", value: summary.figures.length },
       { label: "Tables", value: summary.tables.length },
     ];
@@ -432,6 +657,12 @@
       <div class="detail-group">
         <div class="list-title">${escapeHtml(state.selectedCollection.title)}</div>
         <p class="summary-copy">${escapeHtml(state.selectedCollection.description || "Curated local collection")}</p>
+        <div class="pill-row">
+          <span class="pill">${escapeHtml(readiness.label)}</span>
+          ${readiness.latestParseJobStatus ? `<span class="pill">parse ${escapeHtml(readiness.latestParseJobStatus)}</span>` : ""}
+          ${readiness.latestExtractionJobStatus ? `<span class="pill">extract ${escapeHtml(readiness.latestExtractionJobStatus)}</span>` : ""}
+          ${readiness.failedJobCount > 0 ? `<span class="pill">failed jobs ${escapeHtml(readiness.failedJobCount)}</span>` : ""}
+        </div>
       </div>
       <div class="detail-group">
         <strong>Datasets</strong>
@@ -550,8 +781,10 @@
       elements.compareCollectionContext.innerHTML = '<span class="pill">Select a collection first</span>';
       return;
     }
+    const readiness = selectedCollectionReadiness();
     elements.compareCollectionContext.innerHTML = `
       <span class="pill">${escapeHtml(state.selectedCollection.title)}</span>
+      <span class="pill">${escapeHtml(readiness.label)}</span>
       ${state.collectionSummary ? `<span class="pill">${escapeHtml(state.collectionSummary.paper_count)} papers</span>` : ""}
     `;
   }
@@ -561,6 +794,12 @@
 
     if (!state.selectedCollection) {
       const emptyMessage = '<div class="muted">Select a collection to compare structured evidence.</div>';
+      elements.compareReadinessBanner.innerHTML = `
+        <div class="readiness-banner-content" data-status="imported">
+          <span class="status-marker" data-status="imported"></span>
+          <span>Select a collection before comparing structured evidence.</span>
+        </div>
+      `;
       elements.compareResultsSurface.innerHTML = emptyMessage;
       elements.compareMethodsSurface.innerHTML = emptyMessage;
       elements.compareTricksSurface.innerHTML = emptyMessage;
@@ -568,6 +807,40 @@
       elements.compareTablesSurface.innerHTML = emptyMessage;
       return;
     }
+
+    const readiness = selectedCollectionReadiness();
+    if (!readiness.isReadyForCompare) {
+      const blockedMessage = `
+        <div class="empty-state">
+          <strong>Structured evidence is not ready yet. Run extraction in Library.</strong>
+          <button type="button" class="action-button action-button-primary" data-open-library-from-compare>Open Library</button>
+        </div>
+      `;
+      elements.compareReadinessBanner.innerHTML = `
+        <div class="readiness-banner-content" data-status="${escapeHtml(readiness.status)}">
+          <span class="status-marker" data-status="${escapeHtml(readiness.status)}"></span>
+          <span>Structured evidence is not ready yet. Run extraction in Library.</span>
+        </div>
+      `;
+      elements.compareResultsSurface.innerHTML = blockedMessage;
+      elements.compareMethodsSurface.innerHTML = blockedMessage;
+      elements.compareTricksSurface.innerHTML = blockedMessage;
+      elements.compareFiguresSurface.innerHTML = blockedMessage;
+      elements.compareTablesSurface.innerHTML = blockedMessage;
+      document.querySelectorAll("[data-open-library-from-compare]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activateView("library");
+        });
+      });
+      return;
+    }
+
+    elements.compareReadinessBanner.innerHTML = `
+      <div class="readiness-banner-content" data-status="${escapeHtml(readiness.status)}">
+        <span class="status-marker" data-status="${escapeHtml(readiness.status)}"></span>
+        <span>Evidence ready for structured comparison.</span>
+      </div>
+    `;
 
     elements.compareDatasetInput.value = state.compare.dataset;
     elements.compareMetricInput.value = state.compare.metric;
@@ -648,25 +921,87 @@
       return;
     }
 
-    elements.jobsList.innerHTML = state.jobs
-      .map((job) => `
-        <div class="list-card">
-          <div class="job-status" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</div>
-          <div class="list-title">${escapeHtml(job.job_type)}</div>
-          <div class="job-meta">${escapeHtml(job.created_at || "queued")}</div>
-          <div class="muted">${escapeHtml(JSON.stringify(job.result || job.payload || {}))}</div>
-          ${job.error_message ? `<div class="muted">${escapeHtml(job.error_message)}</div>` : ""}
-        </div>
-      `)
+    const collectionTitle = (collectionId) => {
+      const collection = state.collections.find((item) => item.id === collectionId);
+      return collection ? collection.title : collectionId;
+    };
+    const groupDefinitions = [
+      { title: "Running", statuses: ["running"] },
+      { title: "Queued", statuses: ["pending", "queued"] },
+      { title: "Failed", statuses: ["failed"] },
+      { title: "Completed", statuses: ["completed"] },
+    ];
+    const groupedHtml = groupDefinitions
+      .map((group) => {
+        const jobs = state.jobs.filter((job) => group.statuses.includes(job.status));
+        if (jobs.length === 0) {
+          return `
+            <section class="job-group">
+              <h3>${escapeHtml(group.title)}</h3>
+              <div class="muted">No ${escapeHtml(group.title.toLowerCase())} jobs.</div>
+            </section>
+          `;
+        }
+        return `
+          <section class="job-group">
+            <h3>${escapeHtml(group.title)}</h3>
+            <div class="stacked-list">
+              ${jobs.map((job) => {
+                const affectedCollectionId = collectionIdFromJob(job);
+                return `
+                  <div class="list-card">
+                    <div class="job-status" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</div>
+                    <div class="list-title">${escapeHtml(job.job_type)}</div>
+                    <div class="job-meta">${escapeHtml(job.created_at || "queued")}</div>
+                    ${affectedCollectionId ? `<div class="muted">Collection: ${escapeHtml(collectionTitle(affectedCollectionId))}</div>` : ""}
+                    ${job.error_message ? `<div class="job-error">${escapeHtml(job.error_message)}</div>` : ""}
+                    <details class="raw-job-details">
+                      <summary>Details</summary>
+                      <pre>${escapeHtml(JSON.stringify(job.result || job.payload || {}, null, 2))}</pre>
+                    </details>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </section>
+        `;
+      })
       .join("");
+    const uncategorized = state.jobs.filter((job) => !groupDefinitions.some((group) => group.statuses.includes(job.status)));
+    elements.jobsList.innerHTML = groupedHtml + (uncategorized.length > 0
+      ? `
+        <section class="job-group">
+          <h3>Other</h3>
+          <div class="stacked-list">
+            ${uncategorized.map((job) => `
+              <div class="list-card">
+                <div class="job-status" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</div>
+                <div class="list-title">${escapeHtml(job.job_type)}</div>
+              </div>
+            `).join("")}
+          </div>
+        </section>
+      `
+      : "");
   }
 
   function renderSettings() {
     const selectedPaperTitle = state.selectedPaper ? state.selectedPaper.title : null;
+    const readiness = selectedCollectionReadiness();
+    const searchStatus = state.system.searchStatus;
+    const systemReadiness = state.system.readiness;
+    const dependencies = systemReadiness && systemReadiness.dependencies ? systemReadiness.dependencies : [];
+    const dependencyStatus = (name) => {
+      const item = dependencies.find((dependency) => dependency.name === name);
+      if (!item) {
+        return "unknown";
+      }
+      return item.ok ? "ok" : (item.required ? "not ready" : "fallback");
+    };
     elements.settingsSummary.innerHTML = `
       <div class="detail-group">
         <strong>Selected collection</strong>
-        <div class="muted">${escapeHtml((state.selectedCollection && state.selectedCollection.title) || "None")}</div>
+        <div class="muted">${escapeHtml((state.selectedCollection && state.selectedCollection.title) || "None")} ${state.selectedCollection ? `· ${escapeHtml(readiness.label)}` : ""}</div>
       </div>
       <div class="detail-group">
         <strong>Selected workspace</strong>
@@ -685,6 +1020,28 @@
         <div class="muted">${escapeHtml(elements.searchInput.value.trim() || "None")}</div>
       </div>
     `;
+    elements.settingsRuntimeSummary.innerHTML = `
+      <div class="detail-group">
+        <strong>Mode</strong>
+        <div class="muted">${escapeHtml(searchStatus && searchStatus.backend_configured ? "Backend-search mode" : "Local fallback mode")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Search backend</strong>
+        <div class="muted">${escapeHtml(searchStatus && searchStatus.backend_type ? searchStatus.backend_type : "Not configured; using database fallback")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Object store</strong>
+        <div class="muted">${escapeHtml(dependencyStatus("object_store"))}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Worker queue</strong>
+        <div class="muted">${escapeHtml(state.jobs.some((job) => isActiveJobStatus(job.status)) ? "active jobs present" : "idle or external worker")}</div>
+      </div>
+      <div class="detail-group">
+        <strong>API readiness</strong>
+        <div class="muted">${escapeHtml(systemReadiness ? systemReadiness.status : "unknown")}</div>
+      </div>
+    `;
   }
 
   function renderAll() {
@@ -692,6 +1049,7 @@
     renderWorkspacesSidebar();
     renderLibraryCollections();
     renderWorkspaceHeader();
+    renderWorkspaceReadiness();
     renderPapers();
     renderWorkspaceDetail();
     renderCollectionSummary();
@@ -705,11 +1063,12 @@
 
   function updateActionButtons() {
     const collectionSelected = Boolean(state.selectedCollection);
+    const readiness = selectedCollectionReadiness();
     elements.parseButton.disabled = !collectionSelected;
     elements.extractButton.disabled = !collectionSelected;
     elements.workspaceOpenCompareButton.disabled = !collectionSelected;
     elements.saveWorkspaceButton.disabled = !collectionSelected;
-    elements.compareRefreshButton.disabled = !collectionSelected;
+    elements.compareRefreshButton.disabled = !collectionSelected || !readiness.isReadyForCompare;
   }
 
   function seedCompareDraft() {
@@ -903,6 +1262,20 @@
     }
   }
 
+  async function loadSystemStatus() {
+    const [searchResult, readinessResult] = await Promise.allSettled([
+      fetchJson(endpoints.searchStatus),
+      fetch(endpoints.readiness).then(async (response) => response.json().catch(() => ({ status: "unknown" }))),
+    ]);
+    if (searchResult.status === "fulfilled") {
+      state.system.searchStatus = searchResult.value.data;
+    }
+    if (readinessResult.status === "fulfilled") {
+      state.system.readiness = readinessResult.value;
+    }
+    renderSettings();
+  }
+
   async function queueReindex() {
     const payload = await fetchJson(endpoints.reindex, { method: "POST" });
     state.jobs.unshift(payload.data);
@@ -1056,6 +1429,16 @@
       renderCompareSurfaces();
       return;
     }
+    const readiness = selectedCollectionReadiness();
+    if (!readiness.isReadyForCompare) {
+      state.compare.results = [];
+      state.compare.methods = [];
+      state.compare.engineeringTricks = [];
+      state.compare.figures = [];
+      state.compare.tables = [];
+      renderCompareSurfaces();
+      return;
+    }
 
     state.compare.dataset = elements.compareDatasetInput.value.trim();
     state.compare.metric = elements.compareMetricInput.value.trim();
@@ -1183,6 +1566,7 @@
       await loadCollections();
       await loadWorkspaces();
       await loadJobs();
+      await loadSystemStatus();
       renderAll();
       activateView(state.selectedCollection ? "workspace" : "library");
       setStatus("Arxie workspace ready.");

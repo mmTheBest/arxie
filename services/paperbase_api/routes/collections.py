@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from paperbase.db.models import (
+    BackgroundJob,
     CollectionPaper,
     Dataset,
     EngineeringTrick,
@@ -18,6 +19,7 @@ from paperbase.db.models import (
     Metric,
     Paper,
     ResultRow,
+    Section,
     TableArtifact,
 )
 from paperbase.db.repositories import (
@@ -82,6 +84,60 @@ def _build_named_artifact_summary(items, *, artifact_type: str) -> list[Collecti
     return list(summarized.values())
 
 
+def _job_collection_id(job: BackgroundJob) -> str | None:
+    result_json = dict(job.result_json or {})
+    payload_json = dict(job.payload_json or {})
+    return result_json.get("collection_id") or payload_json.get("collection_id")
+
+
+def _collection_readiness_inputs(session: Session, collection_id: str) -> dict[str, int | str | None]:
+    member_paper_ids = select(CollectionPaper.paper_id).where(CollectionPaper.collection_id == collection_id)
+    paper_count = session.execute(
+        select(func.count()).select_from(CollectionPaper).where(CollectionPaper.collection_id == collection_id)
+    ).scalar_one()
+    parsed_paper_count = session.execute(
+        select(func.count(func.distinct(Section.paper_id))).where(Section.paper_id.in_(member_paper_ids))
+    ).scalar_one()
+    extracted_paper_count = session.execute(
+        select(func.count(func.distinct(ExtractionRun.paper_id))).where(
+            ExtractionRun.paper_id.in_(member_paper_ids),
+            ExtractionRun.status == "completed",
+        )
+    ).scalar_one()
+
+    latest_job_status = None
+    latest_parse_job_status = None
+    latest_extraction_job_status = None
+    failed_job_count = 0
+    jobs = session.execute(
+        select(BackgroundJob).order_by(
+            BackgroundJob.created_at.desc(),
+            BackgroundJob.id.desc(),
+        )
+    ).scalars()
+    for job in jobs:
+        if _job_collection_id(job) != collection_id:
+            continue
+        if latest_job_status is None:
+            latest_job_status = job.status
+        if job.job_type == "collection_parse" and latest_parse_job_status is None:
+            latest_parse_job_status = job.status
+        if job.job_type == "collection_extract" and latest_extraction_job_status is None:
+            latest_extraction_job_status = job.status
+        if job.status == "failed":
+            failed_job_count += 1
+
+    return {
+        "paper_count": paper_count,
+        "parsed_paper_count": parsed_paper_count,
+        "extracted_paper_count": extracted_paper_count,
+        "latest_job_status": latest_job_status,
+        "latest_parse_job_status": latest_parse_job_status,
+        "latest_extraction_job_status": latest_extraction_job_status,
+        "failed_job_count": failed_job_count,
+    }
+
+
 def _paper_to_response(
     paper,  # noqa: ANN001
     *,
@@ -103,7 +159,8 @@ def _paper_to_response(
     )
 
 
-def _collection_to_response(collection) -> CollectionSummaryResponse:  # noqa: ANN001
+def _collection_to_response(collection, session: Session) -> CollectionSummaryResponse:  # noqa: ANN001
+    readiness = _collection_readiness_inputs(session, collection.id)
     return CollectionSummaryResponse(
         id=collection.id,
         owner_id=collection.owner_id,
@@ -112,6 +169,13 @@ def _collection_to_response(collection) -> CollectionSummaryResponse:  # noqa: A
         description=collection.description,
         extraction_profile_id=collection.extraction_profile_id,
         tags=list(collection.tags_json or []),
+        paper_count=int(readiness["paper_count"] or 0),
+        parsed_paper_count=int(readiness["parsed_paper_count"] or 0),
+        extracted_paper_count=int(readiness["extracted_paper_count"] or 0),
+        latest_job_status=readiness["latest_job_status"],
+        latest_parse_job_status=readiness["latest_parse_job_status"],
+        latest_extraction_job_status=readiness["latest_extraction_job_status"],
+        failed_job_count=int(readiness["failed_job_count"] or 0),
     )
 
 
@@ -140,7 +204,7 @@ def list_collections(
         else None
     )
     collections = repository.list_collections(owner_id=safe_owner_id)
-    return CollectionsResponse(data=[_collection_to_response(collection) for collection in collections])
+    return CollectionsResponse(data=[_collection_to_response(collection, session) for collection in collections])
 
 
 @router.post(
@@ -171,7 +235,7 @@ def create_collection(
         tags=list(payload.tags),
         extraction_profile_id=payload.extraction_profile_id,
     )
-    return SingleCollectionResponse(data=_collection_to_response(collection))
+    return SingleCollectionResponse(data=_collection_to_response(collection, session))
 
 
 @router.get("/api/v1/collections/{collection_id}", response_model=SingleCollectionResponse)
@@ -188,7 +252,7 @@ def fetch_collection(
             error="collection_not_found",
             message=f"No collection found for id: {safe_collection_id}",
         )
-    return SingleCollectionResponse(data=_collection_to_response(collection))
+    return SingleCollectionResponse(data=_collection_to_response(collection, session))
 
 
 @router.post(
@@ -300,16 +364,7 @@ def fetch_collection_structured_summary(
 
     member_paper_ids = select(CollectionPaper.paper_id).where(CollectionPaper.collection_id == safe_collection_id)
 
-    paper_count = session.execute(
-        select(func.count()).select_from(CollectionPaper).where(CollectionPaper.collection_id == safe_collection_id)
-    ).scalar_one()
-    extracted_paper_count = session.execute(
-        select(func.count(func.distinct(ExtractionRun.paper_id)))
-        .where(
-            ExtractionRun.paper_id.in_(member_paper_ids),
-            ExtractionRun.status == "completed",
-        )
-    ).scalar_one()
+    readiness = _collection_readiness_inputs(session, safe_collection_id)
 
     datasets = session.execute(
         select(Dataset)
@@ -367,8 +422,13 @@ def fetch_collection_structured_summary(
     return CollectionStructuredSummaryResponse(
         data=CollectionStructuredSummaryResponseData(
             collection_id=safe_collection_id,
-            paper_count=paper_count,
-            extracted_paper_count=extracted_paper_count,
+            paper_count=int(readiness["paper_count"] or 0),
+            parsed_paper_count=int(readiness["parsed_paper_count"] or 0),
+            extracted_paper_count=int(readiness["extracted_paper_count"] or 0),
+            latest_job_status=readiness["latest_job_status"],
+            latest_parse_job_status=readiness["latest_parse_job_status"],
+            latest_extraction_job_status=readiness["latest_extraction_job_status"],
+            failed_job_count=int(readiness["failed_job_count"] or 0),
             datasets=_build_named_artifact_summary(datasets, artifact_type="dataset"),
             methods=_build_named_artifact_summary(methods, artifact_type="method"),
             metrics=_build_named_artifact_summary(metrics, artifact_type="metric"),

@@ -391,6 +391,13 @@ class CollectionSummaryResponse(BaseModel):
     description: str | None = None
     extraction_profile_id: str | None = None
     tags: list[str] = Field(default_factory=list)
+    paper_count: int = 0
+    parsed_paper_count: int = 0
+    extracted_paper_count: int = 0
+    latest_job_status: str | None = None
+    latest_parse_job_status: str | None = None
+    latest_extraction_job_status: str | None = None
+    failed_job_count: int = 0
 
 
 class SingleCollectionResponse(BaseModel):
@@ -526,7 +533,12 @@ class CollectionSummaryResultRowResponse(BaseModel):
 class CollectionStructuredSummaryResponseData(BaseModel):
     collection_id: str
     paper_count: int
+    parsed_paper_count: int
     extracted_paper_count: int
+    latest_job_status: str | None = None
+    latest_parse_job_status: str | None = None
+    latest_extraction_job_status: str | None = None
+    failed_job_count: int = 0
     datasets: list[CollectionSummaryNamedArtifactResponse]
     methods: list[CollectionSummaryNamedArtifactResponse]
     metrics: list[CollectionSummaryNamedArtifactResponse]

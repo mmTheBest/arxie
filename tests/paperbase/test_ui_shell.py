@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from paperbase.db.bootstrap import initialize_database
@@ -38,8 +40,10 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="compare-view"' in html
     assert 'id="jobs-view"' in html
     assert 'id="settings-view"' in html
+    assert 'id="workspace-readiness-banner"' in html
     assert 'id="workspace-detail-panel"' in html
     assert 'id="save-workspace-button"' in html
+    assert 'id="compare-readiness-banner"' in html
     assert 'id="parse-button"' in html
     assert 'id="local-library-upload-form"' in html
     assert 'id="local-library-upload-input"' in html
@@ -71,12 +75,36 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "/api/v1/compare/engineering-tricks" in script_response.text
     assert "/api/v1/ingest/local-library-upload" in script_response.text
     assert "/api/v1/ingest/local-library" in script_response.text
+    assert "/api/v1/search/status" in script_response.text
     assert "local_library_ingest" in script_response.text
     assert "collection_id" in script_response.text
     assert "/parse" in script_response.text
     assert "/api/v1/papers/" in script_response.text
     assert "/tables" in script_response.text
     assert "activeView" in script_response.text
+    assert "getCollectionReadiness" in script_response.text
+    assert "Run Next Step" in script_response.text
+    assert "Open Workspace" in script_response.text
+    assert "Evidence ready" in script_response.text
+    assert "Text ready" in script_response.text
+    assert "Structured evidence is not ready yet. Run extraction in Library." in script_response.text
+    assert "data-library-compare-id" not in script_response.text
 
     assert style_response.status_code == 200
     assert "--paperbase-bg" in style_response.text
+
+
+def test_library_cards_use_guided_readiness_actions() -> None:
+    script_path = "services/paperbase_api/static/paperbase-ui.js"
+    script = Path(script_path).read_text()
+
+    assert "data-library-open-id" in script
+    assert "data-library-next-step-id" in script
+    assert "data-library-more-id" in script
+    assert "data-library-compare-id" not in script
+    assert "data-library-parse-id" not in script
+    assert "data-library-extract-id" not in script
+    assert "Open Workspace" in script
+    assert "Run Next Step" in script
+    assert "Ready" in script
+    assert "getCollectionReadiness" in script

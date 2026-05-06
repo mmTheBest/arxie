@@ -50,7 +50,14 @@ def test_paperbase_api_manages_collections_and_annotations(tmp_path: Path) -> No
 
     list_collections = client.get("/api/v1/collections")
     assert list_collections.status_code == 200
-    assert list_collections.json()["data"][0]["id"] == collection_id
+    listed_collection = list_collections.json()["data"][0]
+    assert listed_collection["id"] == collection_id
+    assert listed_collection["paper_count"] == 1
+    assert listed_collection["parsed_paper_count"] == 0
+    assert listed_collection["extracted_paper_count"] == 0
+    assert listed_collection["latest_parse_job_status"] is None
+    assert listed_collection["latest_extraction_job_status"] is None
+    assert listed_collection["failed_job_count"] == 0
 
     collection_papers = client.get(f"/api/v1/collections/{collection_id}/papers")
     assert collection_papers.status_code == 200
