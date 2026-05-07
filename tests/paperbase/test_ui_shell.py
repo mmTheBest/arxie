@@ -34,7 +34,9 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="app-shell"' in html
     assert 'id="app-nav"' in html
     assert 'id="sidebar-collections-list"' in html
+    assert 'id="sidebar-papers-list"' in html
     assert 'id="sidebar-workspaces-list"' in html
+    assert 'class="sidebar-section sidebar-workspaces-section"' in html
     assert 'id="library-view"' in html
     assert 'id="workspace-view"' in html
     assert 'id="compare-view"' in html
@@ -45,6 +47,7 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="save-workspace-button"' in html
     assert 'id="compare-readiness-banner"' in html
     assert 'id="parse-button"' in html
+    assert 'id="parse-selected-papers-button"' in html
     assert 'id="local-library-upload-form"' in html
     assert 'id="local-library-upload-input"' in html
     assert 'id="local-library-upload-title-input"' in html
@@ -54,6 +57,12 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="local-library-source-input"' in html
     assert 'id="local-library-title-input"' in html
     assert 'id="local-library-import-button"' in html
+    assert 'id="library-job-log"' in html
+    assert 'id="library-collections-grid"' not in html
+    assert "Choose a collection and follow the next readiness step" not in html
+    assert "Parse unprocessed" in html
+    assert "Parse selected" in html
+    assert "Extract selected" in html
     assert 'data-view="library"' in html
     assert 'data-view="workspace"' in html
     assert 'data-view="compare"' in html
@@ -83,8 +92,13 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "/tables" in script_response.text
     assert "activeView" in script_response.text
     assert "getCollectionReadiness" in script_response.text
-    assert "Run Next Step" in script_response.text
-    assert "Open Workspace" in script_response.text
+    assert "renderSidebarPapers" in script_response.text
+    assert "data-sidebar-paper-checkbox" in script_response.text
+    assert "paper_ids" in script_response.text
+    assert "is_parsed" in script_response.text
+    assert "is_extracted" in script_response.text
+    assert "Library activity" in script_response.text
+    assert "Stale" in script_response.text
     assert "Evidence ready" in script_response.text
     assert "Text ready" in script_response.text
     assert "Structured evidence is not ready yet. Run extraction in Library." in script_response.text
@@ -92,19 +106,25 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
 
     assert style_response.status_code == 200
     assert "--paperbase-bg" in style_response.text
+    assert '.app-shell[data-active-view="library"] .sidebar-workspaces-section' in style_response.text
 
 
-def test_library_cards_use_guided_readiness_actions() -> None:
+def test_library_uses_sidebar_paper_processing_instead_of_duplicate_collection_cards() -> None:
     script_path = "services/paperbase_api/static/paperbase-ui.js"
     script = Path(script_path).read_text()
 
-    assert "data-library-open-id" in script
-    assert "data-library-next-step-id" in script
-    assert "data-library-more-id" in script
+    assert "renderSidebarPapers" in script
+    assert "renderLibraryLogs" in script
+    assert "queueParse(unprocessedPaperIds())" in script
+    assert "queueParse(selectedPaperIdsForAction" in script
+    assert "queueExtraction(selectedPaperIdsForAction" in script
+    assert "data-sidebar-paper-action" in script
+    assert "isStaleJob" in script
+    assert "latest_job_error" in script
+    assert "data-library-open-id" not in script
+    assert "data-library-next-step-id" not in script
+    assert "data-library-more-id" not in script
     assert "data-library-compare-id" not in script
     assert "data-library-parse-id" not in script
     assert "data-library-extract-id" not in script
-    assert "Open Workspace" in script
-    assert "Run Next Step" in script
-    assert "Ready" in script
     assert "getCollectionReadiness" in script

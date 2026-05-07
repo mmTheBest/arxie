@@ -25,6 +25,7 @@
     collections: [],
     selectedCollection: null,
     papers: [],
+    selectedPaperIds: new Set(),
     searchResults: [],
     selectedPaper: null,
     selectedPaperStructured: null,
@@ -54,6 +55,7 @@
     appShell: document.getElementById("app-shell"),
     navTabs: Array.from(document.querySelectorAll("#app-nav [data-view]")),
     sidebarCollectionsList: document.getElementById("sidebar-collections-list"),
+    sidebarPapersList: document.getElementById("sidebar-papers-list"),
     sidebarWorkspacesList: document.getElementById("sidebar-workspaces-list"),
     statusBanner: document.getElementById("status-banner"),
     librarySelectedCollectionMeta: document.getElementById("library-selected-collection-meta"),
@@ -68,8 +70,9 @@
     localLibraryDescriptionInput: document.getElementById("local-library-description-input"),
     localLibraryImportButton: document.getElementById("local-library-import-button"),
     parseButton: document.getElementById("parse-button"),
+    parseSelectedPapersButton: document.getElementById("parse-selected-papers-button"),
     extractButton: document.getElementById("extract-button"),
-    libraryCollectionsGrid: document.getElementById("library-collections-grid"),
+    libraryJobLog: document.getElementById("library-job-log"),
     workspaceCollectionTitle: document.getElementById("workspace-collection-title"),
     workspaceSearchMeta: document.getElementById("workspace-search-meta"),
     workspaceReadinessBanner: document.getElementById("workspace-readiness-banner"),
@@ -316,6 +319,118 @@
     return getCollectionReadiness(state.selectedCollection, state.collectionSummary, state.jobs);
   }
 
+  function paperJobApplies(job, paperId) {
+    if (!state.selectedCollection || collectionIdFromJob(job) !== state.selectedCollection.id) {
+      return false;
+    }
+    const payload = job.payload || {};
+    const paperIds = payload.paper_ids;
+    return !Array.isArray(paperIds) || paperIds.length === 0 || paperIds.includes(paperId);
+  }
+
+  function latestPaperJob(paperId, jobType) {
+    return state.jobs.find((job) => job.job_type === jobType && paperJobApplies(job, paperId)) || null;
+  }
+
+  function isStaleJob(job) {
+    if (!job || job.status !== "running" || !job.started_at) {
+      return false;
+    }
+    const startedAt = Date.parse(job.started_at);
+    if (Number.isNaN(startedAt)) {
+      return false;
+    }
+    return Date.now() - startedAt > 15 * 60 * 1000;
+  }
+
+  function paperProcessingState(membership) {
+    const paper = membership.paper;
+    const latestParseJob = latestPaperJob(paper.id, "collection_parse");
+    const latestExtractionJob = latestPaperJob(paper.id, "collection_extract");
+    const parseActive = latestParseJob && isActiveJobStatus(latestParseJob.status) && !membership.is_parsed;
+    const extractionActive = latestExtractionJob && isActiveJobStatus(latestExtractionJob.status) && membership.is_parsed && !membership.is_extracted;
+
+    if (parseActive) {
+      return {
+        status: isStaleJob(latestParseJob) ? "needs_attention" : "parsing",
+        label: isStaleJob(latestParseJob) ? "Stale parse" : "Parsing",
+        detail: isStaleJob(latestParseJob) ? "Started over 15 minutes ago" : "Text extraction running",
+        action: "none",
+        actionLabel: "Running",
+        actionDisabled: true,
+      };
+    }
+    if (extractionActive) {
+      return {
+        status: isStaleJob(latestExtractionJob) ? "needs_attention" : "extracting",
+        label: isStaleJob(latestExtractionJob) ? "Stale extraction" : "Extracting",
+        detail: isStaleJob(latestExtractionJob) ? "Started over 15 minutes ago" : "Structured evidence running",
+        action: "none",
+        actionLabel: "Running",
+        actionDisabled: true,
+      };
+    }
+    if (membership.latest_job_error) {
+      return {
+        status: "needs_attention",
+        label: "Needs attention",
+        detail: membership.latest_job_error,
+        action: membership.is_parsed ? "extract" : "parse",
+        actionLabel: membership.is_parsed ? "Extract" : "Parse",
+        actionDisabled: false,
+      };
+    }
+    if (!membership.is_parsed) {
+      return {
+        status: "imported",
+        label: "Needs parse",
+        detail: "No full text yet",
+        action: "parse",
+        actionLabel: "Parse",
+        actionDisabled: false,
+      };
+    }
+    if (!membership.is_extracted) {
+      return {
+        status: "text_ready",
+        label: "Text ready",
+        detail: "Evidence missing",
+        action: "extract",
+        actionLabel: "Extract",
+        actionDisabled: false,
+      };
+    }
+    return {
+      status: "evidence_ready",
+      label: "Evidence ready",
+      detail: "Ready",
+      action: "none",
+      actionLabel: "Ready",
+      actionDisabled: true,
+    };
+  }
+
+  function unprocessedPaperIds() {
+    return state.papers
+      .filter((membership) => !membership.is_parsed)
+      .map((membership) => membership.paper.id);
+  }
+
+  function selectedPaperIdsForAction(action) {
+    return state.papers
+      .filter((membership) => state.selectedPaperIds.has(membership.paper.id))
+      .filter((membership) => {
+        if (action === "parse") {
+          return !membership.is_parsed;
+        }
+        if (action === "extract") {
+          return membership.is_parsed && !membership.is_extracted;
+        }
+        return true;
+      })
+      .map((membership) => membership.paper.id);
+  }
+
   function renderCollectionsSidebar() {
     if (state.collections.length === 0) {
       elements.sidebarCollectionsList.innerHTML = '<div class="list-card muted">No collections yet.</div>';
@@ -348,8 +463,92 @@
         }
         setStatus("Loading collection…");
         await loadCollectionSurface(collectionId);
-        activateView("workspace");
+        if (state.activeView !== "library") {
+          activateView("workspace");
+        }
         setStatus(`Loaded ${state.selectedCollection.title}.`);
+      });
+    });
+  }
+
+  function renderSidebarPapers() {
+    if (!elements.sidebarPapersList) {
+      return;
+    }
+    if (!state.selectedCollection) {
+      elements.sidebarPapersList.innerHTML = '<div class="list-card muted">Select a collection.</div>';
+      return;
+    }
+    if (state.papers.length === 0) {
+      elements.sidebarPapersList.innerHTML = '<div class="list-card muted">No papers in this collection.</div>';
+      return;
+    }
+
+    elements.sidebarPapersList.innerHTML = state.papers
+      .map((membership) => {
+        const paper = membership.paper;
+        const processing = paperProcessingState(membership);
+        const checked = state.selectedPaperIds.has(paper.id);
+        return `
+          <div class="paper-process-row" data-status="${escapeHtml(processing.status)}">
+            <label class="paper-select-control">
+              <input
+                type="checkbox"
+                data-sidebar-paper-checkbox="${paper.id}"
+                ${checked ? "checked" : ""}
+              />
+              <span class="status-marker" data-status="${escapeHtml(processing.status)}"></span>
+              <span class="paper-row-copy">
+                <span class="list-title">${escapeHtml(paper.title)}</span>
+                <span class="muted">${escapeHtml(processing.label)} · ${escapeHtml(processing.detail)}</span>
+              </span>
+            </label>
+            <button
+              type="button"
+              class="action-button paper-row-action"
+              data-sidebar-paper-action="${escapeHtml(processing.action)}"
+              data-sidebar-paper-id="${paper.id}"
+              ${processing.actionDisabled ? "disabled" : ""}
+            >
+              ${escapeHtml(processing.actionLabel)}
+            </button>
+          </div>
+        `;
+      })
+      .join("");
+
+    elements.sidebarPapersList.querySelectorAll("[data-sidebar-paper-checkbox]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        const paperId = checkbox.getAttribute("data-sidebar-paper-checkbox");
+        if (!paperId) {
+          return;
+        }
+        if (checkbox.checked) {
+          state.selectedPaperIds.add(paperId);
+        } else {
+          state.selectedPaperIds.delete(paperId);
+        }
+        updateActionButtons();
+      });
+    });
+
+    elements.sidebarPapersList.querySelectorAll("[data-sidebar-paper-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          const paperId = button.getAttribute("data-sidebar-paper-id");
+          const action = button.getAttribute("data-sidebar-paper-action");
+          if (!paperId) {
+            return;
+          }
+          if (action === "parse") {
+            await queueParse([paperId]);
+          }
+          if (action === "extract") {
+            await queueExtraction([paperId]);
+          }
+        } catch (error) {
+          setStatus(error.message);
+        }
       });
     });
   }
@@ -393,114 +592,44 @@
     });
   }
 
-  function renderLibraryCollections() {
-    if (state.collections.length === 0) {
-      elements.libraryCollectionsGrid.innerHTML = '<div class="list-card muted">Import a folder to create your first collection.</div>';
-      elements.librarySelectedCollectionMeta.innerHTML = '<span class="pill">No collection selected</span>';
+  function renderLibraryLogs() {
+    if (!elements.libraryJobLog) {
+      return;
+    }
+    elements.librarySelectedCollectionMeta.innerHTML = selectedCollectionPill();
+    if (!state.selectedCollection) {
+      elements.libraryJobLog.innerHTML = '<div class="list-card muted">Select a collection to inspect Library activity.</div>';
       return;
     }
 
-    elements.librarySelectedCollectionMeta.innerHTML = selectedCollectionPill();
-    elements.libraryCollectionsGrid.innerHTML = state.collections
-      .map((collection) => {
-        const active = state.selectedCollection && state.selectedCollection.id === collection.id;
-        const readiness = getCollectionReadiness(collection, null, state.jobs);
-        return `
-          <article class="collection-card" data-active="${active ? "true" : "false"}">
-            <div class="collection-card-copy">
-              <div class="collection-card-heading">
-                <span class="status-marker" data-status="${escapeHtml(readiness.status)}"></span>
-                <div>
-                  <p class="panel-kicker">${escapeHtml(collection.scope_type)}</p>
-                  <h4>${escapeHtml(collection.title)}</h4>
-                </div>
-              </div>
-              <p class="muted">${escapeHtml(collection.description || "Curated field database")}</p>
-              <div class="readiness-card-summary">
-                <span class="pill">${escapeHtml(readiness.label)}</span>
-                <span>${escapeHtml(pluralize(readiness.paperCount, "paper", "papers"))}</span>
-                <span>${escapeHtml(readiness.parsedPaperCount)} parsed</span>
-                <span>${escapeHtml(readiness.extractedPaperCount)} extracted</span>
-                ${readiness.latestJobStatus ? `<span>${escapeHtml(readiness.latestJobStatus)}</span>` : ""}
-              </div>
-              <div class="pill-row">
-                ${(collection.tags || []).slice(0, 4).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("") || '<span class="pill">No tags</span>'}
-              </div>
-            </div>
-            <div class="collection-card-actions">
-              <button type="button" class="action-button action-button-primary" data-library-open-id="${collection.id}">Open Workspace</button>
-              <button
-                type="button"
-                class="action-button"
-                data-library-next-step-id="${collection.id}"
-                data-next-action="${escapeHtml(readiness.nextAction)}"
-                ${readiness.nextActionDisabled ? "disabled" : ""}
-              >
-                ${escapeHtml(readiness.nextActionLabel)}
-              </button>
-              <details class="collection-more" data-library-more-id="${collection.id}">
-                <summary>More</summary>
-                <div class="button-row button-row-left">
-                  <button type="button" class="action-button" data-library-advanced-action="parse" data-library-collection-id="${collection.id}">Queue Parse</button>
-                  <button type="button" class="action-button" data-library-advanced-action="extract" data-library-collection-id="${collection.id}">Queue Extraction</button>
-                </div>
-              </details>
-            </div>
-          </article>
-        `;
-      })
-      .join("");
+    const collectionJobs = state.jobs.filter((job) => collectionIdFromJob(job) === state.selectedCollection.id);
+    if (collectionJobs.length === 0) {
+      elements.libraryJobLog.innerHTML = '<div class="list-card muted">No jobs have run for this collection yet.</div>';
+      return;
+    }
 
-    elements.libraryCollectionsGrid.querySelectorAll("[data-library-open-id]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const collectionId = button.getAttribute("data-library-open-id");
-        if (!collectionId) {
-          return;
-        }
-        setStatus("Opening collection workspace…");
-        await loadCollectionSurface(collectionId);
-        activateView("workspace");
-        setStatus(`Loaded ${state.selectedCollection.title}.`);
-      });
-    });
-
-    elements.libraryCollectionsGrid.querySelectorAll("[data-library-next-step-id]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const collectionId = button.getAttribute("data-library-next-step-id");
-        const nextAction = button.getAttribute("data-next-action");
-        if (!collectionId) {
-          return;
-        }
-        if (!state.selectedCollection || state.selectedCollection.id !== collectionId) {
-          await loadCollectionSurface(collectionId);
-        }
-        if (nextAction === "parse") {
-          await queueParse();
-        }
-        if (nextAction === "extract") {
-          await queueExtraction();
-        }
-      });
-    });
-
-    elements.libraryCollectionsGrid.querySelectorAll("[data-library-advanced-action]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const collectionId = button.getAttribute("data-library-collection-id");
-        const action = button.getAttribute("data-library-advanced-action");
-        if (!collectionId) {
-          return;
-        }
-        if (!state.selectedCollection || state.selectedCollection.id !== collectionId) {
-          await loadCollectionSurface(collectionId);
-        }
-        if (action === "parse") {
-          await queueParse();
-        }
-        if (action === "extract") {
-          await queueExtraction();
-        }
-      });
-    });
+    elements.libraryJobLog.innerHTML = collectionJobs.slice(0, 6).map((job) => {
+      const stale = isStaleJob(job);
+      const payload = job.payload || {};
+      const selectedCount = Array.isArray(payload.paper_ids) ? payload.paper_ids.length : 0;
+      const scope = selectedCount > 0 ? `${selectedCount} selected paper(s)` : "whole collection";
+      const result = job.result || {};
+      const skippedCount = Array.isArray(result.skipped_paper_ids) ? result.skipped_paper_ids.length : 0;
+      return `
+        <div class="library-log-entry" data-status="${escapeHtml(stale ? "needs_attention" : job.status)}">
+          <div>
+            <span class="job-status" data-status="${escapeHtml(stale ? "failed" : job.status)}">${escapeHtml(stale ? "Stale" : job.status)}</span>
+            <span class="list-title">${escapeHtml(job.job_type)}</span>
+          </div>
+          <div class="job-meta">${escapeHtml(scope)} · queued ${escapeHtml(job.created_at || "unknown time")}</div>
+          ${job.started_at ? `<div class="muted">Started ${escapeHtml(job.started_at)}</div>` : ""}
+          ${job.finished_at ? `<div class="muted">Finished ${escapeHtml(job.finished_at)}</div>` : ""}
+          ${stale ? '<div class="job-error">This job has been running for more than 15 minutes. The worker may have stopped or lost the job.</div>' : ""}
+          ${job.error_message ? `<div class="job-error">${escapeHtml(job.error_message)}</div>` : ""}
+          ${skippedCount > 0 ? `<div class="job-error">${escapeHtml(skippedCount)} paper(s) were skipped. Check failed job details before retrying.</div>` : ""}
+        </div>
+      `;
+    }).join("");
   }
 
   function renderWorkspaceHeader() {
@@ -1046,8 +1175,9 @@
 
   function renderAll() {
     renderCollectionsSidebar();
+    renderSidebarPapers();
     renderWorkspacesSidebar();
-    renderLibraryCollections();
+    renderLibraryLogs();
     renderWorkspaceHeader();
     renderWorkspaceReadiness();
     renderPapers();
@@ -1064,8 +1194,9 @@
   function updateActionButtons() {
     const collectionSelected = Boolean(state.selectedCollection);
     const readiness = selectedCollectionReadiness();
-    elements.parseButton.disabled = !collectionSelected;
-    elements.extractButton.disabled = !collectionSelected;
+    elements.parseButton.disabled = !collectionSelected || unprocessedPaperIds().length === 0;
+    elements.parseSelectedPapersButton.disabled = !collectionSelected || selectedPaperIdsForAction("parse").length === 0;
+    elements.extractButton.disabled = !collectionSelected || selectedPaperIdsForAction("extract").length === 0;
     elements.workspaceOpenCompareButton.disabled = !collectionSelected;
     elements.saveWorkspaceButton.disabled = !collectionSelected;
     elements.compareRefreshButton.disabled = !collectionSelected || !readiness.isReadyForCompare;
@@ -1106,6 +1237,7 @@
     if (state.collections.length === 0) {
       state.selectedCollection = null;
       state.papers = [];
+      state.selectedPaperIds = new Set();
       state.searchResults = [];
       state.selectedPaper = null;
       state.selectedPaperStructured = null;
@@ -1135,6 +1267,8 @@
   }
 
   async function loadCollectionSurface(collectionId, options) {
+    const retainPaperSelection = state.selectedCollection && state.selectedCollection.id === collectionId;
+    const previousSelectedPaperIds = retainPaperSelection ? new Set(state.selectedPaperIds) : new Set();
     const [collectionPayload, papersPayload, summaryPayload] = await Promise.all([
       fetchJson(`${endpoints.collections}/${collectionId}`),
       fetchJson(`${endpoints.collections}/${collectionId}/papers`),
@@ -1143,6 +1277,10 @@
 
     state.selectedCollection = collectionPayload.data;
     state.papers = papersPayload.data || [];
+    const currentPaperIds = new Set(state.papers.map((membership) => membership.paper.id));
+    state.selectedPaperIds = new Set(
+      Array.from(previousSelectedPaperIds).filter((paperId) => currentPaperIds.has(paperId)),
+    );
     state.collectionSummary = summaryPayload.data;
     state.searchResults = [];
     state.chunkSearchHits = [];
@@ -1343,8 +1481,12 @@
     setStatus(`Queued upload import for ${files.length} file(s).`);
   }
 
-  async function queueExtraction() {
+  async function queueExtraction(paperIds) {
     if (!state.selectedCollection) {
+      return;
+    }
+    if (Array.isArray(paperIds) && paperIds.length === 0) {
+      setStatus("No selected papers need extraction.");
       return;
     }
 
@@ -1352,6 +1494,9 @@
       prompt_version: "paperbase-v1",
       schema_version: "paperbase-v1",
     };
+    if (Array.isArray(paperIds)) {
+      body.paper_ids = paperIds;
+    }
     if (state.selectedCollection.extraction_profile_id) {
       body.extraction_profile_id = state.selectedCollection.extraction_profile_id;
     } else {
@@ -1373,22 +1518,32 @@
     state.jobs.unshift(payload.data);
     renderAll();
     updatePolling();
-    setStatus(`Queued extraction for ${state.selectedCollection.title}.`);
+    const scope = Array.isArray(paperIds) ? `${paperIds.length} paper(s)` : state.selectedCollection.title;
+    setStatus(`Queued extraction for ${scope}.`);
   }
 
-  async function queueParse() {
+  async function queueParse(paperIds) {
     if (!state.selectedCollection) {
       return;
+    }
+    if (Array.isArray(paperIds) && paperIds.length === 0) {
+      setStatus("No selected papers need parsing.");
+      return;
+    }
+    const body = {};
+    if (Array.isArray(paperIds)) {
+      body.paper_ids = paperIds;
     }
     const payload = await fetchJson(`/api/v1/collections/${state.selectedCollection.id}/parse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(body),
     });
     state.jobs.unshift(payload.data);
     renderAll();
     updatePolling();
-    setStatus(`Queued parse for ${state.selectedCollection.title}.`);
+    const scope = Array.isArray(paperIds) ? `${paperIds.length} paper(s)` : state.selectedCollection.title;
+    setStatus(`Queued parse for ${scope}.`);
   }
 
   async function saveWorkspace() {
@@ -1645,7 +1800,15 @@
 
   elements.parseButton.addEventListener("click", async () => {
     try {
-      await queueParse();
+      await queueParse(unprocessedPaperIds());
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.parseSelectedPapersButton.addEventListener("click", async () => {
+    try {
+      await queueParse(selectedPaperIdsForAction("parse"));
     } catch (error) {
       setStatus(error.message);
     }
@@ -1653,7 +1816,7 @@
 
   elements.extractButton.addEventListener("click", async () => {
     try {
-      await queueExtraction();
+      await queueExtraction(selectedPaperIdsForAction("extract"));
     } catch (error) {
       setStatus(error.message);
     }

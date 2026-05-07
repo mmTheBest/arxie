@@ -5,7 +5,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from paperbase.db.bootstrap import initialize_database
-from paperbase.db.repositories import PaperRepository
+from paperbase.db.models import BackgroundJob, ExtractionRun, Section
+from paperbase.db.repositories import CollectionRepository, PaperRepository
 from paperbase.db.session import make_session_factory
 from services.paperbase_api.app import create_app
 
@@ -87,3 +88,75 @@ def test_paperbase_api_manages_collections_and_annotations(tmp_path: Path) -> No
     assert annotation_payload["id"] == annotation_id
     assert annotation_payload["collection_id"] == collection_id
     assert annotation_payload["tags"] == ["important", "review"]
+
+
+def test_collection_papers_include_processing_statuses(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        parsed_paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="/tmp/parsed.pdf",
+            canonical_title="Parsed Paper",
+        )
+        pending_paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="/tmp/pending.pdf",
+            canonical_title="Pending Paper",
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Single-cell gene regulation papers.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=parsed_paper.id, position=1)
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=pending_paper.id, position=2)
+        session.add_all(
+            [
+                Section(
+                    paper_id=parsed_paper.id,
+                    title="Methods",
+                    ordinal=1,
+                    page_start=0,
+                    page_end=None,
+                    text="Parsed methods text.",
+                ),
+                ExtractionRun(
+                    paper_id=parsed_paper.id,
+                    model_name="fake",
+                    prompt_version="paperbase-v1",
+                    schema_version="schema-v1",
+                    status="completed",
+                ),
+                BackgroundJob(
+                    job_type="collection_parse",
+                    status="failed",
+                    payload_json={"collection_id": collection.id, "paper_ids": [pending_paper.id]},
+                    error_message="PostgreSQL rejected NUL byte.",
+                ),
+            ]
+        )
+        session.commit()
+        collection_id = collection.id
+
+    client = TestClient(create_app(session_factory=session_factory))
+    response = client.get(f"/api/v1/collections/{collection_id}/papers")
+
+    assert response.status_code == 200
+    papers = response.json()["data"]
+    parsed_row = papers[0]
+    pending_row = papers[1]
+
+    assert parsed_row["paper"]["title"] == "Parsed Paper"
+    assert parsed_row["is_parsed"] is True
+    assert parsed_row["is_extracted"] is True
+    assert parsed_row["parsed_section_count"] == 1
+    assert parsed_row["completed_extraction_count"] == 1
+
+    assert pending_row["paper"]["title"] == "Pending Paper"
+    assert pending_row["is_parsed"] is False
+    assert pending_row["is_extracted"] is False
+    assert pending_row["latest_parse_job_status"] == "failed"
+    assert pending_row["latest_job_error"] == "PostgreSQL rejected NUL byte."

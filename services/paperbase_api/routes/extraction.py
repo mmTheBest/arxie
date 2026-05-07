@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Path, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from paperbase.db.models import CollectionPaper
 from paperbase.db.repositories import (
     CollectionRepository,
     ExtractionProfileRepository,
@@ -40,6 +42,37 @@ def _profile_to_response(profile) -> ExtractionProfileResponse:  # noqa: ANN001
         schema_payload=dict(profile.schema_payload or {}),
         active=profile.active,
     )
+
+
+def _sanitize_collection_paper_ids(
+    session: Session,
+    *,
+    collection_id: str,
+    paper_ids: list[str] | None,
+) -> list[str] | None:
+    if paper_ids is None:
+        return None
+
+    member_ids = set(
+        session.execute(
+            select(CollectionPaper.paper_id).where(CollectionPaper.collection_id == collection_id)
+        ).scalars()
+    )
+    safe_paper_ids: list[str] = []
+    seen: set[str] = set()
+    for raw_paper_id in paper_ids:
+        safe_paper_id = sanitize_identifier(raw_paper_id, field_name="paper_id", max_length=36)
+        if safe_paper_id not in member_ids:
+            raise PaperbaseAPIError(
+                status_code=400,
+                error="paper_not_in_collection",
+                message=f"Paper {safe_paper_id} is not in collection {collection_id}.",
+            )
+        if safe_paper_id in seen:
+            continue
+        seen.add(safe_paper_id)
+        safe_paper_ids.append(safe_paper_id)
+    return safe_paper_ids
 
 
 @router.get(
@@ -186,6 +219,11 @@ def extract_collection(
             ),
             "extraction_profile_id": extraction_profile_id,
             "limit": payload.limit,
+            "paper_ids": _sanitize_collection_paper_ids(
+                session,
+                collection_id=safe_collection_id,
+                paper_ids=payload.paper_ids,
+            ),
         },
         dispatcher=request.app.state.job_dispatcher,
     )

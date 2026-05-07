@@ -328,6 +328,130 @@ def test_worker_executes_collection_extract_job(tmp_path: Path) -> None:
     assert [term.term for term in glossary_terms] == ["AUROC"]
 
 
+def test_worker_collection_extract_honors_selected_paper_ids(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    from paperbase.extract.contracts import GlossaryTermExtraction, StructuredExtractionBundle
+    from paperbase.schemas.extraction import EvidenceSpanPayload
+
+    class FakeExtractionClient:
+        model_name = "fake-extractor"
+
+        def extract(
+            self,
+            *,
+            paper_text: str,
+            schema_payload: dict[str, object],
+        ) -> StructuredExtractionBundle:
+            assert "scLong" in paper_text
+            assert schema_payload["domain"] == "scRegNet"
+            return StructuredExtractionBundle(
+                glossary_terms=[
+                    GlossaryTermExtraction(
+                        term="AUROC",
+                        definition="Area under the receiver operating characteristic curve.",
+                        evidence_spans=[
+                            EvidenceSpanPayload(
+                                target_type="glossary_term",
+                                quote_text="AUROC is the evaluation metric used by scLong.",
+                                page_number=1,
+                            )
+                        ],
+                    )
+                ]
+            )
+
+    first_pdf_path = tmp_path / "first.pdf"
+    second_pdf_path = tmp_path / "second.pdf"
+    first_pdf_path.write_bytes(b"%PDF-1.4\n%first pdf\n")
+    second_pdf_path.write_bytes(b"%PDF-1.4\n%second pdf\n")
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        first_paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(first_pdf_path),
+            canonical_title="First Paper",
+        )
+        second_paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(second_pdf_path),
+            canonical_title="Second Paper",
+        )
+        session.add_all(
+            [
+                PaperFile(
+                    paper_id=first_paper.id,
+                    storage_uri=first_pdf_path.resolve().as_uri(),
+                    file_kind="pdf",
+                    mime_type="application/pdf",
+                    parser_status="pending",
+                ),
+                PaperFile(
+                    paper_id=second_paper.id,
+                    storage_uri=second_pdf_path.resolve().as_uri(),
+                    file_kind="pdf",
+                    mime_type="application/pdf",
+                    parser_status="pending",
+                ),
+            ]
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Local field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=first_paper.id, position=1)
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=second_paper.id, position=2)
+        job = background_job_model(
+            job_type="collection_extract",
+            payload_json={
+                "collection_id": collection.id,
+                "schema_payload": {"domain": "scRegNet"},
+                "prompt_version": "paperbase-v1",
+                "schema_version": "schema-v1",
+                "extraction_profile_id": None,
+                "limit": None,
+                "paper_ids": [second_paper.id],
+            },
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        first_paper_id = first_paper.id
+        second_paper_id = second_paper.id
+        collection_id = collection.id
+
+    PaperParsePipeline(session_factory=session_factory, parser=FakePDFParser()).parse_paper(first_paper_id)
+    PaperParsePipeline(session_factory=session_factory, parser=FakePDFParser()).parse_paper(second_paper_id)
+
+    worker = worker_cls(
+        session_factory=session_factory,
+        extraction_client_factory=lambda: FakeExtractionClient(),
+    )
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        extracted_paper_ids = {
+            run.paper_id for run in session.query(ExtractionRun).filter(ExtractionRun.status == "completed").all()
+        }
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert stored_job.result_json == {
+        "collection_id": collection_id,
+        "extracted_paper_count": 1,
+        "skipped_paper_ids": [],
+    }
+    assert first_paper_id not in extracted_paper_ids
+    assert second_paper_id in extracted_paper_ids
+
+
 def test_worker_marks_job_failed_when_dependencies_are_missing(tmp_path: Path) -> None:
     background_job_model, worker_cls = _load_worker_class()
 
@@ -730,6 +854,88 @@ def test_worker_collection_parse_skips_already_parsed_papers_by_default(tmp_path
     }
     assert len(sections) == 2
     assert set(file_statuses.values()) == {"parsed"}
+
+
+def test_worker_collection_parse_honors_selected_paper_ids(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    first_pdf_path = tmp_path / "first.pdf"
+    second_pdf_path = tmp_path / "second.pdf"
+    first_pdf_path.write_bytes(b"%PDF-1.4\n%first pdf\n")
+    second_pdf_path.write_bytes(b"%PDF-1.4\n%second pdf\n")
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        first_paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(first_pdf_path),
+            canonical_title="First Pending Paper",
+        )
+        second_paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(second_pdf_path),
+            canonical_title="Second Pending Paper",
+        )
+        session.add_all(
+            [
+                PaperFile(
+                    paper_id=first_paper.id,
+                    storage_uri=first_pdf_path.resolve().as_uri(),
+                    file_kind="pdf",
+                    mime_type="application/pdf",
+                    parser_status="pending",
+                ),
+                PaperFile(
+                    paper_id=second_paper.id,
+                    storage_uri=second_pdf_path.resolve().as_uri(),
+                    file_kind="pdf",
+                    mime_type="application/pdf",
+                    parser_status="pending",
+                ),
+            ]
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=first_paper.id, position=1)
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=second_paper.id, position=2)
+        job = background_job_model(
+            job_type="collection_parse",
+            payload_json={
+                "collection_id": collection.id,
+                "limit": None,
+                "paper_ids": [second_paper.id],
+            },
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        first_paper_id = first_paper.id
+        second_paper_id = second_paper.id
+        collection_id = collection.id
+
+    parser = CountingPDFParser()
+    worker = worker_cls(session_factory=session_factory, parser_factory=lambda: parser)
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+    assert parser.parse_calls == 1
+
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        parsed_paper_ids = {section.paper_id for section in session.query(Section).all()}
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert stored_job.result_json["collection_id"] == collection_id
+    assert stored_job.result_json["parsed_paper_count"] == 1
+    assert first_paper_id not in parsed_paper_ids
+    assert second_paper_id in parsed_paper_ids
 
 
 def test_worker_collection_parse_logs_skipped_paper_errors(tmp_path: Path, caplog) -> None:

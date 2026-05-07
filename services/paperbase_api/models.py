@@ -473,6 +473,13 @@ class CollectionPaperMembershipResponse(BaseModel):
     position: int | None = None
     membership_note: str | None = None
     paper: PaperSummaryResponse
+    is_parsed: bool = False
+    is_extracted: bool = False
+    parsed_section_count: int = 0
+    completed_extraction_count: int = 0
+    latest_parse_job_status: str | None = None
+    latest_extraction_job_status: str | None = None
+    latest_job_error: str | None = None
 
 
 class CollectionPapersResponse(BaseModel):
@@ -635,10 +642,12 @@ class RunCollectionExtractionRequest(BaseModel):
     prompt_version: str = Field(..., min_length=1, max_length=64)
     schema_version: str = Field(..., min_length=1, max_length=64)
     limit: int | None = Field(None, ge=1)
+    paper_ids: list[str] | None = Field(None, max_length=200)
 
 
 class RunCollectionParseRequest(BaseModel):
     limit: int | None = Field(None, ge=1)
+    paper_ids: list[str] | None = Field(None, max_length=200)
 
 
 class LocalLibraryIngestRequest(BaseModel):

@@ -91,6 +91,7 @@ def test_paperbase_api_creates_extraction_profile_and_runs_collection_extraction
             collection_id=collection.id,
             paper_id=paper.id,
         )
+        paper_id = paper.id
         collection_id = collection.id
 
     PaperParsePipeline(session_factory=session_factory, parser=FakePDFParser()).parse_paper(paper.id)
@@ -127,6 +128,21 @@ def test_paperbase_api_creates_extraction_profile_and_runs_collection_extraction
     assert payload["status"] == "pending"
     assert payload["payload"]["collection_id"] == collection_id
     assert payload["payload"]["extraction_profile_id"] == profile_id
+    assert payload["payload"]["paper_ids"] is None
+
+    run_selected_extraction = client.post(
+        f"/api/v1/collections/{collection_id}/extract",
+        json={
+            "extraction_profile_id": profile_id,
+            "prompt_version": "paperbase-v1",
+            "schema_version": "schema-v1",
+            "paper_ids": [paper_id],
+        },
+    )
+    assert run_selected_extraction.status_code == 202
+    selected_payload = run_selected_extraction.json()["data"]
+    assert selected_payload["job_type"] == "collection_extract"
+    assert selected_payload["payload"]["paper_ids"] == [paper_id]
 
     with session_factory() as session:
         stored_collection = session.execute(

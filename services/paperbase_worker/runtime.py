@@ -164,6 +164,7 @@ class PaperbaseWorker:
             schema_version=str(payload["schema_version"]),
             extraction_profile_id=payload.get("extraction_profile_id"),
             limit=payload.get("limit"),
+            paper_ids=payload.get("paper_ids"),
         )
         return {
             "collection_id": summary.collection_id,
@@ -198,6 +199,7 @@ class PaperbaseWorker:
         ).parse_collection(
             collection_id=str(payload["collection_id"]),
             limit=payload.get("limit"),
+            paper_ids=payload.get("paper_ids"),
         )
         return {
             "collection_id": summary.collection_id,

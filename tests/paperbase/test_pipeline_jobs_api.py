@@ -179,6 +179,45 @@ def test_collection_parse_api_enqueues_background_job(tmp_path: Path) -> None:
     assert payload["payload"]["limit"] == 1
 
 
+def test_collection_parse_api_accepts_selected_paper_ids(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper_one = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="/tmp/paper-one.pdf",
+            canonical_title="Paper One",
+        )
+        paper_two = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="/tmp/paper-two.pdf",
+            canonical_title="Paper Two",
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated local corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper_one.id)
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper_two.id)
+        session.commit()
+        collection_id = collection.id
+        paper_two_id = paper_two.id
+
+    client = TestClient(create_app(session_factory=session_factory))
+    response = client.post(
+        f"/api/v1/collections/{collection_id}/parse",
+        json={"paper_ids": [paper_two_id]},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert payload["job_type"] == "collection_parse"
+    assert payload["payload"]["paper_ids"] == [paper_two_id]
+
+
 def test_search_reindex_dispatches_job_when_runtime_dispatcher_is_configured(tmp_path: Path) -> None:
     database_path = tmp_path / "paperbase.sqlite3"
     initialize_database(f"sqlite:///{database_path}")

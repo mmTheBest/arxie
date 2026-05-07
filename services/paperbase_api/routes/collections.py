@@ -138,6 +138,86 @@ def _collection_readiness_inputs(session: Session, collection_id: str) -> dict[s
     }
 
 
+def _sanitize_collection_paper_ids(
+    session: Session,
+    *,
+    collection_id: str,
+    paper_ids: list[str] | None,
+) -> list[str] | None:
+    if paper_ids is None:
+        return None
+
+    member_ids = set(
+        session.execute(
+            select(CollectionPaper.paper_id).where(CollectionPaper.collection_id == collection_id)
+        ).scalars()
+    )
+    safe_paper_ids: list[str] = []
+    seen: set[str] = set()
+    for raw_paper_id in paper_ids:
+        safe_paper_id = sanitize_identifier(raw_paper_id, field_name="paper_id", max_length=36)
+        if safe_paper_id not in member_ids:
+            raise PaperbaseAPIError(
+                status_code=400,
+                error="paper_not_in_collection",
+                message=f"Paper {safe_paper_id} is not in collection {collection_id}.",
+            )
+        if safe_paper_id in seen:
+            continue
+        seen.add(safe_paper_id)
+        safe_paper_ids.append(safe_paper_id)
+    return safe_paper_ids
+
+
+def _collection_paper_job_state(
+    session: Session,
+    *,
+    collection_id: str,
+    paper_ids: list[str],
+) -> dict[str, dict[str, str | None]]:
+    state_by_paper_id = {
+        paper_id: {
+            "latest_parse_job_status": None,
+            "latest_extraction_job_status": None,
+            "latest_job_error": None,
+        }
+        for paper_id in paper_ids
+    }
+    paper_id_set = set(paper_ids)
+    jobs = session.execute(
+        select(BackgroundJob).order_by(
+            BackgroundJob.created_at.desc(),
+            BackgroundJob.id.desc(),
+        )
+    ).scalars()
+    for job in jobs:
+        if _job_collection_id(job) != collection_id:
+            continue
+        if job.job_type not in {"collection_parse", "collection_extract"}:
+            continue
+
+        payload_json = dict(job.payload_json or {})
+        payload_paper_ids = payload_json.get("paper_ids")
+        if payload_paper_ids is None:
+            affected_paper_ids = paper_ids
+        else:
+            affected_paper_ids = [
+                paper_id for paper_id in payload_paper_ids if paper_id in paper_id_set
+            ]
+
+        for paper_id in affected_paper_ids:
+            paper_state = state_by_paper_id[paper_id]
+            if job.job_type == "collection_parse" and paper_state["latest_parse_job_status"] is None:
+                paper_state["latest_parse_job_status"] = job.status
+                if job.error_message and paper_state["latest_job_error"] is None:
+                    paper_state["latest_job_error"] = job.error_message
+            if job.job_type == "collection_extract" and paper_state["latest_extraction_job_status"] is None:
+                paper_state["latest_extraction_job_status"] = job.status
+                if job.error_message and paper_state["latest_job_error"] is None:
+                    paper_state["latest_job_error"] = job.error_message
+    return state_by_paper_id
+
+
 def _paper_to_response(
     paper,  # noqa: ANN001
     *,
@@ -322,11 +402,37 @@ def list_collection_papers(
         )
 
     memberships = collection_repository.list_papers(safe_collection_id)
+    paper_ids = [membership.paper_id for membership in memberships]
+    section_counts = dict(
+        session.execute(
+            select(Section.paper_id, func.count(Section.id))
+            .where(Section.paper_id.in_(paper_ids))
+            .group_by(Section.paper_id)
+        ).all()
+    ) if paper_ids else {}
+    completed_extraction_counts = dict(
+        session.execute(
+            select(ExtractionRun.paper_id, func.count(ExtractionRun.id))
+            .where(
+                ExtractionRun.paper_id.in_(paper_ids),
+                ExtractionRun.status == "completed",
+            )
+            .group_by(ExtractionRun.paper_id)
+        ).all()
+    ) if paper_ids else {}
+    job_state_by_paper_id = _collection_paper_job_state(
+        session,
+        collection_id=safe_collection_id,
+        paper_ids=paper_ids,
+    )
     data: list[CollectionPaperMembershipResponse] = []
     for membership in memberships:
         paper = paper_repository.get_by_id(membership.paper_id)
         if paper is None:
             continue
+        parsed_section_count = int(section_counts.get(paper.id, 0) or 0)
+        completed_extraction_count = int(completed_extraction_counts.get(paper.id, 0) or 0)
+        job_state = job_state_by_paper_id.get(paper.id, {})
         data.append(
             CollectionPaperMembershipResponse(
                 id=membership.id,
@@ -339,6 +445,13 @@ def list_collection_papers(
                     authors=paper_repository.list_author_names(paper.id),
                     tags=paper_repository.list_tags(paper.id),
                 ),
+                is_parsed=parsed_section_count > 0,
+                is_extracted=completed_extraction_count > 0,
+                parsed_section_count=parsed_section_count,
+                completed_extraction_count=completed_extraction_count,
+                latest_parse_job_status=job_state.get("latest_parse_job_status"),
+                latest_extraction_job_status=job_state.get("latest_extraction_job_status"),
+                latest_job_error=job_state.get("latest_job_error"),
             )
         )
     return CollectionPapersResponse(data=data)
@@ -521,6 +634,11 @@ def parse_collection(
         payload_json={
             "collection_id": safe_collection_id,
             "limit": payload.limit,
+            "paper_ids": _sanitize_collection_paper_ids(
+                session,
+                collection_id=safe_collection_id,
+                paper_ids=payload.paper_ids,
+            ),
         },
         dispatcher=request.app.state.job_dispatcher,
     )

@@ -54,11 +54,15 @@ class CollectionParseRunner:
         *,
         collection_id: str,
         limit: int | None = None,
+        paper_ids: list[str] | None = None,
     ) -> CollectionParseSummary:
         with self.session_factory() as session:
             memberships = CollectionRepository(session).list_papers(collection_id)
             pending_memberships = []
+            selected_paper_ids = set(paper_ids or [])
             for membership in memberships:
+                if paper_ids is not None and membership.paper_id not in selected_paper_ids:
+                    continue
                 if self._has_parsed_sections(session, membership.paper_id):
                     continue
                 pending_memberships.append(membership)

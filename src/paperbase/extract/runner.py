@@ -46,12 +46,17 @@ class CollectionExtractionRunner:
         schema_version: str,
         extraction_profile_id: str | None = None,
         limit: int | None = None,
+        paper_ids: list[str] | None = None,
     ) -> CollectionExtractionSummary:
-        paper_ids = self._list_collection_paper_ids(collection_id=collection_id, limit=limit)
+        target_paper_ids = self._list_collection_paper_ids(
+            collection_id=collection_id,
+            limit=limit,
+            paper_ids=paper_ids,
+        )
         run_ids: list[str] = []
         skipped: list[str] = []
 
-        for paper_id in paper_ids:
+        for paper_id in target_paper_ids:
             if not self._has_parsed_sections(paper_id):
                 self.parse_pipeline.parse_paper(paper_id)
 
@@ -76,12 +81,20 @@ class CollectionExtractionRunner:
             skipped_paper_ids=skipped,
         )
 
-    def _list_collection_paper_ids(self, *, collection_id: str, limit: int | None) -> list[str]:
+    def _list_collection_paper_ids(
+        self,
+        *,
+        collection_id: str,
+        limit: int | None,
+        paper_ids: list[str] | None,
+    ) -> list[str]:
         statement = (
             select(CollectionPaper.paper_id)
             .where(CollectionPaper.collection_id == collection_id)
             .order_by(CollectionPaper.position.asc(), CollectionPaper.created_at.asc())
         )
+        if paper_ids is not None:
+            statement = statement.where(CollectionPaper.paper_id.in_(paper_ids))
         if limit is not None:
             statement = statement.limit(max(0, limit))
         with self.session_factory() as session:

@@ -40,8 +40,24 @@
               <h2>Paper libraries</h2>
             </div>
             <div id="sidebar-collections-list" class="stacked-list"></div>
+            <div class="sidebar-subheader">
+              <p class="panel-kicker">Papers</p>
+              <h3>Selected collection</h3>
+            </div>
+            <div class="sidebar-action-grid">
+              <button id="parse-button" class="action-button action-button-primary" type="button">
+                Parse unprocessed
+              </button>
+              <button id="parse-selected-papers-button" class="action-button" type="button">
+                Parse selected
+              </button>
+              <button id="extract-button" class="action-button" type="button">
+                Extract selected
+              </button>
+            </div>
+            <div id="sidebar-papers-list" class="sidebar-paper-list"></div>
           </section>
-          <section class="sidebar-section">
+          <section class="sidebar-section sidebar-workspaces-section">
             <div class="sidebar-header">
               <p class="panel-kicker">Workspaces</p>
               <h2>Saved investigations</h2>
@@ -154,21 +170,14 @@
               </section>
             </div>
 
-            <section class="panel">
+            <section class="panel library-log-panel">
               <div class="panel-header">
                 <div>
-                  <p class="panel-kicker">Collections</p>
-                  <h3>Choose a collection and follow the next readiness step</h3>
+                  <p class="panel-kicker">Library activity</p>
+                  <h3>Processing log</h3>
                 </div>
-                <details class="advanced-actions-menu">
-                  <summary>More</summary>
-                  <div class="button-row">
-                    <button id="parse-button" class="action-button" type="button">Queue Parse</button>
-                    <button id="extract-button" class="action-button" type="button">Queue Extraction</button>
-                  </div>
-                </details>
               </div>
-              <div id="library-collections-grid" class="card-grid"></div>
+              <div id="library-job-log" class="library-job-log"></div>
             </section>
           </section>
 
