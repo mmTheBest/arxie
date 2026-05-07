@@ -37,6 +37,7 @@ def build_worker() -> PaperbaseWorker:
         object_store=object_store,
         download_cache_dir=Path(config.download_cache_dir),
         download_cache_ttl_seconds=config.download_cache_ttl_seconds,
+        stale_running_seconds=config.worker_stale_job_seconds,
     )
 
 

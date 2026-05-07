@@ -12,7 +12,7 @@ from paperbase.db.repositories import PaperFileRepository
 from paperbase.parsing.chunker import SimpleSectionChunker
 from paperbase.parsing.store import ParsedPaperStore
 from paperbase.storage import StorageResolver
-from ra.parsing.pdf_parser import PDFParser
+from ra.parsing.pdf_parser import PDFParser, Section as ParsedSection
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +35,7 @@ class PaperParsePipeline:
         chunk_overlap_characters: int = 120,
     ) -> None:
         self.session_factory = session_factory
-        self.parser = parser or PDFParser()
+        self.parser = parser or PDFParser(include_supplemental_tables=False)
         self.storage_resolver = storage_resolver or StorageResolver()
         self.chunker = chunker or SimpleSectionChunker(
             max_characters=max_chunk_characters,
@@ -48,7 +48,7 @@ class PaperParsePipeline:
 
         pdf_path = self.storage_resolver.resolve(file_record.storage_uri)
         document = self.parser.parse(pdf_path)
-        sections = self.parser.extract_sections(document)
+        sections = _sanitize_sections(self.parser.extract_sections(document))
         chunks = self.chunker.chunk_sections(sections)
 
         with self.session_factory() as session:
@@ -81,3 +81,18 @@ class PaperParsePipeline:
         if not file_records:
             raise ValueError(f"No PDF file registered for paper_id={paper_id}")
         return file_records[0]
+
+
+def _sanitize_sections(sections: list[ParsedSection]) -> list[ParsedSection]:
+    return [
+        ParsedSection(
+            title=_sanitize_database_text(section.title),
+            content=_sanitize_database_text(section.content),
+            page_start=section.page_start,
+        )
+        for section in sections
+    ]
+
+
+def _sanitize_database_text(text: str) -> str:
+    return text.replace("\x00", "")

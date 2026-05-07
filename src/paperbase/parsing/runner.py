@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from paperbase.db.models import Section
 from paperbase.db.repositories import CollectionRepository
 from paperbase.figures.pipeline import FigureExtractionPipeline
 from paperbase.parsing.pipeline import PaperParsePipeline
 from paperbase.storage import StorageResolver
 from paperbase.tables.pipeline import TableExtractionPipeline
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +57,13 @@ class CollectionParseRunner:
     ) -> CollectionParseSummary:
         with self.session_factory() as session:
             memberships = CollectionRepository(session).list_papers(collection_id)
+            pending_memberships = []
+            for membership in memberships:
+                if self._has_parsed_sections(session, membership.paper_id):
+                    continue
+                pending_memberships.append(membership)
+                if limit is not None and len(pending_memberships) >= limit:
+                    break
 
         parsed_paper_count = 0
         skipped_paper_ids: list[str] = []
@@ -60,7 +72,7 @@ class CollectionParseRunner:
         figure_count = 0
         table_count = 0
 
-        for membership in memberships[:limit]:
+        for membership in pending_memberships:
             storage_resolver = StorageResolver(
                 object_store=self.object_store,
                 cache_dir=None if self.cache_dir is None else self.cache_dir,
@@ -74,6 +86,12 @@ class CollectionParseRunner:
                     storage_resolver=storage_resolver,
                 ).parse_paper(membership.paper_id)
             except Exception:  # noqa: BLE001
+                logger.warning(
+                    "Skipping paper after parse failure: collection_id=%s paper_id=%s",
+                    collection_id,
+                    membership.paper_id,
+                    exc_info=True,
+                )
                 skipped_paper_ids.append(membership.paper_id)
                 continue
 
@@ -100,4 +118,11 @@ class CollectionParseRunner:
             chunk_count=chunk_count,
             figure_count=figure_count,
             table_count=table_count,
+        )
+
+    def _has_parsed_sections(self, session: Session, paper_id: str) -> bool:
+        return bool(
+            session.execute(
+                select(exists().where(Section.paper_id == paper_id))
+            ).scalar()
         )

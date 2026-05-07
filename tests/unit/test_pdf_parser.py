@@ -109,3 +109,44 @@ def test_parse_from_bytes_mocks_fitz(monkeypatch: pytest.MonkeyPatch) -> None:
     assert doc.metadata["author"] == "me"
     assert doc.pages == ["Abstract hi"] or doc.pages == ["Abstract\nhi"]
     assert "Abstract" in doc.text
+
+
+def test_parse_from_bytes_can_skip_supplemental_table_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakePage:
+        def get_text(self, mode: str):
+            if mode == "blocks":
+                return [
+                    (0, 0, 100, 10, "Abstract\nhi", 0, 0),
+                ]
+            if mode == "text":
+                return "Abstract\nhi"
+            raise ValueError(mode)
+
+    class FakeDoc:
+        metadata = {}
+
+        def __iter__(self):
+            return iter([FakePage()])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeFitz:
+        def open(self, *args, **kwargs):
+            return FakeDoc()
+
+    parser = PDFParser(include_supplemental_tables=False)
+
+    monkeypatch.setitem(__import__("sys").modules, "fitz", FakeFitz())
+    monkeypatch.setattr(
+        parser,
+        "_extract_tables_pdfplumber_from_bytes",
+        lambda data: pytest.fail("supplemental table extraction should be skipped"),
+    )
+
+    doc = parser.parse_from_bytes(b"%PDF-1.4 fake")
+
+    assert doc.text == "Abstract hi" or doc.text == "Abstract\nhi"

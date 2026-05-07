@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
@@ -59,6 +60,20 @@ class FakePDFParser:
                 page_start=0,
             )
         ]
+
+
+class CountingPDFParser(FakePDFParser):
+    def __init__(self) -> None:
+        self.parse_calls = 0
+
+    def parse(self, pdf_path: Path) -> ParsedDocument:
+        self.parse_calls += 1
+        return super().parse(pdf_path)
+
+
+class FailingPDFParser(FakePDFParser):
+    def parse(self, pdf_path: Path) -> ParsedDocument:
+        raise RuntimeError("bad pdf text")
 
 
 class FakeProviderResolver:
@@ -162,6 +177,52 @@ def test_worker_executes_search_reindex_job(tmp_path: Path) -> None:
     assert stored_job.status == "completed"
     assert stored_job.result_json == {"indexed": {"papers": 1, "chunks": 1, "figures": 1, "tables": 0}}
     assert stored_job.error_message is None
+
+
+def test_worker_recovers_stale_running_jobs_before_claiming_new_work(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+    backend = FakeSearchBackend()
+
+    with session_factory() as session:
+        stale_job = background_job_model(
+            job_type="search_reindex",
+            status="running",
+            payload_json={},
+            started_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1),
+            attempt_count=1,
+        )
+        pending_job = background_job_model(
+            job_type="search_reindex",
+            status="pending",
+            payload_json={},
+        )
+        session.add_all([stale_job, pending_job])
+        session.commit()
+        stale_job_id = stale_job.id
+        pending_job_id = pending_job.id
+
+    worker = worker_cls(
+        session_factory=session_factory,
+        search_backend=backend,
+        stale_running_seconds=60,
+    )
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == stale_job_id
+
+    with session_factory() as session:
+        stored_stale_job = session.get(background_job_model, stale_job_id)
+        stored_pending_job = session.get(background_job_model, pending_job_id)
+
+    assert stored_stale_job is not None
+    assert stored_stale_job.status == "completed"
+    assert stored_stale_job.attempt_count == 2
+    assert stored_pending_job is not None
+    assert stored_pending_job.status == "pending"
 
 
 def test_worker_executes_collection_extract_job(tmp_path: Path) -> None:
@@ -574,6 +635,152 @@ def test_worker_executes_collection_parse_job(tmp_path: Path) -> None:
     assert len(sections) == 1
     assert len(chunks) == 1
     assert file_record.parser_status == "parsed"
+
+
+def test_worker_collection_parse_skips_already_parsed_papers_by_default(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    parsed_pdf_path = tmp_path / "already-parsed.pdf"
+    pending_pdf_path = tmp_path / "pending.pdf"
+    parsed_pdf_path.write_bytes(b"%PDF-1.4\n%parsed pdf\n")
+    pending_pdf_path.write_bytes(b"%PDF-1.4\n%pending pdf\n")
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        parsed_paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(parsed_pdf_path),
+            canonical_title="Already Parsed",
+        )
+        pending_paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(pending_pdf_path),
+            canonical_title="Pending Parse",
+        )
+        session.add_all(
+            [
+                PaperFile(
+                    paper_id=parsed_paper.id,
+                    storage_uri=parsed_pdf_path.resolve().as_uri(),
+                    file_kind="pdf",
+                    mime_type="application/pdf",
+                    parser_status="parsed",
+                ),
+                PaperFile(
+                    paper_id=pending_paper.id,
+                    storage_uri=pending_pdf_path.resolve().as_uri(),
+                    file_kind="pdf",
+                    mime_type="application/pdf",
+                    parser_status="pending",
+                ),
+                Section(
+                    paper_id=parsed_paper.id,
+                    title="Methods",
+                    ordinal=1,
+                    page_start=0,
+                    page_end=None,
+                    text="Existing parsed text.",
+                ),
+            ]
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=parsed_paper.id, position=1)
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=pending_paper.id, position=2)
+        job = background_job_model(
+            job_type="collection_parse",
+            payload_json={"collection_id": collection.id, "limit": None},
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        collection_id = collection.id
+
+    parser = CountingPDFParser()
+    worker = worker_cls(session_factory=session_factory, parser_factory=lambda: parser)
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+    assert parser.parse_calls == 1
+
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        sections = session.query(Section).order_by(Section.paper_id.asc(), Section.ordinal.asc()).all()
+        file_statuses = {
+            file_record.paper_id: file_record.parser_status
+            for file_record in session.query(PaperFile).all()
+        }
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert stored_job.result_json == {
+        "collection_id": collection_id,
+        "parsed_paper_count": 1,
+        "skipped_paper_ids": [],
+        "section_count": 1,
+        "chunk_count": 1,
+        "figure_count": 0,
+        "table_count": 0,
+    }
+    assert len(sections) == 2
+    assert set(file_statuses.values()) == {"parsed"}
+
+
+def test_worker_collection_parse_logs_skipped_paper_errors(tmp_path: Path, caplog) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    pdf_path = tmp_path / "bad.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%bad pdf\n")
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(pdf_path),
+            canonical_title="Bad PDF",
+        )
+        session.add(
+            PaperFile(
+                paper_id=paper.id,
+                storage_uri=pdf_path.resolve().as_uri(),
+                file_kind="pdf",
+                mime_type="application/pdf",
+                parser_status="pending",
+            )
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper.id, position=1)
+        job = background_job_model(
+            job_type="collection_parse",
+            payload_json={"collection_id": collection.id, "limit": None},
+        )
+        session.add(job)
+        session.commit()
+        paper_id = paper.id
+        job_id = job.id
+
+    worker = worker_cls(session_factory=session_factory, parser_factory=FailingPDFParser)
+
+    with caplog.at_level("WARNING", logger="paperbase.parsing.runner"):
+        processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+    assert "Skipping paper after parse failure" in caplog.text
+    assert paper_id in caplog.text
+    assert "bad pdf text" in caplog.text
 
 
 def test_worker_collection_parse_populates_figure_and_table_artifacts_when_pdf_has_captions(tmp_path: Path) -> None:

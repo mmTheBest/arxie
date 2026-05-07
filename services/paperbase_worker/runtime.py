@@ -39,6 +39,7 @@ class PaperbaseWorker:
         object_store: object | None = None,
         download_cache_dir: str | None = None,
         download_cache_ttl_seconds: int = 86400,
+        stale_running_seconds: float = 900.0,
     ) -> None:
         self.session_factory = session_factory
         self.search_backend = search_backend
@@ -52,8 +53,10 @@ class PaperbaseWorker:
         self.object_store = object_store
         self.download_cache_dir = download_cache_dir
         self.download_cache_ttl_seconds = download_cache_ttl_seconds
+        self.stale_running_seconds = stale_running_seconds
 
     def process_next_job(self) -> str | None:
+        self.recover_stale_running_jobs()
         with self.session_factory() as session:
             repository = BackgroundJobRepository(session)
             job = repository.claim_next()
@@ -62,6 +65,7 @@ class PaperbaseWorker:
         return self._execute_claimed_job(job)
 
     def process_next_dispatched_job(self, timeout_seconds: float | None = None) -> str | None:
+        self.recover_stale_running_jobs()
         if self.job_consumer is None:
             return self.process_next_job()
         job_id = self.job_consumer.receive(timeout_seconds)
@@ -73,6 +77,23 @@ class PaperbaseWorker:
             if job is None:
                 return None
         return self._execute_claimed_job(job)
+
+    def recover_stale_running_jobs(self) -> list[str]:
+        with self.session_factory() as session:
+            repository = BackgroundJobRepository(session)
+            stale_jobs = repository.list_stale_running(
+                older_than_seconds=self.stale_running_seconds
+            )
+            recovered_ids = [job.id for job in stale_jobs]
+            for job_id in recovered_ids:
+                repository.mark_pending(
+                    job_id,
+                    error_message="Recovered stale running job after worker restart.",
+                )
+        if self.job_dispatcher is not None:
+            for job_id in recovered_ids:
+                self.job_dispatcher.dispatch(job_id)
+        return recovered_ids
 
     def _execute_claimed_job(self, job) -> str:  # noqa: ANN001
         job_id = job.id

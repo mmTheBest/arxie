@@ -599,6 +599,7 @@ class BackgroundJobRepository:
             select(BackgroundJob)
             .where(BackgroundJob.status == "pending")
             .order_by(BackgroundJob.created_at.asc())
+            .limit(1)
         )
         if job_types is not None:
             statement = statement.where(BackgroundJob.job_type.in_(job_types))

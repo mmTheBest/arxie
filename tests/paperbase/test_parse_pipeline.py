@@ -128,3 +128,78 @@ def test_parse_pipeline_can_download_remote_pdf_before_parsing(tmp_path: Path) -
     assert result.paper_id == paper_id
     downloaded_files = list((tmp_path / "downloads").glob("*.pdf"))
     assert downloaded_files
+
+
+def test_parse_pipeline_uses_text_only_parser_by_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    corpus_dir = tmp_path / "SamplePapers"
+    corpus_dir.mkdir()
+    _write_pdf(corpus_dir / "Alpha Paper.pdf")
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+    import_local_pdf_directory(source_dir=corpus_dir, session_factory=session_factory)
+
+    with session_factory() as session:
+        paper = session.execute(select(Paper)).scalar_one()
+
+    constructed_with: list[bool] = []
+
+    class RecordingParser(FakePDFParser):
+        def __init__(self, *, include_supplemental_tables: bool = True) -> None:
+            constructed_with.append(include_supplemental_tables)
+
+    monkeypatch.setattr("paperbase.parsing.pipeline.PDFParser", RecordingParser)
+
+    PaperParsePipeline(session_factory=session_factory).parse_paper(paper_id=paper.id)
+
+    assert constructed_with == [False]
+
+
+def test_parse_pipeline_removes_nul_bytes_before_persisting_text(tmp_path: Path) -> None:
+    corpus_dir = tmp_path / "SamplePapers"
+    corpus_dir.mkdir()
+    _write_pdf(corpus_dir / "Nul Paper.pdf")
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+    import_local_pdf_directory(source_dir=corpus_dir, session_factory=session_factory)
+
+    with session_factory() as session:
+        paper = session.execute(select(Paper)).scalar_one()
+
+    class NulPDFParser(FakePDFParser):
+        def parse(self, pdf_path: Path) -> ParsedDocument:
+            return ParsedDocument(
+                text="Abstract\x00 text.",
+                pages=["Abstract\x00 text."],
+                metadata={},
+            )
+
+        def extract_sections(self, doc: ParsedDocument) -> list[ParsedSection]:
+            return [
+                ParsedSection(
+                    title="Abstract\x00",
+                    content="Text with\x00 a database-hostile control character.",
+                    page_start=0,
+                )
+            ]
+
+    PaperParsePipeline(
+        session_factory=session_factory,
+        parser=NulPDFParser(),
+        max_chunk_characters=120,
+        chunk_overlap_characters=0,
+    ).parse_paper(paper_id=paper.id)
+
+    with session_factory() as session:
+        section = session.execute(select(Section)).scalar_one()
+        chunk = session.execute(select(Chunk)).scalar_one()
+
+    assert "\x00" not in section.title
+    assert "\x00" not in section.text
+    assert "\x00" not in chunk.text

@@ -38,6 +38,9 @@ class Section:
 class PDFParser:
     """Parse PDFs into plain text and heuristic sections."""
 
+    def __init__(self, *, include_supplemental_tables: bool = True) -> None:
+        self.include_supplemental_tables = include_supplemental_tables
+
     # Common section names in papers (case-insensitive).
     _SECTION_HEADINGS: tuple[str, ...] = (
         "abstract",
@@ -80,9 +83,10 @@ class PDFParser:
 
         # Best-effort: add extracted tables (as markdown) from pdfplumber.
         # This is supplemental and should not break parsing.
-        table_text = self._extract_tables_pdfplumber_from_path(pdf_path)
-        if table_text:
-            text = (text + "\n\n" + table_text).strip()
+        if self.include_supplemental_tables:
+            table_text = self._extract_tables_pdfplumber_from_path(pdf_path)
+            if table_text:
+                text = (text + "\n\n" + table_text).strip()
 
         return ParsedDocument(text=text, pages=pages, metadata=metadata)
 
@@ -100,9 +104,10 @@ class PDFParser:
         pages = self._remove_headers_footers(pages)
         text = "\n\n".join(pages).strip()
 
-        table_text = self._extract_tables_pdfplumber_from_bytes(data)
-        if table_text:
-            text = (text + "\n\n" + table_text).strip()
+        if self.include_supplemental_tables:
+            table_text = self._extract_tables_pdfplumber_from_bytes(data)
+            if table_text:
+                text = (text + "\n\n" + table_text).strip()
 
         return ParsedDocument(text=text, pages=pages, metadata=metadata)
 
