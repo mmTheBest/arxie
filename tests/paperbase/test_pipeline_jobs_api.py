@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from paperbase.db.bootstrap import initialize_database
-from paperbase.db.models import PaperFile
+from paperbase.db.models import BackgroundJob, PaperFile
 from paperbase.db.repositories import BackgroundJobRepository, CollectionRepository, PaperRepository
 from paperbase.db.session import make_session_factory
 from services.paperbase_api.app import create_app
@@ -239,6 +239,49 @@ def test_collection_parse_api_accepts_selected_paper_ids(tmp_path: Path) -> None
     payload = response.json()["data"]
     assert payload["job_type"] == "collection_parse"
     assert payload["payload"]["paper_ids"] == [paper_two_id]
+
+
+def test_collection_parse_api_reuses_matching_active_job(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="/tmp/paper.pdf",
+            canonical_title="Paper",
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Curated local corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper.id)
+        session.commit()
+        collection_id = collection.id
+        paper_id = paper.id
+
+    client = TestClient(create_app(session_factory=session_factory))
+    first_response = client.post(
+        f"/api/v1/collections/{collection_id}/parse",
+        json={"paper_ids": [paper_id]},
+    )
+    duplicate_response = client.post(
+        f"/api/v1/collections/{collection_id}/parse",
+        json={"paper_ids": [paper_id]},
+    )
+
+    assert first_response.status_code == 202
+    assert duplicate_response.status_code == 202
+    first_payload = first_response.json()["data"]
+    duplicate_payload = duplicate_response.json()["data"]
+    assert duplicate_payload["id"] == first_payload["id"]
+
+    with session_factory() as session:
+        jobs = session.query(BackgroundJob).all()
+
+    assert len(jobs) == 1
 
 
 def test_search_reindex_dispatches_job_when_runtime_dispatcher_is_configured(tmp_path: Path) -> None:

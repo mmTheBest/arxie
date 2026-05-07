@@ -64,6 +64,7 @@ from services.paperbase_api.normalization import (
 )
 
 router = APIRouter(tags=["collections"])
+ACTIVE_JOB_STATUSES = {"pending", "queued", "running"}
 
 
 def _canonicalize_artifact_display_name(value: str, *, artifact_type: str) -> str:
@@ -91,12 +92,32 @@ def _job_collection_id(job: BackgroundJob) -> str | None:
 
 
 def _active_status_wins(current_status: str | None, candidate_status: str) -> bool:
-    active_statuses = {"pending", "queued", "running"}
     if current_status is None:
         return True
     if candidate_status == "running" and current_status in {"pending", "queued"}:
         return True
-    return candidate_status in active_statuses and current_status not in active_statuses
+    return candidate_status in ACTIVE_JOB_STATUSES and current_status not in ACTIVE_JOB_STATUSES
+
+
+def _find_matching_active_collection_job(
+    session: Session,
+    *,
+    job_type: str,
+    job_payload: dict[str, object],
+) -> BackgroundJob | None:
+    jobs = session.execute(
+        select(BackgroundJob)
+        .where(
+            BackgroundJob.job_type == job_type,
+            BackgroundJob.status.in_(ACTIVE_JOB_STATUSES),
+        )
+        .order_by(BackgroundJob.created_at.desc(), BackgroundJob.id.desc())
+    ).scalars()
+    for job in jobs:
+        payload_json = dict(job.payload_json or {})
+        if payload_json == job_payload:
+            return job
+    return None
 
 
 def _collection_readiness_inputs(session: Session, collection_id: str) -> dict[str, int | str | None]:
@@ -643,18 +664,27 @@ def parse_collection(
             message=f"No collection found for id: {safe_collection_id}",
         )
 
+    job_payload = {
+        "collection_id": safe_collection_id,
+        "limit": payload.limit,
+        "paper_ids": _sanitize_collection_paper_ids(
+            session,
+            collection_id=safe_collection_id,
+            paper_ids=payload.paper_ids,
+        ),
+    }
+    active_job = _find_matching_active_collection_job(
+        session,
+        job_type="collection_parse",
+        job_payload=job_payload,
+    )
+    if active_job is not None:
+        return SingleBackgroundJobResponse(data=background_job_to_response(active_job))
+
     job = create_background_job(
         session_factory=request.app.state.session_factory,
         job_type="collection_parse",
-        payload_json={
-            "collection_id": safe_collection_id,
-            "limit": payload.limit,
-            "paper_ids": _sanitize_collection_paper_ids(
-                session,
-                collection_id=safe_collection_id,
-                paper_ids=payload.paper_ids,
-            ),
-        },
+        payload_json=job_payload,
         dispatcher=request.app.state.job_dispatcher,
     )
 
