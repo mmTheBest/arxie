@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from paperbase.db.models import CollectionPaper
+from paperbase.db.models import BackgroundJob, CollectionPaper
 from paperbase.db.repositories import (
     CollectionRepository,
     ExtractionProfileRepository,
@@ -30,6 +30,7 @@ from services.paperbase_api.models import (
 from services.paperbase_api.routes.jobs import background_job_to_response
 
 router = APIRouter(tags=["extraction"])
+ACTIVE_JOB_STATUSES = {"pending", "queued", "running"}
 
 
 def _profile_to_response(profile) -> ExtractionProfileResponse:  # noqa: ANN001
@@ -73,6 +74,26 @@ def _sanitize_collection_paper_ids(
         seen.add(safe_paper_id)
         safe_paper_ids.append(safe_paper_id)
     return safe_paper_ids
+
+
+def _find_matching_active_extraction_job(
+    session: Session,
+    *,
+    job_payload: dict[str, object],
+) -> BackgroundJob | None:
+    jobs = session.execute(
+        select(BackgroundJob)
+        .where(
+            BackgroundJob.job_type == "collection_extract",
+            BackgroundJob.status.in_(ACTIVE_JOB_STATUSES),
+        )
+        .order_by(BackgroundJob.created_at.desc(), BackgroundJob.id.desc())
+    ).scalars()
+    for job in jobs:
+        payload_json = dict(job.payload_json or {})
+        if payload_json == job_payload:
+            return job
+    return None
 
 
 @router.get(
@@ -201,30 +222,35 @@ def extract_collection(
             message="Provide schema_payload or extraction_profile_id with a stored schema.",
         )
 
+    job_payload = {
+        "collection_id": safe_collection_id,
+        "schema_payload": schema_payload,
+        "prompt_version": sanitize_user_text(
+            payload.prompt_version,
+            field_name="prompt_version",
+            max_length=64,
+        ),
+        "schema_version": sanitize_user_text(
+            payload.schema_version,
+            field_name="schema_version",
+            max_length=64,
+        ),
+        "extraction_profile_id": extraction_profile_id,
+        "limit": payload.limit,
+        "paper_ids": _sanitize_collection_paper_ids(
+            session,
+            collection_id=safe_collection_id,
+            paper_ids=payload.paper_ids,
+        ),
+    }
+    active_job = _find_matching_active_extraction_job(session, job_payload=job_payload)
+    if active_job is not None:
+        return SingleBackgroundJobResponse(data=background_job_to_response(active_job))
+
     job = create_background_job(
         session_factory=request.app.state.session_factory,
         job_type="collection_extract",
-        payload_json={
-            "collection_id": safe_collection_id,
-            "schema_payload": schema_payload,
-            "prompt_version": sanitize_user_text(
-                payload.prompt_version,
-                field_name="prompt_version",
-                max_length=64,
-            ),
-            "schema_version": sanitize_user_text(
-                payload.schema_version,
-                field_name="schema_version",
-                max_length=64,
-            ),
-            "extraction_profile_id": extraction_profile_id,
-            "limit": payload.limit,
-            "paper_ids": _sanitize_collection_paper_ids(
-                session,
-                collection_id=safe_collection_id,
-                paper_ids=payload.paper_ids,
-            ),
-        },
+        payload_json=job_payload,
         dispatcher=request.app.state.job_dispatcher,
     )
     return SingleBackgroundJobResponse(

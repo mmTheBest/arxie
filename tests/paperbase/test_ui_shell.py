@@ -130,6 +130,9 @@ def test_library_uses_sidebar_paper_processing_instead_of_duplicate_collection_c
     assert "queueExtraction(selectedPaperIdsForAction" in script
     assert "data-sidebar-paper-action" in script
     assert "isStaleJob" in script
+    assert "parseJobTimestamp" in script
+    assert 'hasActiveCollectionJob("collection_extract")' in script
+    assert "extractUnprocessedPapersButton.disabled" in script
     assert "latest_job_error" in script
     assert "data-library-open-id" not in script
     assert "data-library-next-step-id" not in script

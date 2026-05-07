@@ -188,12 +188,32 @@
     return result.collection_id || payload.collection_id || null;
   }
 
+  function preferredJob(jobs) {
+    return jobs.find((job) => job.status === "running")
+      || jobs.find((job) => job.status === "pending" || job.status === "queued")
+      || jobs[0]
+      || null;
+  }
+
   function latestCollectionJobStatus(collection, jobs, jobType) {
     if (!collection) {
       return null;
     }
-    const match = jobs.find((job) => collectionIdFromJob(job) === collection.id && job.job_type === jobType);
+    const match = preferredJob(
+      jobs.filter((job) => collectionIdFromJob(job) === collection.id && job.job_type === jobType),
+    );
     return match ? match.status : null;
+  }
+
+  function hasActiveCollectionJob(jobType) {
+    if (!state.selectedCollection) {
+      return false;
+    }
+    return state.jobs.some(
+      (job) => collectionIdFromJob(job) === state.selectedCollection.id
+        && job.job_type === jobType
+        && isActiveJobStatus(job.status),
+    );
   }
 
   function collectionFailedJobCount(collection, jobs) {
@@ -333,14 +353,24 @@
   }
 
   function latestPaperJob(paperId, jobType) {
-    return state.jobs.find((job) => job.job_type === jobType && paperJobApplies(job, paperId)) || null;
+    return preferredJob(
+      state.jobs.filter((job) => job.job_type === jobType && paperJobApplies(job, paperId)),
+    );
+  }
+
+  function parseJobTimestamp(value) {
+    if (!value) {
+      return Number.NaN;
+    }
+    const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
+    return Date.parse(hasExplicitTimezone ? value : `${value}Z`);
   }
 
   function isStaleJob(job) {
     if (!job || job.status !== "running" || !job.started_at) {
       return false;
     }
-    const startedAt = Date.parse(job.started_at);
+    const startedAt = parseJobTimestamp(job.started_at);
     if (Number.isNaN(startedAt)) {
       return false;
     }
@@ -1211,13 +1241,15 @@
   function updateActionButtons() {
     const collectionSelected = Boolean(state.selectedCollection);
     const readiness = selectedCollectionReadiness();
-    elements.parseButton.disabled = !collectionSelected || unprocessedPaperIds().length === 0;
-    elements.parseSelectedPapersButton.disabled = !collectionSelected || selectedPaperIdsForAction("parse").length === 0;
+    const parseJobActive = hasActiveCollectionJob("collection_parse");
+    const extractionJobActive = hasActiveCollectionJob("collection_extract");
+    elements.parseButton.disabled = !collectionSelected || parseJobActive || unprocessedPaperIds().length === 0;
+    elements.parseSelectedPapersButton.disabled = !collectionSelected || parseJobActive || selectedPaperIdsForAction("parse").length === 0;
     elements.selectAllPapersButton.disabled = !collectionSelected || state.papers.length === 0;
     elements.selectUnextractedPapersButton.disabled = !collectionSelected || extractablePaperIds().length === 0;
     elements.clearSelectedPapersButton.disabled = !collectionSelected || state.selectedPaperIds.size === 0;
-    elements.extractUnprocessedPapersButton.disabled = !collectionSelected || extractablePaperIds().length === 0;
-    elements.extractButton.disabled = !collectionSelected || selectedPaperIdsForAction("extract").length === 0;
+    elements.extractUnprocessedPapersButton.disabled = !collectionSelected || extractionJobActive || extractablePaperIds().length === 0;
+    elements.extractButton.disabled = !collectionSelected || extractionJobActive || selectedPaperIdsForAction("extract").length === 0;
     elements.workspaceOpenCompareButton.disabled = !collectionSelected;
     elements.saveWorkspaceButton.disabled = !collectionSelected;
     elements.compareRefreshButton.disabled = !collectionSelected || !readiness.isReadyForCompare;

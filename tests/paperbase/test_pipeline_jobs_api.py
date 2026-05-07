@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from paperbase.db.bootstrap import initialize_database
 from paperbase.db.models import PaperFile
-from paperbase.db.repositories import CollectionRepository, PaperRepository
+from paperbase.db.repositories import BackgroundJobRepository, CollectionRepository, PaperRepository
 from paperbase.db.session import make_session_factory
 from services.paperbase_api.app import create_app
 
@@ -43,6 +43,29 @@ def test_local_library_ingest_api_enqueues_background_job(tmp_path: Path) -> Non
     assert payload["status"] == "pending"
     assert payload["payload"]["source_dir"] == str(source_dir)
     assert payload["payload"]["collection_title"] == "Sample Library"
+    assert payload["created_at"].endswith("+00:00")
+
+
+def test_jobs_api_serializes_started_timestamps_as_utc(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        job = BackgroundJobRepository(session).create(
+            job_type="collection_extract",
+            payload_json={"collection_id": "collection-1"},
+        )
+        job_id = job.id
+        BackgroundJobRepository(session).claim_by_id(job_id)
+
+    client = TestClient(create_app(session_factory=session_factory))
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["created_at"].endswith("+00:00")
+    assert payload["started_at"].endswith("+00:00")
 
 
 def test_local_library_upload_api_stages_uploaded_pdfs_and_enqueues_background_job(

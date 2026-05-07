@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from paperbase.db.bootstrap import initialize_database
-from paperbase.db.models import Collection, ExtractionRun, GlossaryTerm
+from paperbase.db.models import BackgroundJob, Collection, ExtractionRun, GlossaryTerm
 from paperbase.db.repositories import CollectionRepository, PaperFileRepository, PaperRepository
 from paperbase.db.session import make_session_factory
 from paperbase.parsing.pipeline import PaperParsePipeline
@@ -144,13 +144,28 @@ def test_paperbase_api_creates_extraction_profile_and_runs_collection_extraction
     assert selected_payload["job_type"] == "collection_extract"
     assert selected_payload["payload"]["paper_ids"] == [paper_id]
 
+    run_duplicate_selected_extraction = client.post(
+        f"/api/v1/collections/{collection_id}/extract",
+        json={
+            "extraction_profile_id": profile_id,
+            "prompt_version": "paperbase-v1",
+            "schema_version": "schema-v1",
+            "paper_ids": [paper_id],
+        },
+    )
+    assert run_duplicate_selected_extraction.status_code == 202
+    duplicate_payload = run_duplicate_selected_extraction.json()["data"]
+    assert duplicate_payload["id"] == selected_payload["id"]
+
     with session_factory() as session:
         stored_collection = session.execute(
             select(Collection).where(Collection.id == collection_id)
         ).scalar_one()
         glossary_terms = session.execute(select(GlossaryTerm)).scalars().all()
         extraction_runs = session.execute(select(ExtractionRun)).scalars().all()
+        background_jobs = session.execute(select(BackgroundJob)).scalars().all()
 
     assert stored_collection.title == "SamplePapers"
     assert glossary_terms == []
     assert extraction_runs == []
+    assert len(background_jobs) == 2

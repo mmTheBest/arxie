@@ -116,3 +116,72 @@ def test_collection_extraction_runner_executes_for_collection_members(tmp_path: 
     assert stored_collection.title == "SamplePapers"
     assert [term.term for term in glossary_terms] == ["AUROC"]
     assert [run.status for run in extraction_runs] == ["completed"]
+
+
+def test_collection_extraction_runner_skips_already_extracted_papers(tmp_path: Path) -> None:
+    from paperbase.extract.runner import CollectionExtractionRunner
+
+    class UnexpectedExtractionClient:
+        model_name = "fake-extractor"
+
+        def extract(self, *, paper_text: str, schema_payload: dict[str, object]):  # noqa: ANN201, ARG002
+            raise AssertionError("already extracted papers should not be sent to the extraction client")
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%stub pdf\n")
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id=str(pdf_path),
+            canonical_title="scLong",
+        )
+        PaperFileRepository(session).upsert(
+            paper_id=paper.id,
+            storage_uri=pdf_path.resolve().as_uri(),
+            file_kind="pdf",
+            mime_type="application/pdf",
+            parser_status="pending",
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Local field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(
+            collection_id=collection.id,
+            paper_id=paper.id,
+        )
+        paper_id = paper.id
+        collection_id = collection.id
+
+    PaperParsePipeline(session_factory=session_factory, parser=FakePDFParser()).parse_paper(paper_id)
+    with session_factory() as session:
+        session.add(
+            ExtractionRun(
+                paper_id=paper_id,
+                model_name="fake-extractor",
+                prompt_version="paperbase-v1",
+                schema_version="schema-v1",
+                status="completed",
+            )
+        )
+        session.commit()
+
+    summary = CollectionExtractionRunner(
+        session_factory=session_factory,
+        client=UnexpectedExtractionClient(),
+    ).extract_collection(
+        collection_id=collection_id,
+        schema_payload={"domain": "scRegNet"},
+        prompt_version="paperbase-v1",
+        schema_version="schema-v1",
+    )
+
+    assert summary.collection_id == collection_id
+    assert summary.extracted_paper_count == 0
+    assert summary.extraction_run_ids == []
+    assert summary.skipped_paper_ids == [paper_id]

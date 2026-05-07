@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,10 @@ router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 def _serialize_timestamp(value) -> str | None:  # noqa: ANN001
     if value is None:
         return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    else:
+        value = value.astimezone(UTC)
     return value.isoformat()
 
 

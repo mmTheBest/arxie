@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from paperbase.db.models import CollectionPaper, Section
+from paperbase.db.models import CollectionPaper, ExtractionRun, Section
 from paperbase.extract.pipeline import ExtractionClient, PaperExtractionPipeline
 from paperbase.parsing.pipeline import PaperParsePipeline
 
@@ -57,6 +57,10 @@ class CollectionExtractionRunner:
         skipped: list[str] = []
 
         for paper_id in target_paper_ids:
+            if self._has_completed_extraction(paper_id):
+                skipped.append(paper_id)
+                continue
+
             if not self._has_parsed_sections(paper_id):
                 self.parse_pipeline.parse_paper(paper_id)
 
@@ -103,4 +107,16 @@ class CollectionExtractionRunner:
     def _has_parsed_sections(self, paper_id: str) -> bool:
         with self.session_factory() as session:
             statement = select(Section.id).where(Section.paper_id == paper_id).limit(1)
+            return session.execute(statement).scalar_one_or_none() is not None
+
+    def _has_completed_extraction(self, paper_id: str) -> bool:
+        with self.session_factory() as session:
+            statement = (
+                select(ExtractionRun.id)
+                .where(
+                    ExtractionRun.paper_id == paper_id,
+                    ExtractionRun.status == "completed",
+                )
+                .limit(1)
+            )
             return session.execute(statement).scalar_one_or_none() is not None

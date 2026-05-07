@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -136,6 +137,19 @@ def test_collection_papers_include_processing_statuses(tmp_path: Path) -> None:
                     payload_json={"collection_id": collection.id, "paper_ids": [pending_paper.id]},
                     error_message="PostgreSQL rejected NUL byte.",
                 ),
+                BackgroundJob(
+                    job_type="collection_extract",
+                    status="running",
+                    payload_json={"collection_id": collection.id, "paper_ids": [parsed_paper.id]},
+                    created_at=datetime(2026, 5, 7, 5, 24, 30),
+                    started_at=datetime(2026, 5, 7, 5, 24, 31),
+                ),
+                BackgroundJob(
+                    job_type="collection_extract",
+                    status="pending",
+                    payload_json={"collection_id": collection.id, "paper_ids": [parsed_paper.id]},
+                    created_at=datetime(2026, 5, 7, 5, 25, 30),
+                ),
             ]
         )
         session.commit()
@@ -154,6 +168,7 @@ def test_collection_papers_include_processing_statuses(tmp_path: Path) -> None:
     assert parsed_row["is_extracted"] is True
     assert parsed_row["parsed_section_count"] == 1
     assert parsed_row["completed_extraction_count"] == 1
+    assert parsed_row["latest_extraction_job_status"] == "running"
 
     assert pending_row["paper"]["title"] == "Pending Paper"
     assert pending_row["is_parsed"] is False

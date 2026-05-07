@@ -90,6 +90,15 @@ def _job_collection_id(job: BackgroundJob) -> str | None:
     return result_json.get("collection_id") or payload_json.get("collection_id")
 
 
+def _active_status_wins(current_status: str | None, candidate_status: str) -> bool:
+    active_statuses = {"pending", "queued", "running"}
+    if current_status is None:
+        return True
+    if candidate_status == "running" and current_status in {"pending", "queued"}:
+        return True
+    return candidate_status in active_statuses and current_status not in active_statuses
+
+
 def _collection_readiness_inputs(session: Session, collection_id: str) -> dict[str, int | str | None]:
     member_paper_ids = select(CollectionPaper.paper_id).where(CollectionPaper.collection_id == collection_id)
     paper_count = session.execute(
@@ -118,11 +127,11 @@ def _collection_readiness_inputs(session: Session, collection_id: str) -> dict[s
     for job in jobs:
         if _job_collection_id(job) != collection_id:
             continue
-        if latest_job_status is None:
+        if _active_status_wins(latest_job_status, job.status):
             latest_job_status = job.status
-        if job.job_type == "collection_parse" and latest_parse_job_status is None:
+        if job.job_type == "collection_parse" and _active_status_wins(latest_parse_job_status, job.status):
             latest_parse_job_status = job.status
-        if job.job_type == "collection_extract" and latest_extraction_job_status is None:
+        if job.job_type == "collection_extract" and _active_status_wins(latest_extraction_job_status, job.status):
             latest_extraction_job_status = job.status
         if job.status == "failed":
             failed_job_count += 1
@@ -207,11 +216,17 @@ def _collection_paper_job_state(
 
         for paper_id in affected_paper_ids:
             paper_state = state_by_paper_id[paper_id]
-            if job.job_type == "collection_parse" and paper_state["latest_parse_job_status"] is None:
+            if job.job_type == "collection_parse" and _active_status_wins(
+                paper_state["latest_parse_job_status"],
+                job.status,
+            ):
                 paper_state["latest_parse_job_status"] = job.status
                 if job.error_message and paper_state["latest_job_error"] is None:
                     paper_state["latest_job_error"] = job.error_message
-            if job.job_type == "collection_extract" and paper_state["latest_extraction_job_status"] is None:
+            if job.job_type == "collection_extract" and _active_status_wins(
+                paper_state["latest_extraction_job_status"],
+                job.status,
+            ):
                 paper_state["latest_extraction_job_status"] = job.status
                 if job.error_message and paper_state["latest_job_error"] is None:
                     paper_state["latest_job_error"] = job.error_message
