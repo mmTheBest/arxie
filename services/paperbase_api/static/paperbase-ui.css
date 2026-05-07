@@ -250,6 +250,34 @@ h4 {
   margin: 0.7rem 0;
 }
 
+.sidebar-selection-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.7rem 0 0;
+}
+
+.selection-button {
+  border: 1px solid var(--paperbase-line);
+  border-radius: 999px;
+  padding: 0.4rem 0.65rem;
+  background: #ffffff;
+  color: var(--paperbase-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.selection-button:hover {
+  color: var(--paperbase-text);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+.selection-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .app-main {
   min-width: 0;
 }

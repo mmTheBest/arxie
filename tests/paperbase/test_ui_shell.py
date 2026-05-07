@@ -48,6 +48,10 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="compare-readiness-banner"' in html
     assert 'id="parse-button"' in html
     assert 'id="parse-selected-papers-button"' in html
+    assert 'id="select-all-papers-button"' in html
+    assert 'id="select-unextracted-papers-button"' in html
+    assert 'id="clear-selected-papers-button"' in html
+    assert 'id="extract-unprocessed-papers-button"' in html
     assert 'id="local-library-upload-form"' in html
     assert 'id="local-library-upload-input"' in html
     assert 'id="local-library-upload-title-input"' in html
@@ -62,6 +66,10 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "Choose a collection and follow the next readiness step" not in html
     assert "Parse unprocessed" in html
     assert "Parse selected" in html
+    assert "Select all" in html
+    assert "Select unextracted" in html
+    assert "Clear selection" in html
+    assert "Extract unextracted" in html
     assert "Extract selected" in html
     assert 'data-view="library"' in html
     assert 'data-view="workspace"' in html
@@ -117,6 +125,8 @@ def test_library_uses_sidebar_paper_processing_instead_of_duplicate_collection_c
     assert "renderLibraryLogs" in script
     assert "queueParse(unprocessedPaperIds())" in script
     assert "queueParse(selectedPaperIdsForAction" in script
+    assert "selectPaperIds(extractablePaperIds())" in script
+    assert "queueExtraction(extractablePaperIds())" in script
     assert "queueExtraction(selectedPaperIdsForAction" in script
     assert "data-sidebar-paper-action" in script
     assert "isStaleJob" in script

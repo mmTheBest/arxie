@@ -44,12 +44,26 @@
               <p class="panel-kicker">Papers</p>
               <h3>Selected collection</h3>
             </div>
+            <div class="sidebar-selection-toolbar" aria-label="Paper selection controls">
+              <button id="select-all-papers-button" class="selection-button" type="button">
+                Select all
+              </button>
+              <button id="select-unextracted-papers-button" class="selection-button" type="button">
+                Select unextracted
+              </button>
+              <button id="clear-selected-papers-button" class="selection-button" type="button">
+                Clear selection
+              </button>
+            </div>
             <div class="sidebar-action-grid">
               <button id="parse-button" class="action-button action-button-primary" type="button">
                 Parse unprocessed
               </button>
               <button id="parse-selected-papers-button" class="action-button" type="button">
                 Parse selected
+              </button>
+              <button id="extract-unprocessed-papers-button" class="action-button action-button-primary" type="button">
+                Extract unextracted
               </button>
               <button id="extract-button" class="action-button" type="button">
                 Extract selected

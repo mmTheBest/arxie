@@ -71,6 +71,10 @@
     localLibraryImportButton: document.getElementById("local-library-import-button"),
     parseButton: document.getElementById("parse-button"),
     parseSelectedPapersButton: document.getElementById("parse-selected-papers-button"),
+    selectAllPapersButton: document.getElementById("select-all-papers-button"),
+    selectUnextractedPapersButton: document.getElementById("select-unextracted-papers-button"),
+    clearSelectedPapersButton: document.getElementById("clear-selected-papers-button"),
+    extractUnprocessedPapersButton: document.getElementById("extract-unprocessed-papers-button"),
     extractButton: document.getElementById("extract-button"),
     libraryJobLog: document.getElementById("library-job-log"),
     workspaceCollectionTitle: document.getElementById("workspace-collection-title"),
@@ -414,6 +418,19 @@
     return state.papers
       .filter((membership) => !membership.is_parsed)
       .map((membership) => membership.paper.id);
+  }
+
+  function extractablePaperIds() {
+    return state.papers
+      .filter((membership) => membership.is_parsed && !membership.is_extracted)
+      .map((membership) => membership.paper.id);
+  }
+
+  function selectPaperIds(paperIds) {
+    const availablePaperIds = new Set(state.papers.map((membership) => membership.paper.id));
+    state.selectedPaperIds = new Set(paperIds.filter((paperId) => availablePaperIds.has(paperId)));
+    renderSidebarPapers();
+    updateActionButtons();
   }
 
   function selectedPaperIdsForAction(action) {
@@ -1196,6 +1213,10 @@
     const readiness = selectedCollectionReadiness();
     elements.parseButton.disabled = !collectionSelected || unprocessedPaperIds().length === 0;
     elements.parseSelectedPapersButton.disabled = !collectionSelected || selectedPaperIdsForAction("parse").length === 0;
+    elements.selectAllPapersButton.disabled = !collectionSelected || state.papers.length === 0;
+    elements.selectUnextractedPapersButton.disabled = !collectionSelected || extractablePaperIds().length === 0;
+    elements.clearSelectedPapersButton.disabled = !collectionSelected || state.selectedPaperIds.size === 0;
+    elements.extractUnprocessedPapersButton.disabled = !collectionSelected || extractablePaperIds().length === 0;
     elements.extractButton.disabled = !collectionSelected || selectedPaperIdsForAction("extract").length === 0;
     elements.workspaceOpenCompareButton.disabled = !collectionSelected;
     elements.saveWorkspaceButton.disabled = !collectionSelected;
@@ -1809,6 +1830,29 @@
   elements.parseSelectedPapersButton.addEventListener("click", async () => {
     try {
       await queueParse(selectedPaperIdsForAction("parse"));
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.selectAllPapersButton.addEventListener("click", () => {
+    selectPaperIds(state.papers.map((membership) => membership.paper.id));
+    setStatus("Selected all papers in this collection.");
+  });
+
+  elements.selectUnextractedPapersButton.addEventListener("click", () => {
+    selectPaperIds(extractablePaperIds());
+    setStatus("Selected papers that still need evidence extraction.");
+  });
+
+  elements.clearSelectedPapersButton.addEventListener("click", () => {
+    selectPaperIds([]);
+    setStatus("Cleared paper selection.");
+  });
+
+  elements.extractUnprocessedPapersButton.addEventListener("click", async () => {
+    try {
+      await queueExtraction(extractablePaperIds());
     } catch (error) {
       setStatus(error.message);
     }
