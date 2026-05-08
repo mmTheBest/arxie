@@ -39,12 +39,21 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'class="sidebar-section sidebar-workspaces-section"' in html
     assert 'id="library-view"' in html
     assert 'id="workspace-view"' in html
+    assert 'id="research-view"' in html
     assert 'id="compare-view"' in html
     assert 'id="jobs-view"' in html
     assert 'id="settings-view"' in html
     assert 'id="workspace-readiness-banner"' in html
     assert 'id="workspace-detail-panel"' in html
     assert 'id="save-workspace-button"' in html
+    assert 'id="research-readiness-banner"' in html
+    assert 'id="research-thread-list"' in html
+    assert 'id="research-chat-log"' in html
+    assert 'id="research-message-form"' in html
+    assert 'id="research-message-input"' in html
+    assert 'id="research-artifact-list"' in html
+    assert 'id="research-evidence-drawer"' in html
+    assert 'id="research-job-log"' in html
     assert 'id="compare-readiness-banner"' in html
     assert 'id="parse-button"' in html
     assert 'id="parse-selected-papers-button"' in html
@@ -73,6 +82,7 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "Extract selected" in html
     assert 'data-view="library"' in html
     assert 'data-view="workspace"' in html
+    assert 'data-view="research"' in html
     assert 'data-view="compare"' in html
     assert 'data-view="jobs"' in html
     assert 'data-view="settings"' in html
@@ -82,6 +92,9 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert script_response.status_code == 200
     assert "/api/v1/workspaces" in script_response.text
     assert "/api/v1/collections" in script_response.text
+    assert "/api/v1/research/threads" in script_response.text
+    assert "/api/v1/research/artifacts" in script_response.text
+    assert "/research-labels" in script_response.text
     assert "/api/v1/jobs" in script_response.text
     assert "/api/v1/search/chunks" in script_response.text
     assert "/api/v1/search/artifacts" in script_response.text
@@ -95,11 +108,19 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "/api/v1/search/status" in script_response.text
     assert "local_library_ingest" in script_response.text
     assert "collection_id" in script_response.text
+    assert "research_agent_run" in script_response.text
     assert "/parse" in script_response.text
     assert "/api/v1/papers/" in script_response.text
     assert "/tables" in script_response.text
     assert "activeView" in script_response.text
     assert "getCollectionReadiness" in script_response.text
+    assert "renderResearchWorkspace" in script_response.text
+    assert "postResearchMessage" in script_response.text
+    assert "markPaperResearchLabel" in script_response.text
+    assert "Use in Research" in script_response.text
+    assert "Mark as exemplar" in script_response.text
+    assert "Mark as baseline" in script_response.text
+    assert "Research design matrix" in script_response.text
     assert "renderSidebarPapers" in script_response.text
     assert "data-sidebar-paper-checkbox" in script_response.text
     assert "paper_ids" in script_response.text
@@ -114,6 +135,7 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
 
     assert style_response.status_code == 200
     assert "--paperbase-bg" in style_response.text
+    assert ".research-layout" in style_response.text
     assert '.app-shell[data-active-view="library"] .sidebar-workspaces-section' in style_response.text
 
 

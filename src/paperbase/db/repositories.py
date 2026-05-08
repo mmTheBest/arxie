@@ -19,8 +19,12 @@ from paperbase.db.models import (
     Paper,
     PaperAuthor,
     PaperFile,
+    PaperResearchLabel,
     PaperSource,
     PaperTag,
+    ResearchArtifact,
+    ResearchMessage,
+    ResearchThread,
     Tag,
     Venue,
     Workspace,
@@ -559,6 +563,198 @@ class WorkspaceRepository:
         self.session.commit()
         self.session.refresh(workspace)
         return workspace
+
+
+class ResearchRepository:
+    """Persistence helpers for collection-grounded research agent state."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_thread(self, thread_id: str) -> ResearchThread | None:
+        return self.session.get(ResearchThread, thread_id)
+
+    def list_threads(self, *, collection_id: str | None = None) -> Sequence[ResearchThread]:
+        statement = select(ResearchThread)
+        if collection_id is not None:
+            statement = statement.where(ResearchThread.collection_id == collection_id)
+        statement = statement.order_by(ResearchThread.updated_at.desc(), ResearchThread.created_at.desc())
+        return self.session.execute(statement).scalars().all()
+
+    def create_thread(
+        self,
+        *,
+        owner_id: str,
+        title: str,
+        collection_id: str,
+        workspace_id: str | None = None,
+        selected_paper_ids: Sequence[str] | None = None,
+        status: str = "active",
+    ) -> ResearchThread:
+        thread = ResearchThread(
+            owner_id=owner_id,
+            title=title,
+            collection_id=collection_id,
+            workspace_id=workspace_id,
+            selected_paper_ids_json=list(selected_paper_ids or []),
+            status=status,
+        )
+        self.session.add(thread)
+        self.session.commit()
+        self.session.refresh(thread)
+        return thread
+
+    def create_message(
+        self,
+        *,
+        thread_id: str,
+        role: str,
+        content: str,
+        artifact_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ResearchMessage:
+        message = ResearchMessage(
+            thread_id=thread_id,
+            role=role,
+            content=content,
+            artifact_id=artifact_id,
+            metadata_json=metadata or {},
+        )
+        self.session.add(message)
+        self.session.commit()
+        self.session.refresh(message)
+        return message
+
+    def list_messages(self, *, thread_id: str) -> Sequence[ResearchMessage]:
+        statement = (
+            select(ResearchMessage)
+            .where(ResearchMessage.thread_id == thread_id)
+            .order_by(ResearchMessage.created_at.asc(), ResearchMessage.id.asc())
+        )
+        return self.session.execute(statement).scalars().all()
+
+    def create_artifact(
+        self,
+        *,
+        collection_id: str,
+        thread_id: str | None,
+        artifact_type: str,
+        title: str,
+        status: str = "pending",
+        input_payload: dict[str, Any] | None = None,
+        output_payload: dict[str, Any] | None = None,
+        evidence_payload: dict[str, Any] | None = None,
+        model_name: str | None = None,
+        prompt_version: str | None = None,
+        error_message: str | None = None,
+    ) -> ResearchArtifact:
+        artifact = ResearchArtifact(
+            collection_id=collection_id,
+            thread_id=thread_id,
+            artifact_type=artifact_type,
+            title=title,
+            status=status,
+            input_payload_json=input_payload or {},
+            output_payload_json=output_payload or {},
+            evidence_payload_json=evidence_payload or {},
+            model_name=model_name,
+            prompt_version=prompt_version,
+            error_message=error_message,
+        )
+        self.session.add(artifact)
+        self.session.commit()
+        self.session.refresh(artifact)
+        return artifact
+
+    def get_artifact(self, artifact_id: str) -> ResearchArtifact | None:
+        return self.session.get(ResearchArtifact, artifact_id)
+
+    def list_artifacts(self, *, collection_id: str | None = None) -> Sequence[ResearchArtifact]:
+        statement = select(ResearchArtifact)
+        if collection_id is not None:
+            statement = statement.where(ResearchArtifact.collection_id == collection_id)
+        statement = statement.order_by(ResearchArtifact.updated_at.desc(), ResearchArtifact.created_at.desc())
+        return self.session.execute(statement).scalars().all()
+
+    def update_artifact(
+        self,
+        artifact_id: str,
+        *,
+        title: str | None = None,
+        status: str | None = None,
+        output_payload: dict[str, Any] | None = None,
+        evidence_payload: dict[str, Any] | None = None,
+        model_name: str | None = None,
+        prompt_version: str | None = None,
+        error_message: str | None = None,
+    ) -> ResearchArtifact:
+        artifact = self.get_artifact(artifact_id)
+        if artifact is None:
+            raise ValueError(f"No research artifact found for id: {artifact_id}")
+
+        if title is not None:
+            artifact.title = title
+        if status is not None:
+            artifact.status = status
+        if output_payload is not None:
+            artifact.output_payload_json = dict(output_payload)
+        if evidence_payload is not None:
+            artifact.evidence_payload_json = dict(evidence_payload)
+        if model_name is not None:
+            artifact.model_name = model_name
+        if prompt_version is not None:
+            artifact.prompt_version = prompt_version
+        artifact.error_message = error_message
+
+        self.session.commit()
+        self.session.refresh(artifact)
+        return artifact
+
+    def get_label(self, *, collection_id: str, paper_id: str) -> PaperResearchLabel | None:
+        statement = select(PaperResearchLabel).where(
+            PaperResearchLabel.collection_id == collection_id,
+            PaperResearchLabel.paper_id == paper_id,
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def list_labels(self, *, collection_id: str) -> Sequence[PaperResearchLabel]:
+        statement = (
+            select(PaperResearchLabel)
+            .where(PaperResearchLabel.collection_id == collection_id)
+            .order_by(PaperResearchLabel.updated_at.desc(), PaperResearchLabel.created_at.desc())
+        )
+        return self.session.execute(statement).scalars().all()
+
+    def upsert_label(
+        self,
+        *,
+        collection_id: str,
+        paper_id: str,
+        user_label: str,
+        inferred_label: str | None = None,
+        inferred_signals: dict[str, Any] | None = None,
+        notes: str | None = None,
+    ) -> PaperResearchLabel:
+        label = self.get_label(collection_id=collection_id, paper_id=paper_id)
+        if label is None:
+            label = PaperResearchLabel(
+                collection_id=collection_id,
+                paper_id=paper_id,
+                user_label=user_label,
+                inferred_label=inferred_label,
+                inferred_signals_json=inferred_signals or {},
+                notes=notes,
+            )
+            self.session.add(label)
+        else:
+            label.user_label = user_label
+            label.inferred_label = inferred_label
+            label.inferred_signals_json = inferred_signals or {}
+            label.notes = notes
+
+        self.session.commit()
+        self.session.refresh(label)
+        return label
 
 
 class BackgroundJobRepository:

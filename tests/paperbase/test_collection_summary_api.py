@@ -13,6 +13,7 @@ from paperbase.db.models import (
     Limitation,
     Method,
     Metric,
+    ResearchDesignElement,
     ResultRow,
     Section,
     TableArtifact,
@@ -85,6 +86,13 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
                     title="Long-context packing",
                     description="Pack distal gene context into a long sequence window.",
                 ),
+                ResearchDesignElement(
+                    paper_id=paper.id,
+                    element_type="evaluation_protocol",
+                    title="Held-out perturbation benchmark",
+                    description="Evaluate on a held-out perturbation split with AUROC.",
+                    metadata_json={"reproducibility_signal": "fixed split"},
+                ),
                 ExtractionRun(
                     paper_id=paper.id,
                     model_name="fake-extractor",
@@ -141,6 +149,7 @@ def test_paperbase_api_exposes_collection_structured_summary(tmp_path) -> None:
     assert payload["glossary_terms"][0]["term"] == "GRN"
     assert payload["limitations"][0]["statement"] == "The benchmark covers a limited number of perturbation settings."
     assert payload["engineering_tricks"][0]["title"] == "Long-context packing"
+    assert payload["research_design_elements"][0]["element_type"] == "evaluation_protocol"
     assert payload["top_result_rows"][0]["value_numeric"] == 0.91
 
 

@@ -8,7 +8,22 @@ from pathlib import Path
 import fitz
 import paperbase.db.models as db_models
 from paperbase.db.bootstrap import initialize_database
-from paperbase.db.models import Chunk, ExtractionRun, Figure, GlossaryTerm, PaperFile, Section, TableArtifact
+from paperbase.db.models import (
+    Chunk,
+    Dataset,
+    ExtractionRun,
+    Figure,
+    GlossaryTerm,
+    Method,
+    PaperFile,
+    ResearchDesignElement,
+    ResearchArtifact,
+    ResearchMessage,
+    ResearchThread,
+    ResultRow,
+    Section,
+    TableArtifact,
+)
 from paperbase.db.repositories import CollectionRepository, PaperRepository
 from paperbase.db.session import make_session_factory
 from paperbase.ingest.models import CanonicalPaperSeed
@@ -326,6 +341,127 @@ def test_worker_executes_collection_extract_job(tmp_path: Path) -> None:
         "skipped_paper_ids": [],
     }
     assert [term.term for term in glossary_terms] == ["AUROC"]
+
+
+def test_worker_executes_research_agent_run_job(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="/tmp/benchmark.pdf",
+            canonical_title="Benchmark Paper",
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Local field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper.id)
+        section = Section(
+            paper_id=paper.id,
+            title="Methods",
+            ordinal=1,
+            text="We compare against baseline models using AUROC and ablation studies.",
+        )
+        dataset = Dataset(
+            paper_id=paper.id,
+            normalized_name="scregnetbench",
+            display_name="scRegNetBench",
+        )
+        method = Method(
+            paper_id=paper.id,
+            normalized_name="graph_model",
+            display_name="Graph model",
+        )
+        metric = Method(
+            paper_id=paper.id,
+            normalized_name="baseline",
+            display_name="Baseline method",
+        )
+        session.add_all([section, dataset, method, metric])
+        session.flush()
+        session.add(
+            ResultRow(
+                paper_id=paper.id,
+                dataset_id=dataset.id,
+                method_id=method.id,
+                metric_id=metric.id,
+                value_numeric=0.91,
+                notes="Ablation validates graph prior.",
+            )
+        )
+        session.add(
+            ResearchDesignElement(
+                paper_id=paper.id,
+                element_type="ablation",
+                title="Graph-prior ablation",
+                description="Remove the graph prior to isolate its effect.",
+            )
+        )
+        thread = ResearchThread(
+            owner_id="local-user",
+            title="Experiment design",
+            collection_id=collection.id,
+            selected_paper_ids_json=[paper.id],
+        )
+        session.add(thread)
+        session.flush()
+        user_message = ResearchMessage(
+            thread_id=thread.id,
+            role="user",
+            content="Design an experiment with baselines and ablations.",
+        )
+        artifact = ResearchArtifact(
+            thread_id=thread.id,
+            collection_id=collection.id,
+            artifact_type="experiment_plan",
+            title="Experiment plan",
+            status="pending",
+            input_payload_json={"message": user_message.content},
+        )
+        session.add_all([user_message, artifact])
+        session.flush()
+        job = background_job_model(
+            job_type="research_agent_run",
+            payload_json={
+                "thread_id": thread.id,
+                "message_id": user_message.id,
+                "artifact_id": artifact.id,
+                "collection_id": collection.id,
+                "user_message": user_message.content,
+                "artifact_type": "experiment_plan",
+                "selected_paper_ids": [paper.id],
+            },
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        artifact_id = artifact.id
+
+    worker = worker_cls(session_factory=session_factory)
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+    with session_factory() as session:
+        stored_job = session.get(background_job_model, job_id)
+        stored_artifact = session.get(ResearchArtifact, artifact_id)
+        assistant_messages = session.query(ResearchMessage).filter_by(role="assistant").all()
+
+    assert stored_job is not None
+    assert stored_job.status == "completed"
+    assert stored_artifact is not None
+    assert stored_artifact.status == "completed"
+    assert stored_artifact.output_payload_json["artifact_type"] == "experiment_plan"
+    assert "baselines" in stored_artifact.output_payload_json
+    assert "general_methodology" in stored_artifact.output_payload_json
+    assert stored_artifact.evidence_payload_json["papers"][0]["title"] == "Benchmark Paper"
+    assert stored_artifact.evidence_payload_json["papers"][0]["research_design_elements"][0]["element_type"] == "ablation"
+    assert len(assistant_messages) == 1
 
 
 def test_worker_collection_extract_honors_selected_paper_ids(tmp_path: Path) -> None:

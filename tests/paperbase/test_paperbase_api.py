@@ -16,6 +16,7 @@ from paperbase.db.models import (
     Limitation,
     Method,
     Metric,
+    ResearchDesignElement,
     ResultRow,
     TableArtifact,
 )
@@ -173,6 +174,13 @@ def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> No
             title="Long-context token packing",
             description="Pack distant regulatory context into a single input window.",
         )
+        design_element = ResearchDesignElement(
+            paper_id=paper.id,
+            element_type="ablation",
+            title="Remove long-context window",
+            description="Ablate distant regulatory context to test its contribution.",
+            metadata_json={"validity_threat": "context leakage"},
+        )
         extraction_run = ExtractionRun(
             paper_id=paper.id,
             model_name="fake-extractor",
@@ -194,7 +202,19 @@ def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> No
             structured_payload_json={"columns": ["Method", "AUROC"], "rows": 2},
         )
         session.add_all(
-            [dataset, method, metric, glossary, finding, limitation, trick, extraction_run, figure, table]
+            [
+                dataset,
+                method,
+                metric,
+                glossary,
+                finding,
+                limitation,
+                trick,
+                design_element,
+                extraction_run,
+                figure,
+                table,
+            ]
         )
         session.flush()
         session.add(
@@ -238,5 +258,7 @@ def test_paperbase_api_exposes_structured_data_for_a_paper(tmp_path: Path) -> No
     assert payload["findings"][0]["statement"] == "scLong improves AUROC on scRegNetBench."
     assert payload["limitations"][0]["statement"] == "The evaluation only covers curated benchmark datasets."
     assert payload["engineering_tricks"][0]["title"] == "Long-context token packing"
+    assert payload["research_design_elements"][0]["element_type"] == "ablation"
+    assert payload["research_design_elements"][0]["metadata"]["validity_threat"] == "context leakage"
     assert payload["extraction_runs"][0]["status"] == "completed"
     assert payload["evidence_spans"][0]["quote_text"] == "AUROC is the primary evaluation metric."

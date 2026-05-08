@@ -25,12 +25,17 @@ def test_paperbase_metadata_contains_core_tables() -> None:
         "findings",
         "limitations",
         "engineering_tricks",
+        "research_design_elements",
         "evidence_spans",
         "extraction_runs",
         "extraction_profiles",
         "collections",
         "collection_papers",
         "workspaces",
+        "research_threads",
+        "research_messages",
+        "research_artifacts",
+        "paper_research_labels",
         "annotations",
     }
 
@@ -40,6 +45,10 @@ def test_paperbase_metadata_contains_core_tables() -> None:
 def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     collections = Base.metadata.tables["collections"]
     workspaces = Base.metadata.tables["workspaces"]
+    research_threads = Base.metadata.tables["research_threads"]
+    research_messages = Base.metadata.tables["research_messages"]
+    research_artifacts = Base.metadata.tables["research_artifacts"]
+    paper_research_labels = Base.metadata.tables["paper_research_labels"]
     extraction_runs = Base.metadata.tables["extraction_runs"]
     annotations = Base.metadata.tables["annotations"]
     papers = Base.metadata.tables["papers"]
@@ -48,6 +57,7 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     paper_authors = Base.metadata.tables["paper_authors"]
     paper_tags = Base.metadata.tables["paper_tags"]
     limitations = Base.metadata.tables["limitations"]
+    research_design_elements = Base.metadata.tables["research_design_elements"]
     tables = Base.metadata.tables["tables"]
 
     assert "owner_id" in collections.c
@@ -58,6 +68,14 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     assert "focus_note" in workspaces.c
     assert "active_filters_json" in workspaces.c
     assert "pinned_paper_ids_json" in workspaces.c
+    assert "collection_id" in research_threads.c
+    assert "selected_paper_ids_json" in research_threads.c
+    assert "thread_id" in research_messages.c
+    assert "artifact_id" in research_messages.c
+    assert "artifact_type" in research_artifacts.c
+    assert "evidence_payload_json" in research_artifacts.c
+    assert "user_label" in paper_research_labels.c
+    assert "inferred_signals_json" in paper_research_labels.c
 
     assert "provider" in papers.c
     assert "external_id" in papers.c
@@ -77,5 +95,9 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     assert "paper_id" in paper_authors.c
     assert "tag_id" in paper_tags.c
     assert "statement" in limitations.c
+    assert "element_type" in research_design_elements.c
+    assert "title" in research_design_elements.c
+    assert "description" in research_design_elements.c
+    assert "metadata_json" in research_design_elements.c
     assert "caption" in tables.c
     assert "structured_payload_json" in tables.c

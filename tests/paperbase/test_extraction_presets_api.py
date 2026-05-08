@@ -19,6 +19,7 @@ def test_paperbase_api_lists_and_creates_sc_regnet_preset_profiles(tmp_path) -> 
     assert preset["domain"] == "single-cell-grn"
     assert "Study" in preset["schema_payload"]
     assert "Benchmark" in preset["schema_payload"]
+    assert "ResearchDesignElement" in preset["schema_payload"]
 
     create_response = client.post(
         "/api/v1/extraction-profiles",
@@ -31,4 +32,5 @@ def test_paperbase_api_lists_and_creates_sc_regnet_preset_profiles(tmp_path) -> 
     payload = create_response.json()["data"]
     assert payload["name"] == "scRegNet profile"
     assert "RegulatoryEntity" in payload["schema_payload"]
+    assert "ResearchDesignElement" in payload["schema_payload"]
     assert payload["schema_payload"]["Study"]["required"][0] == "title"

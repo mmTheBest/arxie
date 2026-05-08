@@ -27,6 +27,7 @@
       <nav id="app-nav" class="app-nav" aria-label="Primary navigation">
         <button type="button" class="nav-tab" data-view="library">Library</button>
         <button type="button" class="nav-tab" data-view="workspace">Workspace</button>
+        <button type="button" class="nav-tab" data-view="research">Research</button>
         <button type="button" class="nav-tab" data-view="compare">Compare</button>
         <button type="button" class="nav-tab" data-view="jobs">Jobs</button>
         <button type="button" class="nav-tab" data-view="settings">Settings</button>
@@ -297,6 +298,76 @@
                   <h4>Paper detail</h4>
                   <div id="paper-detail"></div>
                 </div>
+              </aside>
+            </div>
+          </section>
+
+          <section id="research-view" class="module-view" data-view="research">
+            <div class="module-header">
+              <div>
+                <p class="panel-kicker">Research</p>
+                <h2>Design studies from the active paper collection</h2>
+              </div>
+              <div id="research-collection-context" class="module-meta"></div>
+            </div>
+
+            <div id="research-readiness-banner" class="readiness-banner"></div>
+
+            <div class="research-layout">
+              <section class="panel research-chat-panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Thread</p>
+                    <h3>Research agent</h3>
+                  </div>
+                </div>
+                <div id="research-thread-list" class="stacked-list research-thread-list"></div>
+                <div id="research-chat-log" class="research-chat-log"></div>
+                <form id="research-message-form" class="research-message-form">
+                  <label class="field-label" for="research-message-input">Research request</label>
+                  <textarea
+                    id="research-message-input"
+                    rows="5"
+                    placeholder="Design an experiment using the strongest papers in this collection"
+                  ></textarea>
+                  <div class="button-row button-row-left">
+                    <button
+                      id="research-send-button"
+                      type="submit"
+                      class="action-button action-button-primary"
+                    >
+                      Generate Research Plan
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="panel research-artifact-panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Artifacts</p>
+                    <h3>Research outputs</h3>
+                  </div>
+                </div>
+                <div id="research-artifact-list" class="stacked-list"></div>
+              </section>
+
+              <aside class="panel research-evidence-panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Evidence</p>
+                    <h3>Grounding</h3>
+                  </div>
+                </div>
+                <div id="research-evidence-drawer" class="research-evidence-drawer"></div>
+                <div class="detail-divider"></div>
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Activity</p>
+                    <h3>Research job log</h3>
+                  </div>
+                </div>
+                <div id="research-job-log" class="research-job-log"></div>
               </aside>
             </div>
           </section>

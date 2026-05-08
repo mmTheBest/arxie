@@ -16,6 +16,7 @@ from paperbase.ingest.provider_identifiers import (
     ingest_provider_identifiers,
     refresh_paper_metadata,
 )
+from paperbase.research.runner import PaperbaseResearchAgentRunner
 from paperbase.search.embeddings import EmbeddingProvider
 from paperbase.parsing.runner import CollectionParseRunner
 from paperbase.search.runtime import PaperbaseSearchReindexer
@@ -103,6 +104,11 @@ class PaperbaseWorker:
         try:
             result_json = self._execute_job(job_type=job_type, payload=payload)
         except Exception as exc:  # noqa: BLE001
+            if job_type == "research_agent_run" and payload.get("artifact_id"):
+                PaperbaseResearchAgentRunner(session_factory=self.session_factory).mark_artifact_failed(
+                    artifact_id=str(payload["artifact_id"]),
+                    error_message=str(exc),
+                )
             self._handle_failed_job(job_id=job_id, attempt_count=job.attempt_count, error_message=str(exc))
             return job_id
 
@@ -135,6 +141,8 @@ class PaperbaseWorker:
             return self._execute_provider_identifier_ingest(payload)
         if job_type == "paper_metadata_refresh":
             return self._execute_paper_metadata_refresh(payload)
+        if job_type == "research_agent_run":
+            return self._execute_research_agent_run(payload)
         raise RuntimeError(f"Unsupported background job type: {job_type}")
 
     def _execute_search_reindex(self) -> dict[str, Any]:
@@ -247,4 +255,14 @@ class PaperbaseWorker:
             "requested_count": result.requested_count,
             "refreshed_papers": result.refreshed_papers,
             "skipped_paper_ids": list(result.skipped_paper_ids),
+        }
+
+    def _execute_research_agent_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = PaperbaseResearchAgentRunner(session_factory=self.session_factory).run(payload)
+        return {
+            "collection_id": result.collection_id,
+            "thread_id": result.thread_id,
+            "artifact_id": result.artifact_id,
+            "artifact_type": result.artifact_type,
+            "evidence_paper_count": result.evidence_paper_count,
         }

@@ -18,6 +18,7 @@ from paperbase.db.models import (
     Method,
     Metric,
     Paper,
+    ResearchDesignElement,
     ResultRow,
     Section,
     TableArtifact,
@@ -46,6 +47,7 @@ from services.paperbase_api.models import (
     CollectionSummaryGlossaryTermResponse,
     CollectionSummaryLimitationResponse,
     CollectionSummaryNamedArtifactResponse,
+    CollectionSummaryResearchDesignElementResponse,
     CollectionSummaryResultRowResponse,
     CollectionSummaryTableResponse,
     CollectionsResponse,
@@ -557,6 +559,12 @@ def fetch_collection_structured_summary(
         .where(EngineeringTrick.paper_id.in_(member_paper_ids))
         .order_by(EngineeringTrick.title.asc(), EngineeringTrick.created_at.asc())
     ).scalars().all()
+    research_design_elements = session.execute(
+        select(ResearchDesignElement)
+        .where(ResearchDesignElement.paper_id.in_(member_paper_ids))
+        .order_by(ResearchDesignElement.element_type.asc(), ResearchDesignElement.created_at.asc())
+        .limit(24)
+    ).scalars().all()
     result_rows = session.execute(
         select(ResultRow, Paper, Dataset, Method, Metric)
         .join(Paper, Paper.id == ResultRow.paper_id)
@@ -621,6 +629,17 @@ def fetch_collection_structured_summary(
                     description=item.description,
                 )
                 for item in engineering_tricks
+            ],
+            research_design_elements=[
+                CollectionSummaryResearchDesignElementResponse(
+                    id=item.id,
+                    paper_id=item.paper_id,
+                    element_type=item.element_type,
+                    title=item.title,
+                    description=item.description,
+                    metadata=dict(item.metadata_json or {}),
+                )
+                for item in research_design_elements
             ],
             top_result_rows=[
                 CollectionSummaryResultRowResponse(

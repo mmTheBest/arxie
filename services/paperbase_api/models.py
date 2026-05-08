@@ -208,6 +208,14 @@ class EngineeringTrickArtifactResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ResearchDesignElementArtifactResponse(BaseModel):
+    id: str
+    element_type: str
+    title: str
+    description: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExtractionRunArtifactResponse(BaseModel):
     id: str
     model_name: str
@@ -239,6 +247,7 @@ class PaperStructuredDataResponseData(BaseModel):
     findings: list[FindingArtifactResponse]
     limitations: list[LimitationArtifactResponse]
     engineering_tricks: list[EngineeringTrickArtifactResponse]
+    research_design_elements: list[ResearchDesignElementArtifactResponse]
     extraction_runs: list[ExtractionRunArtifactResponse]
     evidence_spans: list[EvidenceSpanArtifactResponse]
 
@@ -458,6 +467,137 @@ class WorkspacesResponse(BaseModel):
     data: list[WorkspaceSummaryResponse]
 
 
+ResearchArtifactType = Literal["field_patterns", "hypotheses", "experiment_plan", "critique"]
+ResearchPaperLabelValue = Literal[
+    "exemplar",
+    "baseline",
+    "preliminary",
+    "similar_method",
+    "strong_design",
+    "weak_design",
+    "ignore",
+    "neutral",
+]
+
+
+class ResearchThreadCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str = Field(..., min_length=1, max_length=255)
+    collection_id: str = Field(..., min_length=1, max_length=36)
+    owner_id: str = Field(default="local-user", min_length=1, max_length=128)
+    workspace_id: str | None = Field(None, min_length=1, max_length=36)
+    selected_paper_ids: list[str] = Field(default_factory=list, max_length=200)
+
+
+class ResearchThreadResponse(BaseModel):
+    id: str
+    owner_id: str
+    title: str
+    collection_id: str
+    workspace_id: str | None = None
+    selected_paper_ids: list[str] = Field(default_factory=list)
+    status: str
+
+
+class ResearchMessageCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    message: str = Field(..., min_length=1, max_length=20000)
+    artifact_type: ResearchArtifactType | None = None
+
+
+class ResearchMessageResponse(BaseModel):
+    id: str
+    thread_id: str
+    role: str
+    content: str
+    artifact_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResearchArtifactPatchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str | None = Field(None, min_length=1, max_length=255)
+    status: str | None = Field(None, min_length=1, max_length=64)
+
+
+class ResearchArtifactResponse(BaseModel):
+    id: str
+    collection_id: str
+    thread_id: str | None = None
+    artifact_type: str
+    title: str
+    status: str
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    output_payload: dict[str, Any] = Field(default_factory=dict)
+    evidence_payload: dict[str, Any] = Field(default_factory=dict)
+    model_name: str | None = None
+    prompt_version: str | None = None
+    error_message: str | None = None
+
+
+class ResearchThreadDetailResponseData(ResearchThreadResponse):
+    messages: list[ResearchMessageResponse] = Field(default_factory=list)
+    artifacts: list[ResearchArtifactResponse] = Field(default_factory=list)
+
+
+class SingleResearchThreadResponse(BaseModel):
+    data: ResearchThreadResponse
+
+
+class ResearchThreadDetailResponse(BaseModel):
+    data: ResearchThreadDetailResponseData
+
+
+class ResearchThreadsResponse(BaseModel):
+    data: list[ResearchThreadResponse]
+
+
+class SingleResearchArtifactResponse(BaseModel):
+    data: ResearchArtifactResponse
+
+
+class ResearchArtifactsResponse(BaseModel):
+    data: list[ResearchArtifactResponse]
+
+
+class ResearchMessageJobResponseData(BaseModel):
+    message: ResearchMessageResponse
+    artifact: ResearchArtifactResponse
+    job: BackgroundJobResponse
+
+
+class ResearchMessageJobResponse(BaseModel):
+    data: ResearchMessageJobResponseData
+
+
+class PaperResearchLabelPatchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    user_label: ResearchPaperLabelValue
+    notes: str | None = Field(None, max_length=10000)
+
+
+class PaperResearchLabelResponse(BaseModel):
+    id: str
+    collection_id: str
+    paper_id: str
+    user_label: str
+    inferred_label: str | None = None
+    inferred_signals: dict[str, Any] = Field(default_factory=dict)
+    notes: str | None = None
+
+
+class SinglePaperResearchLabelResponse(BaseModel):
+    data: PaperResearchLabelResponse
+
+
+class PaperResearchLabelsResponse(BaseModel):
+    data: list[PaperResearchLabelResponse]
+
+
 class CollectionPaperCreateRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -507,6 +647,15 @@ class CollectionSummaryEngineeringTrickResponse(BaseModel):
     description: str
 
 
+class CollectionSummaryResearchDesignElementResponse(BaseModel):
+    id: str
+    paper_id: str
+    element_type: str
+    title: str
+    description: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class CollectionSummaryLimitationResponse(BaseModel):
     id: str
     statement: str
@@ -554,6 +703,7 @@ class CollectionStructuredSummaryResponseData(BaseModel):
     glossary_terms: list[CollectionSummaryGlossaryTermResponse]
     limitations: list[CollectionSummaryLimitationResponse]
     engineering_tricks: list[CollectionSummaryEngineeringTrickResponse]
+    research_design_elements: list[CollectionSummaryResearchDesignElementResponse]
     top_result_rows: list[CollectionSummaryResultRowResponse]
 
 

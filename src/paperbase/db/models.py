@@ -265,6 +265,17 @@ class EngineeringTrick(Base, TimestampMixin):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
 
+class ResearchDesignElement(Base, TimestampMixin):
+    __tablename__ = "research_design_elements"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
+    element_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
 class ExtractionProfile(Base, TimestampMixin):
     __tablename__ = "extraction_profiles"
 
@@ -345,6 +356,61 @@ class Workspace(Base, TimestampMixin):
     focus_note: Mapped[str | None] = mapped_column(Text)
     active_filters_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     pinned_paper_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+
+class ResearchThread(Base, TimestampMixin):
+    __tablename__ = "research_threads"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False, default="local-user")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"))
+    selected_paper_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="active")
+
+
+class ResearchArtifact(Base, TimestampMixin):
+    __tablename__ = "research_artifacts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
+    thread_id: Mapped[str | None] = mapped_column(ForeignKey("research_threads.id"), index=True)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="pending")
+    input_payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    output_payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    evidence_payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    model_name: Mapped[str | None] = mapped_column(String(255))
+    prompt_version: Mapped[str | None] = mapped_column(String(64))
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class ResearchMessage(Base, TimestampMixin):
+    __tablename__ = "research_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    thread_id: Mapped[str] = mapped_column(ForeignKey("research_threads.id"), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    artifact_id: Mapped[str | None] = mapped_column(ForeignKey("research_artifacts.id"))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class PaperResearchLabel(Base, TimestampMixin):
+    __tablename__ = "paper_research_labels"
+    __table_args__ = (
+        UniqueConstraint("collection_id", "paper_id", name="uq_paper_research_labels_collection_paper"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
+    user_label: Mapped[str] = mapped_column(String(64), nullable=False, default="neutral")
+    inferred_label: Mapped[str | None] = mapped_column(String(64))
+    inferred_signals_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
 
 
 class Annotation(Base, TimestampMixin):

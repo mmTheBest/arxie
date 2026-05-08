@@ -11,6 +11,9 @@ _SYSTEM_PROMPT = """You are extracting structured research facts from a single a
 Return only facts grounded in the provided paper text.
 Attach evidence spans for every extracted item.
 Prefer exact benchmark names, metric names, and terminology used in the paper.
+Capture research-design evidence such as research questions, hypotheses, baselines,
+controls, ablations, evaluation protocols, validity threats, reproducibility signals,
+reasoning patterns, and claimed contributions when the text supports them.
 If the paper does not support an item, leave that list empty.
 """
 

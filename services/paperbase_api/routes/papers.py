@@ -18,6 +18,7 @@ from paperbase.db.models import (
     Method,
     Metric,
     Paper,
+    ResearchDesignElement,
     ResultRow,
     Section,
     TableArtifact,
@@ -38,6 +39,7 @@ from services.paperbase_api.models import (
     GlossaryTermArtifactResponse,
     LimitationArtifactResponse,
     PaperDetailResponse,
+    ResearchDesignElementArtifactResponse,
     PaperStructuredDataResponse,
     PaperStructuredDataResponseData,
     ResultRowArtifactResponse,
@@ -245,6 +247,11 @@ def fetch_paper_structured_data(
         .where(EngineeringTrick.paper_id == normalized_paper_id)
         .order_by(EngineeringTrick.title.asc(), EngineeringTrick.created_at.asc())
     ).scalars().all()
+    research_design_elements = session.execute(
+        select(ResearchDesignElement)
+        .where(ResearchDesignElement.paper_id == normalized_paper_id)
+        .order_by(ResearchDesignElement.element_type.asc(), ResearchDesignElement.created_at.asc())
+    ).scalars().all()
     extraction_runs = session.execute(
         select(ExtractionRun)
         .where(ExtractionRun.paper_id == normalized_paper_id)
@@ -372,6 +379,16 @@ def fetch_paper_structured_data(
                     metadata=dict(trick.metadata_json or {}),
                 )
                 for trick in engineering_tricks
+            ],
+            research_design_elements=[
+                ResearchDesignElementArtifactResponse(
+                    id=item.id,
+                    element_type=item.element_type,
+                    title=item.title,
+                    description=item.description,
+                    metadata=dict(item.metadata_json or {}),
+                )
+                for item in research_design_elements
             ],
             extraction_runs=[
                 ExtractionRunArtifactResponse(

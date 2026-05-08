@@ -42,21 +42,25 @@ The finished local-first flow is now:
 2. persist canonical paper, provenance, venue, author, and tag records
 3. parse stored PDFs into sections, chunks, figures, and tables
 4. extract structured entities such as datasets, methods, metrics, result rows,
-   findings, limitations, glossary terms, and engineering tricks
+   findings, limitations, glossary terms, engineering tricks, and research-design
+   elements
 5. enqueue background jobs for ingest, parse, extraction, provider refresh, and reindex
    into the Redis-backed worker queue while keeping the DB as the audit/status surface
 6. search the corpus by paper, chunk, or artifact, with backend-first hybrid
    retrieval when a search backend is configured
 7. save a workspace and reuse it across browse, compare, answer, chat, lit
    review, and proposal evidence workflows
+8. run collection-grounded research-agent jobs that persist threads, messages,
+   artifacts, evidence payloads, and paper research labels
 
 This is now a real product path, not just a planned decomposition.
 
 For the single-user local path, the intended front door is `/app`. The shipped
 UI is now module-based rather than one operator console:
 
-- `Library` for import, collection selection, readiness, and the guided next preparation step
+- `Library` for import, collection selection, readiness, and paper-level preparation controls
 - `Workspace` for collection-scoped search, reading, evidence inspection, and saving research context
+- `Research` for collection-grounded experiment plans, hypotheses, field patterns, critiques, and evidence review
 - `Compare` for structured evidence comparison across an extraction-ready collection
 - `Jobs` for monitoring and diagnosing ingest, parse, extraction, and reindex activity
 - `Settings` for local runtime, search backend, object-store, worker, and selected context state
@@ -65,9 +69,11 @@ Collection readiness is exposed through the collection API and structured
 summary responses so the browser does not infer preparation state from partial
 UI state. The readiness inputs include paper count, parsed paper count,
 extracted paper count, latest parse/extraction job status, and failed job count.
-That means a user can import a local PDF directory, follow **Run Next Step**
-from imported to text-ready to evidence-ready, search within it, compare
-extracted evidence, and save the investigation without dropping to scripts.
+That means a user can import a local PDF directory, process all papers or a
+selected subset, move from imported to text-ready to evidence-ready, search
+within it, ask the Research agent to design studies against the collected
+evidence, compare extracted evidence, and save the investigation without
+dropping to scripts.
 
 ## Self-Hosted Runtime
 

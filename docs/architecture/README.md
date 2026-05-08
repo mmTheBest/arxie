@@ -50,8 +50,9 @@ web surface:
 That UI is still intentionally thin, but it is now organized around product
 modules instead of one mixed dashboard:
 
-- `Library` owns import, collection selection, readiness labels, and **Run Next Step**
+- `Library` owns import, collection selection, readiness labels, and paper-level parse/extract controls
 - `Workspace` owns search, paper reading, evidence inspection, and saved investigations
+- `Research` owns collection-grounded research-agent threads, artifacts, paper labels, and evidence payloads
 - `Compare` owns structured evidence analysis after extraction is ready
 - `Jobs` owns monitoring, failure diagnosis, and advanced reindex operations
 - `Settings` owns local runtime and selected context state
@@ -63,9 +64,10 @@ workspace before a larger frontend stack is introduced.
 For the supported single-user local workflow, `/app` is now enough to:
 
 - upload a local PDF folder into a new collection
-- follow the collection's guided next step from imported to text-ready to evidence-ready
+- process all unprocessed papers or a selected subset from imported to text-ready to evidence-ready
 - monitor background job completion in `Jobs`
 - browse the resulting papers and evidence in `Workspace`
+- generate evidence-grounded experiment plans, hypotheses, field patterns, and critiques in `Research`
 - inspect structured comparison slices in `Compare`
 - save the investigation as a reusable workspace state
 
@@ -75,7 +77,10 @@ hoc scripts.
 
 The current release surface also exposes:
 
-- first-class `limitations` alongside findings, result rows, figures, and tables
+- first-class `limitations` and research-design elements alongside findings,
+  result rows, figures, and tables
+- durable Research threads, messages, artifacts, paper labels, and
+  `research_agent_run` worker jobs
 - provider-backed ingest by DOI, arXiv ID, and OpenAlex identifier
 - an `arxie-local` launcher command for single-user local boot/open/stop flows,
   with mounted local source, a lighter default stack, optional `--rebuild`, and

@@ -651,6 +651,55 @@ textarea:focus {
   align-items: start;
 }
 
+.research-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(18rem, 0.8fr) minmax(21rem, 0.8fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.research-chat-panel,
+.research-artifact-panel,
+.research-evidence-panel {
+  min-height: 34rem;
+}
+
+.research-thread-list,
+.research-chat-log,
+.research-job-log {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.research-chat-log {
+  max-height: 20rem;
+  overflow-y: auto;
+  margin: 0.9rem 0;
+  padding-right: 0.25rem;
+}
+
+.research-message {
+  border: 1px solid var(--paperbase-line);
+  border-radius: 8px;
+  background: var(--paperbase-panel-soft);
+  padding: 0.8rem;
+}
+
+.research-message[data-role="user"] {
+  border-color: rgba(37, 99, 235, 0.25);
+  background: #f3f7ff;
+}
+
+.research-evidence-drawer {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.research-message-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
 .workspace-panel {
   min-height: 34rem;
 }
@@ -802,6 +851,7 @@ textarea:focus {
   }
 
   .workspace-grid,
+  .research-layout,
   .compare-grid,
   .library-grid,
   .settings-grid,

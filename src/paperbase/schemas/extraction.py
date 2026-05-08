@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -114,4 +114,28 @@ class GlossaryTermExtraction(BaseModel):
 class EngineeringTrickExtraction(BaseModel):
     title: str
     description: str
+    evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)
+
+
+ResearchDesignElementType = Literal[
+    "research_question",
+    "hypothesis",
+    "task_definition",
+    "baseline_method",
+    "control",
+    "ablation",
+    "evaluation_protocol",
+    "experimental_variable",
+    "validity_threat",
+    "reproducibility_signal",
+    "reasoning_pattern",
+    "claimed_contribution",
+]
+
+
+class ResearchDesignElementExtraction(BaseModel):
+    element_type: ResearchDesignElementType
+    title: str
+    description: str
+    metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
     evidence_spans: list[EvidenceSpanPayload] = Field(default_factory=list)

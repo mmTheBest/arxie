@@ -2,6 +2,8 @@
   const endpoints = {
     workspaces: "/api/v1/workspaces",
     collections: "/api/v1/collections",
+    researchThreads: "/api/v1/research/threads",
+    researchArtifacts: "/api/v1/research/artifacts",
     jobs: "/api/v1/jobs",
     localLibraryUpload: "/api/v1/ingest/local-library-upload",
     localLibraryIngest: "/api/v1/ingest/local-library",
@@ -36,6 +38,14 @@
     system: {
       readiness: null,
       searchStatus: null,
+    },
+    research: {
+      threads: [],
+      selectedThread: null,
+      messages: [],
+      artifacts: [],
+      selectedArtifact: null,
+      labels: [],
     },
     compare: {
       collectionId: null,
@@ -92,6 +102,16 @@
     saveWorkspaceButton: document.getElementById("save-workspace-button"),
     collectionSummary: document.getElementById("collection-summary"),
     paperDetail: document.getElementById("paper-detail"),
+    researchCollectionContext: document.getElementById("research-collection-context"),
+    researchReadinessBanner: document.getElementById("research-readiness-banner"),
+    researchThreadList: document.getElementById("research-thread-list"),
+    researchChatLog: document.getElementById("research-chat-log"),
+    researchMessageForm: document.getElementById("research-message-form"),
+    researchMessageInput: document.getElementById("research-message-input"),
+    researchSendButton: document.getElementById("research-send-button"),
+    researchArtifactList: document.getElementById("research-artifact-list"),
+    researchEvidenceDrawer: document.getElementById("research-evidence-drawer"),
+    researchJobLog: document.getElementById("research-job-log"),
     compareCollectionContext: document.getElementById("compare-collection-context"),
     compareReadinessBanner: document.getElementById("compare-readiness-banner"),
     compareDatasetInput: document.getElementById("compare-dataset-input"),
@@ -858,6 +878,12 @@
           ${summary.limitations.slice(0, 4).map((item) => `<li>${escapeHtml(item.statement)}</li>`).join("") || "<li>No extracted limitations yet.</li>"}
         </ul>
       </div>
+      <div class="detail-group">
+        <strong>Research design</strong>
+        <ul class="detail-list">
+          ${(summary.research_design_elements || []).slice(0, 5).map((item) => `<li>${escapeHtml(item.element_type)}: ${escapeHtml(item.title)}</li>`).join("") || "<li>No extracted research-design evidence yet.</li>"}
+        </ul>
+      </div>
     `;
   }
 
@@ -877,6 +903,20 @@
       <div class="detail-group">
         <div class="list-title">${escapeHtml(state.selectedPaper.title)}</div>
         <div class="muted">${escapeHtml((state.selectedPaper.authors || []).join(", ") || "Unknown authors")}</div>
+      </div>
+      <div class="button-row button-row-left">
+        <button type="button" class="action-button action-button-primary" data-paper-research-action="use">
+          Use in Research
+        </button>
+        <button type="button" class="action-button" data-paper-research-label="exemplar">
+          Mark as exemplar
+        </button>
+        <button type="button" class="action-button" data-paper-research-label="baseline">
+          Mark as baseline
+        </button>
+        <button type="button" class="action-button" data-paper-research-action="open-evidence">
+          Open evidence in Research
+        </button>
       </div>
       <div class="detail-group">
         <strong>Structured surface</strong>
@@ -907,6 +947,12 @@
         </ul>
       </div>
       <div class="detail-group">
+        <strong>Research design</strong>
+        <ul class="detail-list">
+          ${(structured.research_design_elements || []).slice(0, 4).map((item) => `<li>${escapeHtml(item.element_type)}: ${escapeHtml(item.title)}</li>`).join("") || "<li>No research-design elements extracted.</li>"}
+        </ul>
+      </div>
+      <div class="detail-group">
         <strong>Figures and tables</strong>
         <ul class="detail-list">
           ${structured.figures.slice(0, 2).map((item) => `<li>${escapeHtml(item.figure_label || "Figure")} — ${escapeHtml(item.caption || "No caption")}</li>`).join("")}
@@ -920,6 +966,33 @@
         </ul>
       </div>
     `;
+
+    elements.paperDetail.querySelectorAll("[data-paper-research-label]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const label = button.getAttribute("data-paper-research-label");
+        if (!label || !state.selectedPaper) {
+          return;
+        }
+        try {
+          await markPaperResearchLabel(state.selectedPaper.id, label);
+        } catch (error) {
+          setStatus(error.message);
+        }
+      });
+    });
+    elements.paperDetail.querySelectorAll("[data-paper-research-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!state.selectedPaper) {
+          return;
+        }
+        try {
+          await usePaperInResearch(state.selectedPaper.id);
+          activateView("research");
+        } catch (error) {
+          setStatus(error.message);
+        }
+      });
+    });
   }
 
   function renderSearchSurfaces() {
@@ -950,6 +1023,178 @@
         </ul>
       `
       : '<div class="muted">Run a search to inspect figure and table hits.</div>';
+  }
+
+  function researchJobsForSelectedCollection() {
+    if (!state.selectedCollection) {
+      return [];
+    }
+    return state.jobs.filter(
+      (job) => job.job_type === "research_agent_run"
+        && collectionIdFromJob(job) === state.selectedCollection.id,
+    );
+  }
+
+  function renderResearchWorkspace() {
+    if (!elements.researchReadinessBanner) {
+      return;
+    }
+    if (!state.selectedCollection) {
+      elements.researchCollectionContext.innerHTML = '<span class="pill">Select a collection first</span>';
+      elements.researchReadinessBanner.innerHTML = `
+        <div class="readiness-banner-content" data-status="imported">
+          <span class="status-marker" data-status="imported"></span>
+          <span>Select a collection before starting a research thread.</span>
+        </div>
+      `;
+      elements.researchThreadList.innerHTML = '<div class="list-card muted">No active collection.</div>';
+      elements.researchChatLog.innerHTML = '<div class="muted">No research thread selected.</div>';
+      elements.researchArtifactList.innerHTML = '<div class="list-card muted">No artifacts yet.</div>';
+      elements.researchEvidenceDrawer.innerHTML = '<div class="muted">No evidence selected.</div>';
+      elements.researchJobLog.innerHTML = '<div class="muted">No research jobs.</div>';
+      return;
+    }
+
+    const readiness = selectedCollectionReadiness();
+    elements.researchCollectionContext.innerHTML = `
+      <span class="pill">${escapeHtml(state.selectedCollection.title)}</span>
+      <span class="pill">${escapeHtml(readiness.label)}</span>
+      ${state.selectedPaperIds.size > 0 ? `<span class="pill">${escapeHtml(state.selectedPaperIds.size)} selected</span>` : ""}
+    `;
+
+    let readinessMessage = "Evidence ready for collection-grounded research.";
+    if (!readiness.isReadyForWorkspace) {
+      readinessMessage = "This collection needs parsing before the research agent can use full-text evidence.";
+    } else if (!readiness.isReadyForCompare) {
+      readinessMessage = "Structured extraction is missing. The research agent can reason from text, but comparison evidence is incomplete.";
+    }
+    elements.researchReadinessBanner.innerHTML = `
+      <div class="readiness-banner-content" data-status="${escapeHtml(readiness.status)}">
+        <span class="status-marker" data-status="${escapeHtml(readiness.status)}"></span>
+        <span>${escapeHtml(readinessMessage)}</span>
+      </div>
+    `;
+
+    elements.researchThreadList.innerHTML = state.research.threads.length > 0
+      ? state.research.threads.map((thread) => `
+        <div class="list-card list-card-compact" data-active="${state.research.selectedThread && state.research.selectedThread.id === thread.id ? "true" : "false"}">
+          <button type="button" data-research-thread-id="${thread.id}">
+            <div class="list-title">${escapeHtml(thread.title)}</div>
+            <div class="muted">${escapeHtml((thread.selected_paper_ids || []).length)} selected paper(s) · ${escapeHtml(thread.status)}</div>
+          </button>
+        </div>
+      `).join("")
+      : '<div class="list-card muted">No research threads yet.</div>';
+
+    elements.researchThreadList.querySelectorAll("[data-research-thread-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const threadId = button.getAttribute("data-research-thread-id");
+        if (!threadId) {
+          return;
+        }
+        try {
+          setStatus("Loading research thread…");
+          await openResearchThread(threadId);
+          setStatus("Research thread loaded.");
+        } catch (error) {
+          setStatus(error.message);
+        }
+      });
+    });
+
+    elements.researchChatLog.innerHTML = state.research.messages.length > 0
+      ? state.research.messages.map((message) => `
+        <div class="research-message" data-role="${escapeHtml(message.role)}">
+          <div class="job-status">${escapeHtml(message.role)}</div>
+          <div>${escapeHtml(message.content)}</div>
+        </div>
+      `).join("")
+      : '<div class="muted">Ask for an experiment plan, hypotheses, critique, or field patterns.</div>';
+
+    elements.researchArtifactList.innerHTML = state.research.artifacts.length > 0
+      ? state.research.artifacts.map((artifact) => `
+        <div class="list-card" data-active="${state.research.selectedArtifact && state.research.selectedArtifact.id === artifact.id ? "true" : "false"}">
+          <button type="button" data-research-artifact-id="${artifact.id}">
+            <div class="job-status" data-status="${escapeHtml(artifact.status)}">${escapeHtml(artifact.status)}</div>
+            <div class="list-title">${escapeHtml(artifact.title)}</div>
+            <div class="muted">${escapeHtml(artifact.artifact_type)}</div>
+            ${renderResearchArtifactPreview(artifact)}
+          </button>
+        </div>
+      `).join("")
+      : '<div class="list-card muted">No research artifacts yet.</div>';
+
+    elements.researchArtifactList.querySelectorAll("[data-research-artifact-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const artifactId = button.getAttribute("data-research-artifact-id");
+        state.research.selectedArtifact = state.research.artifacts.find((item) => item.id === artifactId) || null;
+        renderResearchWorkspace();
+      });
+    });
+
+    renderResearchEvidenceDrawer();
+    renderResearchJobLog();
+  }
+
+  function renderResearchArtifactPreview(artifact) {
+    const output = artifact.output_payload || {};
+    if (artifact.status !== "completed") {
+      return '<div class="muted">Waiting for research_agent_run.</div>';
+    }
+    if (artifact.artifact_type === "experiment_plan") {
+      return `
+        <div class="muted">${escapeHtml((output.baselines || []).slice(0, 2).join(" · ") || "Experiment plan")}</div>
+      `;
+    }
+    if (artifact.artifact_type === "hypotheses") {
+      const first = (output.hypotheses || [])[0] || {};
+      return `<div class="muted">${escapeHtml(first.claim || "Hypotheses generated")}</div>`;
+    }
+    if (artifact.artifact_type === "critique") {
+      return `<div class="muted">${escapeHtml((output.risks || []).slice(0, 2).join(" · ") || "Critique generated")}</div>`;
+    }
+    return `<div class="muted">${escapeHtml((output.patterns || []).slice(0, 2).join(" · ") || "Patterns generated")}</div>`;
+  }
+
+  function renderResearchEvidenceDrawer() {
+    const artifact = state.research.selectedArtifact;
+    if (!artifact) {
+      elements.researchEvidenceDrawer.innerHTML = '<div class="muted">Select an artifact to inspect its grounding.</div>';
+      return;
+    }
+    const evidence = artifact.evidence_payload || {};
+    const papers = evidence.papers || [];
+    elements.researchEvidenceDrawer.innerHTML = `
+      <div class="detail-group">
+        <strong>${escapeHtml(artifact.title)}</strong>
+        <div class="muted">${escapeHtml(artifact.artifact_type)} · ${escapeHtml(artifact.status)}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Evidence papers</strong>
+        <ul class="detail-list">
+          ${papers.map((paper) => `
+            <li>
+              <strong>${escapeHtml(paper.title)}</strong>
+              <div class="muted">${escapeHtml((paper.methods || []).slice(0, 3).join(" · ") || "No extracted methods")}</div>
+            </li>
+          `).join("") || "<li>No evidence payload yet.</li>"}
+        </ul>
+      </div>
+    `;
+  }
+
+  function renderResearchJobLog() {
+    const jobs = researchJobsForSelectedCollection();
+    elements.researchJobLog.innerHTML = jobs.length > 0
+      ? jobs.slice(0, 5).map((job) => `
+        <div class="library-log-entry" data-status="${escapeHtml(isStaleJob(job) ? "needs_attention" : job.status)}">
+          <span class="job-status" data-status="${escapeHtml(job.status)}">${escapeHtml(isStaleJob(job) ? "Stale" : job.status)}</span>
+          <div class="list-title">${escapeHtml(job.payload && job.payload.artifact_type ? job.payload.artifact_type : "research_agent_run")}</div>
+          <div class="job-meta">${escapeHtml(job.created_at || "queued")}</div>
+          ${job.error_message ? `<div class="job-error">${escapeHtml(job.error_message)}</div>` : ""}
+        </div>
+      `).join("")
+      : '<div class="muted">No research jobs for this collection.</div>';
   }
 
   function renderCompareHeader() {
@@ -1038,6 +1283,10 @@
 
     elements.compareMethodsSurface.innerHTML = state.compare.methods.length > 0
       ? `
+        <div class="detail-group">
+          <strong>Research design matrix</strong>
+          <div class="muted">Baselines · datasets · metrics · ablations · limitations · validity threats · reproducibility signals</div>
+        </div>
         <ul class="detail-list">
           ${state.compare.methods.slice(0, 8).map((item) => `
             <li>
@@ -1048,7 +1297,12 @@
           `).join("")}
         </ul>
       `
-      : '<div class="muted">No method summaries yet for the current collection.</div>';
+      : `
+        <div class="detail-group">
+          <strong>Research design matrix</strong>
+          <div class="muted">No method summaries yet for the current collection.</div>
+        </div>
+      `;
 
     elements.compareTricksSurface.innerHTML = state.compare.engineeringTricks.length > 0
       ? `
@@ -1232,6 +1486,7 @@
     renderCollectionSummary();
     renderPaperDetail();
     renderSearchSurfaces();
+    renderResearchWorkspace();
     renderCompareSurfaces();
     renderJobs();
     renderSettings();
@@ -1252,6 +1507,7 @@
     elements.extractButton.disabled = !collectionSelected || extractionJobActive || selectedPaperIdsForAction("extract").length === 0;
     elements.workspaceOpenCompareButton.disabled = !collectionSelected;
     elements.saveWorkspaceButton.disabled = !collectionSelected;
+    elements.researchSendButton.disabled = !collectionSelected || !readiness.isReadyForWorkspace;
     elements.compareRefreshButton.disabled = !collectionSelected || !readiness.isReadyForCompare;
   }
 
@@ -1297,6 +1553,14 @@
       state.collectionSummary = null;
       state.chunkSearchHits = [];
       state.artifactSearchHits = [];
+      state.research = {
+        threads: [],
+        selectedThread: null,
+        messages: [],
+        artifacts: [],
+        selectedArtifact: null,
+        labels: [],
+      };
       state.compare = {
         collectionId: null,
         dataset: "",
@@ -1340,6 +1604,7 @@
     state.artifactSearchHits = [];
     state.selectedPaper = null;
     state.selectedPaperStructured = null;
+    await loadResearchContext({ render: false });
     const retainWorkspace = Boolean(options && options.retainWorkspace);
     if (
       !retainWorkspace
@@ -1439,6 +1704,146 @@
     state.selectedPaper = paperPayload.data;
     state.selectedPaperStructured = structuredPayload.data;
     renderAll();
+  }
+
+  async function loadResearchContext(options) {
+    if (!state.selectedCollection) {
+      state.research = {
+        threads: [],
+        selectedThread: null,
+        messages: [],
+        artifacts: [],
+        selectedArtifact: null,
+        labels: [],
+      };
+      if (!options || options.render !== false) {
+        renderResearchWorkspace();
+      }
+      return;
+    }
+
+    const params = new URLSearchParams({ collection_id: state.selectedCollection.id });
+    const [threadsPayload, artifactsPayload, labelsPayload] = await Promise.all([
+      fetchJson(`${endpoints.researchThreads}?${params.toString()}`),
+      fetchJson(`${endpoints.researchArtifacts}?${params.toString()}`),
+      fetchJson(`${endpoints.collections}/${state.selectedCollection.id}/research-labels`),
+    ]);
+    state.research.threads = threadsPayload.data || [];
+    state.research.artifacts = artifactsPayload.data || [];
+    state.research.labels = labelsPayload.data || [];
+    if (
+      state.research.selectedArtifact
+      && !state.research.artifacts.some((artifact) => artifact.id === state.research.selectedArtifact.id)
+    ) {
+      state.research.selectedArtifact = null;
+    }
+    if (!state.research.selectedArtifact && state.research.artifacts.length > 0) {
+      state.research.selectedArtifact = state.research.artifacts[0];
+    }
+
+    const selectedThreadStillExists = state.research.selectedThread
+      && state.research.threads.some((thread) => thread.id === state.research.selectedThread.id);
+    const threadToOpen = selectedThreadStillExists
+      ? state.research.selectedThread.id
+      : (state.research.threads[0] && state.research.threads[0].id);
+    if (threadToOpen) {
+      await openResearchThread(threadToOpen, { render: false });
+    } else {
+      state.research.selectedThread = null;
+      state.research.messages = [];
+    }
+    if (!options || options.render !== false) {
+      renderResearchWorkspace();
+    }
+  }
+
+  async function openResearchThread(threadId, options) {
+    const payload = await fetchJson(`${endpoints.researchThreads}/${threadId}`);
+    state.research.selectedThread = payload.data;
+    state.research.messages = payload.data.messages || [];
+    state.research.artifacts = payload.data.artifacts && payload.data.artifacts.length > 0
+      ? payload.data.artifacts
+      : state.research.artifacts;
+    if (!state.research.selectedArtifact && state.research.artifacts.length > 0) {
+      state.research.selectedArtifact = state.research.artifacts[0];
+    }
+    if (!options || options.render !== false) {
+      renderAll();
+    }
+  }
+
+  async function ensureResearchThread() {
+    if (!state.selectedCollection) {
+      throw new Error("Select a collection before starting research.");
+    }
+    if (state.research.selectedThread) {
+      return state.research.selectedThread;
+    }
+    const selectedPaperIds = Array.from(state.selectedPaperIds);
+    const response = await fetchJson(endpoints.researchThreads, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `${state.selectedCollection.title} research`,
+        collection_id: state.selectedCollection.id,
+        selected_paper_ids: selectedPaperIds,
+      }),
+    });
+    state.research.threads.unshift(response.data);
+    state.research.selectedThread = response.data;
+    state.research.messages = [];
+    return response.data;
+  }
+
+  async function postResearchMessage() {
+    const message = elements.researchMessageInput.value.trim();
+    if (!message) {
+      throw new Error("Enter a research request.");
+    }
+    const thread = await ensureResearchThread();
+    const response = await fetchJson(`${endpoints.researchThreads}/${thread.id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+      }),
+    });
+    elements.researchMessageInput.value = "";
+    state.jobs.unshift(response.data.job);
+    state.research.messages.push(response.data.message);
+    state.research.artifacts.unshift(response.data.artifact);
+    state.research.selectedArtifact = response.data.artifact;
+    renderAll();
+    updatePolling();
+    setStatus("Queued research_agent_run.");
+  }
+
+  async function markPaperResearchLabel(paperId, label) {
+    if (!state.selectedCollection) {
+      throw new Error("Select a collection before labeling papers.");
+    }
+    const payload = await fetchJson(
+      `${endpoints.collections}/${state.selectedCollection.id}/papers/${paperId}/research-label`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_label: label }),
+      },
+    );
+    const withoutExisting = state.research.labels.filter((item) => item.paper_id !== paperId);
+    state.research.labels = [payload.data, ...withoutExisting];
+    renderResearchWorkspace();
+    setStatus(`Marked paper as ${label}.`);
+  }
+
+  async function usePaperInResearch(paperId) {
+    state.selectedPaperIds = new Set([paperId]);
+    await loadResearchContext({ render: false });
+    state.research.selectedThread = null;
+    state.research.messages = [];
+    await ensureResearchThread();
+    renderAll();
+    setStatus("Paper added to the Research context.");
   }
 
   async function loadJobs() {
@@ -1560,6 +1965,7 @@
         results: true,
         engineering_tricks: true,
         limitations: true,
+        research_design_elements: true,
       };
     }
 
@@ -1798,6 +2204,15 @@
           setStatus(error.message);
         }
       }
+      if (nextView === "research" && state.selectedCollection) {
+        try {
+          setStatus("Loading research workspace…");
+          await loadResearchContext();
+          setStatus("Research workspace ready.");
+        } catch (error) {
+          setStatus(error.message);
+        }
+      }
       activateView(nextView);
       renderSettings();
     });
@@ -1828,6 +2243,15 @@
   elements.saveWorkspaceButton.addEventListener("click", async () => {
     try {
       await saveWorkspace();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.researchMessageForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await postResearchMessage();
     } catch (error) {
       setStatus(error.message);
     }

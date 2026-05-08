@@ -14,6 +14,7 @@ from paperbase.schemas.extraction import (
     LimitationExtraction,
     MethodExtraction,
     MetricExtraction,
+    ResearchDesignElementExtraction,
     ResultExtraction,
 )
 
@@ -27,6 +28,7 @@ class StructuredExtractionBundle(BaseModel):
     limitations: list[LimitationExtraction] = Field(default_factory=list)
     glossary_terms: list[GlossaryTermExtraction] = Field(default_factory=list)
     engineering_tricks: list[EngineeringTrickExtraction] = Field(default_factory=list)
+    research_design_elements: list[ResearchDesignElementExtraction] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -44,6 +46,7 @@ class StructuredExtractionBundle(BaseModel):
             "limitations",
             "glossary_terms",
             "engineering_tricks",
+            "research_design_elements",
         ):
             cleaned[field_name] = cls._filter_entity_list(cleaned.get(field_name))
         return cleaned
@@ -60,4 +63,4 @@ class StructuredExtractionBundle(BaseModel):
         return cleaned_items
 
 
-__all__ = ["GlossaryTermExtraction", "StructuredExtractionBundle"]
+__all__ = ["GlossaryTermExtraction", "ResearchDesignElementExtraction", "StructuredExtractionBundle"]

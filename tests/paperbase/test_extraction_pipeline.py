@@ -15,6 +15,7 @@ from paperbase.db.models import (
     Limitation,
     Method,
     Metric,
+    ResearchDesignElement,
     ResultRow,
 )
 from paperbase.db.repositories import PaperFileRepository, PaperRepository
@@ -59,6 +60,7 @@ def test_extraction_pipeline_persists_structured_entities_and_evidence(tmp_path:
         LimitationExtraction,
         MethodExtraction,
         MetricExtraction,
+        ResearchDesignElementExtraction,
         ResultExtraction,
     )
 
@@ -117,6 +119,21 @@ def test_extraction_pipeline_persists_structured_entities_and_evidence(tmp_path:
                         evidence_spans=[evidence],
                     )
                 ],
+                research_design_elements=[
+                    ResearchDesignElementExtraction(
+                        element_type="baseline_method",
+                        title="Baseline model comparison",
+                        description="Compare against baseline models on the same benchmark.",
+                        metadata={"reasoning_pattern": "controlled comparison"},
+                        evidence_spans=[evidence],
+                    ),
+                    ResearchDesignElementExtraction(
+                        element_type="ablation",
+                        title="Context-window ablation",
+                        description="Remove long-range context to isolate its contribution.",
+                        evidence_spans=[evidence],
+                    ),
+                ],
             )
 
     pdf_path = tmp_path / "sample.pdf"
@@ -165,6 +182,12 @@ def test_extraction_pipeline_persists_structured_entities_and_evidence(tmp_path:
         assert session.execute(select(Limitation)).scalar_one().statement.startswith("The benchmark only covers")
         assert session.execute(select(GlossaryTerm)).scalar_one().term == "AUROC"
         assert session.execute(select(EngineeringTrick)).scalar_one().title == "Context pretraining"
+        design_elements = session.execute(
+            select(ResearchDesignElement).order_by(ResearchDesignElement.element_type.asc())
+        ).scalars().all()
         evidence_spans = session.execute(select(EvidenceSpan)).scalars().all()
 
+    design_by_type = {item.element_type: item for item in design_elements}
+    assert set(design_by_type) == {"ablation", "baseline_method"}
+    assert design_by_type["baseline_method"].metadata_json.get("reasoning_pattern") == "controlled comparison"
     assert len(evidence_spans) >= 5
