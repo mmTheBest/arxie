@@ -358,6 +358,20 @@ class Workspace(Base, TimestampMixin):
     pinned_paper_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
 
+class StudySource(Base, TimestampMixin):
+    __tablename__ = "study_sources"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    path: Mapped[str | None] = mapped_column(Text)
+    content: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    read_status: Mapped[str] = mapped_column(String(64), nullable=False, default="ready")
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
 class ResearchThread(Base, TimestampMixin):
     __tablename__ = "research_threads"
 

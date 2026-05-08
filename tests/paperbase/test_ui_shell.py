@@ -30,19 +30,32 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert shell_response.status_code == 200
     assert "text/html" in shell_response.headers["content-type"]
     html = shell_response.text
-    assert "Arxie Workspace" in html
+    assert "Arxie Study" in html
     assert 'id="app-shell"' in html
+    assert 'data-active-view="study"' in html
     assert 'id="app-nav"' in html
+    assert 'data-view="study"' in html
+    assert 'data-view="library"' in html
+    assert 'data-view="workspace"' not in html
+    assert 'data-view="research"' not in html
+    assert 'data-view="compare"' not in html
+    assert 'data-view="jobs"' not in html
+    assert 'data-view="settings"' not in html
     assert 'id="sidebar-collections-list"' in html
     assert 'id="sidebar-papers-list"' in html
-    assert 'id="sidebar-workspaces-list"' in html
-    assert 'class="sidebar-section sidebar-workspaces-section"' in html
+    assert 'id="sidebar-workspaces-list"' not in html
+    assert 'class="sidebar-section sidebar-workspaces-section"' not in html
+    assert 'id="study-view"' in html
     assert 'id="library-view"' in html
-    assert 'id="workspace-view"' in html
-    assert 'id="research-view"' in html
-    assert 'id="compare-view"' in html
-    assert 'id="jobs-view"' in html
-    assert 'id="settings-view"' in html
+    assert 'id="workspace-view"' not in html
+    assert 'id="research-view"' not in html
+    assert 'id="compare-view"' not in html
+    assert 'id="jobs-view"' not in html
+    assert 'id="settings-view"' not in html
+    assert 'id="study-source-form"' in html
+    assert 'id="study-source-list"' in html
+    assert 'id="study-source-type-input"' in html
+    assert 'id="study-source-value-input"' in html
     assert 'id="workspace-readiness-banner"' in html
     assert 'id="workspace-detail-panel"' in html
     assert 'id="save-workspace-button"' in html
@@ -55,6 +68,9 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert 'id="research-evidence-drawer"' in html
     assert 'id="research-job-log"' in html
     assert 'id="compare-readiness-banner"' in html
+    assert 'id="activity-panel"' in html
+    assert 'id="jobs-list"' in html
+    assert 'id="settings-summary"' in html
     assert 'id="parse-button"' in html
     assert 'id="parse-selected-papers-button"' in html
     assert 'id="select-all-papers-button"' in html
@@ -80,17 +96,13 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "Clear selection" in html
     assert "Extract unextracted" in html
     assert "Extract selected" in html
-    assert 'data-view="library"' in html
-    assert 'data-view="workspace"' in html
-    assert 'data-view="research"' in html
-    assert 'data-view="compare"' in html
-    assert 'data-view="jobs"' in html
-    assert 'data-view="settings"' in html
     assert "/ui/paperbase-ui.css" in html
     assert "/ui/paperbase-ui.js" in html
 
     assert script_response.status_code == 200
     assert "/api/v1/workspaces" in script_response.text
+    assert "/api/v1/studies" in script_response.text
+    assert "/sources" in script_response.text
     assert "/api/v1/collections" in script_response.text
     assert "/api/v1/research/threads" in script_response.text
     assert "/api/v1/research/artifacts" in script_response.text
@@ -114,6 +126,9 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
     assert "/tables" in script_response.text
     assert "activeView" in script_response.text
     assert "getCollectionReadiness" in script_response.text
+    assert "renderStudyWorkspace" in script_response.text
+    assert "renderStudySources" in script_response.text
+    assert "deleteStudySource" in script_response.text
     assert "renderResearchWorkspace" in script_response.text
     assert "postResearchMessage" in script_response.text
     assert "markPaperResearchLabel" in script_response.text
@@ -135,8 +150,9 @@ def test_paperbase_ui_shell_and_assets_are_served(tmp_path) -> None:
 
     assert style_response.status_code == 200
     assert "--paperbase-bg" in style_response.text
-    assert ".research-layout" in style_response.text
-    assert '.app-shell[data-active-view="library"] .sidebar-workspaces-section' in style_response.text
+    assert ".study-layout" in style_response.text
+    assert ".study-source-list" in style_response.text
+    assert '.app-shell[data-active-view="library"] .sidebar-workspaces-section' not in style_response.text
 
 
 def test_library_uses_sidebar_paper_processing_instead_of_duplicate_collection_cards() -> None:
@@ -163,3 +179,21 @@ def test_library_uses_sidebar_paper_processing_instead_of_duplicate_collection_c
     assert "data-library-parse-id" not in script
     assert "data-library-extract-id" not in script
     assert "getCollectionReadiness" in script
+
+
+def test_study_first_ui_removes_backend_module_pages() -> None:
+    html = Path("services/paperbase_api/static/index.html").read_text()
+
+    assert "Study" in html
+    assert "Library" in html
+    assert "Research agent" in html
+    assert "Compare structured evidence" in html
+    assert "Explicit work sources" in html
+    assert "Activity" in html
+    assert "Local runtime" in html
+    assert 'data-view="study"' in html
+    assert 'data-view="workspace"' not in html
+    assert 'data-view="research"' not in html
+    assert 'data-view="compare"' not in html
+    assert 'data-view="jobs"' not in html
+    assert 'data-view="settings"' not in html

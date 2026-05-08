@@ -144,3 +144,55 @@ def test_research_message_infers_artifact_type_from_freeform_request(tmp_path: P
 
     assert response.status_code == 202
     assert response.json()["data"]["artifact"]["artifact_type"] == "hypotheses"
+
+
+def test_research_message_accepts_study_source_context_and_benchmark_artifact_type(tmp_path: Path) -> None:
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="scRegNet",
+            description="Benchmark papers.",
+        )
+        collection_id = collection.id
+
+    client = TestClient(create_app(session_factory=session_factory))
+    study = client.post(
+        "/api/v1/studies",
+        json={"title": "GRN study", "collection_id": collection_id},
+    ).json()["data"]
+    source = client.post(
+        f"/api/v1/studies/{study['id']}/sources",
+        json={
+            "source_type": "text",
+            "title": "Current results",
+            "content": "The current model has no distribution-shift benchmark yet.",
+        },
+    ).json()["data"]
+    thread = client.post(
+        "/api/v1/research/threads",
+        json={
+            "title": "GRN benchmark design",
+            "collection_id": collection_id,
+            "workspace_id": study["id"],
+        },
+    ).json()["data"]
+
+    response = client.post(
+        f"/api/v1/research/threads/{thread['id']}/messages",
+        json={
+            "message": "Suggest benchmarks based on my current results.",
+            "artifact_type": "benchmark_plan",
+            "source_ids": [source["id"]],
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()["data"]
+    assert payload["artifact"]["artifact_type"] == "benchmark_plan"
+    assert payload["artifact"]["input_payload"]["source_ids"] == [source["id"]]
+    assert payload["job"]["payload"]["workspace_id"] == study["id"]
+    assert payload["job"]["payload"]["source_ids"] == [source["id"]]

@@ -25,6 +25,7 @@ from paperbase.db.models import (
     ResearchArtifact,
     ResearchMessage,
     ResearchThread,
+    StudySource,
     Tag,
     Venue,
     Workspace,
@@ -563,6 +564,52 @@ class WorkspaceRepository:
         self.session.commit()
         self.session.refresh(workspace)
         return workspace
+
+    def create_source(
+        self,
+        *,
+        workspace_id: str,
+        source_type: str,
+        title: str,
+        path: str | None = None,
+        content: str | None = None,
+        summary: str | None = None,
+        read_status: str = "ready",
+        error_message: str | None = None,
+    ) -> StudySource:
+        source = StudySource(
+            workspace_id=workspace_id,
+            source_type=source_type,
+            title=title,
+            path=path,
+            content=content,
+            summary=summary,
+            read_status=read_status,
+            error_message=error_message,
+        )
+        self.session.add(source)
+        self.session.commit()
+        self.session.refresh(source)
+        return source
+
+    def get_source(self, source_id: str) -> StudySource | None:
+        return self.session.get(StudySource, source_id)
+
+    def list_sources(self, *, workspace_id: str) -> Sequence[StudySource]:
+        statement: Select[tuple[StudySource]] = (
+            select(StudySource)
+            .where(StudySource.workspace_id == workspace_id)
+            .order_by(StudySource.created_at.asc(), StudySource.id.asc())
+        )
+        return self.session.execute(statement).scalars().all()
+
+    def delete_source(self, source_id: str) -> bool:
+        source = self.get_source(source_id)
+        if source is None:
+            return False
+        self.session.delete(source)
+        self.session.commit()
+        return True
 
 
 class ResearchRepository:

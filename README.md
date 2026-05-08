@@ -7,9 +7,9 @@ Arxie is a self-hostable research system for serious literature work. It combine
 - a canonical paper database named Paperbase
 - structured extraction over full papers
 - hybrid search and comparison surfaces
-- a workspace-aware research assistant that runs on top of that database
+- a study-aware research assistant that reasons over paper evidence plus user-provided work context
 
-This repository now ships the `v0.2.0` product surface described in the April 14 PRD: persistent corpora, saved workspaces, structured evidence, comparison workflows, provider-backed ingest, and a browser workspace at `/app`.
+This repository now ships the `v0.2.0` product surface described in the April 14 PRD: persistent corpora, saved studies, structured evidence, comparison workflows, provider-backed ingest, and a browser study workspace at `/app`.
 
 ## What You Can Do
 
@@ -21,9 +21,12 @@ This repository now ships the `v0.2.0` product surface described in the April 14
 - search papers, chunks, and artifacts with Elasticsearch-backed hybrid retrieval
   in the self-hosted stack, plus explicit local fallbacks for development
 - compare results, methods, tricks, figures, and tables across a corpus slice
-- save workspaces with a collection, query, focus note, filters, and pinned papers
+- save studies with a collection, query, focus note, filters, pinned papers, and explicit work sources
 - generate collection-grounded research artifacts: experiment plans, hypotheses,
-  field patterns, and critiques with evidence payloads
+  benchmark plans, revision plans, assumption maps, field patterns, and critiques
+  with evidence payloads
+- add explicit code, draft, result, or text-note sources so Arxie can reason from
+  what you have already built or written without auto-scanning your filesystem
 - see each collection's readiness for search and structured comparison before choosing the next action
 - run Arxie answer, chat, literature review, and proposal evidence flows against that saved context
 
@@ -99,7 +102,7 @@ docker compose -f infra/docker-compose.paperbase.yml up -d paperbase-api paperba
 ### 4. Open Arxie
 
 - Homepage: `http://localhost:8080/`
-- Workspace app: `http://localhost:8080/app`
+- Study app: `http://localhost:8080/app`
 - Liveness: `http://localhost:8080/livez`
 - Readiness: `http://localhost:8080/readyz`
 
@@ -146,23 +149,25 @@ the workspace can use the backend search surface when Elasticsearch is healthy.
 
 ### 5. Use Your Own Local Paper Collection
 
-The browser workspace is now enough for the single-user local workflow:
+The browser study app is now enough for the single-user local workflow:
 
 1. open `http://localhost:8080/app`
 2. start in **Library** and use **Upload PDF Folder**
 3. select a local folder containing PDFs and optionally set a collection title
-4. switch to **Jobs** and wait for the ingest job to finish
-5. return to **Library** and use the paper list to parse all unprocessed papers
+4. stay in **Library** and watch the processing log until the ingest job finishes
+5. use the Library paper list to parse all unprocessed papers
    or only selected papers
 6. extract all unextracted papers, or select specific text-ready papers and extract
    just those
-7. use **Workspace** to search the collection, inspect evidence, and label papers
-   as exemplars or baselines
-8. use **Research** to generate experiment plans, hypotheses, field patterns, or
-   critiques grounded in the active collection
-9. use **Compare** once extraction is ready to inspect results, methods, tricks,
-   research-design evidence, figures, and tables
-10. save the investigation as a reusable workspace context
+7. switch to **Study** to search the collection, inspect evidence, and label
+   papers as exemplars or baselines
+8. save the study, then add explicit sources such as a draft path, code file path,
+   results file path, or text note
+9. ask Arxie for experiment ideas, benchmark design, revision priorities,
+   assumption checks, hypotheses, field patterns, or critiques grounded in the
+   paper collection plus those explicit sources
+10. use the Study compare panel once extraction is ready to inspect results,
+    methods, tricks, research-design evidence, figures, and tables
 
 If you are running the API and worker directly on the host instead of in Docker,
 the Library module also exposes an advanced absolute-path import form.

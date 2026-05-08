@@ -22,7 +22,9 @@ from paperbase.db.models import (
     ResearchThread,
     ResultRow,
     Section,
+    StudySource,
     TableArtifact,
+    Workspace,
 )
 from paperbase.db.repositories import CollectionRepository, PaperRepository
 from paperbase.db.session import make_session_factory
@@ -462,6 +464,99 @@ def test_worker_executes_research_agent_run_job(tmp_path: Path) -> None:
     assert stored_artifact.evidence_payload_json["papers"][0]["title"] == "Benchmark Paper"
     assert stored_artifact.evidence_payload_json["papers"][0]["research_design_elements"][0]["element_type"] == "ablation"
     assert len(assistant_messages) == 1
+
+
+def test_worker_includes_explicit_study_sources_in_research_agent_run(tmp_path: Path) -> None:
+    background_job_model, worker_cls = _load_worker_class()
+
+    database_path = tmp_path / "paperbase.sqlite3"
+    initialize_database(f"sqlite:///{database_path}")
+    session_factory = make_session_factory(f"sqlite:///{database_path}")
+
+    with session_factory() as session:
+        paper = PaperRepository(session).upsert(
+            provider="local_filesystem",
+            external_id="/tmp/benchmark.pdf",
+            canonical_title="Benchmark Paper",
+        )
+        collection = CollectionRepository(session).create(
+            owner_id="local-user",
+            title="SamplePapers",
+            description="Local field-specific corpus.",
+        )
+        CollectionRepository(session).add_paper(collection_id=collection.id, paper_id=paper.id)
+        workspace = Workspace(
+            owner_id="local-user",
+            title="Graph prior study",
+            collection_id=collection.id,
+            focus_note="Improve benchmark coverage.",
+        )
+        session.add(workspace)
+        session.flush()
+        source = StudySource(
+            workspace_id=workspace.id,
+            source_type="draft_path",
+            title="Current draft",
+            path="/tmp/draft.md",
+            summary="The current draft lacks distribution-shift benchmarks and baseline controls.",
+            read_status="ready",
+        )
+        thread = ResearchThread(
+            owner_id="local-user",
+            title="Benchmark planning",
+            collection_id=collection.id,
+            workspace_id=workspace.id,
+            selected_paper_ids_json=[paper.id],
+        )
+        session.add_all([source, thread])
+        session.flush()
+        message = ResearchMessage(
+            thread_id=thread.id,
+            role="user",
+            content="Plan stronger benchmarks using my draft context.",
+        )
+        artifact = ResearchArtifact(
+            thread_id=thread.id,
+            collection_id=collection.id,
+            artifact_type="benchmark_plan",
+            title="Benchmark plan",
+            status="pending",
+            input_payload_json={"message": message.content, "source_ids": [source.id]},
+        )
+        session.add_all([message, artifact])
+        session.flush()
+        job = background_job_model(
+            job_type="research_agent_run",
+            payload_json={
+                "thread_id": thread.id,
+                "workspace_id": workspace.id,
+                "message_id": message.id,
+                "artifact_id": artifact.id,
+                "collection_id": collection.id,
+                "user_message": message.content,
+                "artifact_type": "benchmark_plan",
+                "selected_paper_ids": [paper.id],
+                "source_ids": [source.id],
+            },
+        )
+        session.add(job)
+        session.commit()
+        job_id = job.id
+        artifact_id = artifact.id
+
+    worker = worker_cls(session_factory=session_factory)
+    processed_job_id = worker.process_next_job()
+
+    assert processed_job_id == job_id
+    with session_factory() as session:
+        stored_artifact = session.get(ResearchArtifact, artifact_id)
+
+    assert stored_artifact is not None
+    assert stored_artifact.status == "completed"
+    assert stored_artifact.output_payload_json["artifact_type"] == "benchmark_plan"
+    assert stored_artifact.output_payload_json["source_context"][0]["title"] == "Current draft"
+    assert "distribution-shift benchmarks" in stored_artifact.evidence_payload_json["sources"][0]["summary"]
+    assert "benchmark_recommendations" in stored_artifact.output_payload_json
 
 
 def test_worker_collection_extract_honors_selected_paper_ids(tmp_path: Path) -> None:

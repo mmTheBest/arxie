@@ -32,6 +32,7 @@ def test_paperbase_metadata_contains_core_tables() -> None:
         "collections",
         "collection_papers",
         "workspaces",
+        "study_sources",
         "research_threads",
         "research_messages",
         "research_artifacts",
@@ -45,6 +46,7 @@ def test_paperbase_metadata_contains_core_tables() -> None:
 def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     collections = Base.metadata.tables["collections"]
     workspaces = Base.metadata.tables["workspaces"]
+    study_sources = Base.metadata.tables["study_sources"]
     research_threads = Base.metadata.tables["research_threads"]
     research_messages = Base.metadata.tables["research_messages"]
     research_artifacts = Base.metadata.tables["research_artifacts"]
@@ -68,6 +70,10 @@ def test_schema_tracks_expandable_ownership_and_provenance_fields() -> None:
     assert "focus_note" in workspaces.c
     assert "active_filters_json" in workspaces.c
     assert "pinned_paper_ids_json" in workspaces.c
+    assert "workspace_id" in study_sources.c
+    assert "source_type" in study_sources.c
+    assert "summary" in study_sources.c
+    assert "read_status" in study_sources.c
     assert "collection_id" in research_threads.c
     assert "selected_paper_ids_json" in research_threads.c
     assert "thread_id" in research_messages.c

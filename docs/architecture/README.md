@@ -45,33 +45,34 @@ The first product UI is served from `services/paperbase_api/` as a build-free
 web surface:
 
 - `/` is the public Arxie homepage
-- `/app` is the saved-workspace UI over the local Paperbase APIs
+- `/app` is the study-first UI over the local Paperbase APIs
 
-That UI is still intentionally thin, but it is now organized around product
-modules instead of one mixed dashboard:
+That UI is still intentionally thin, but it is now organized around the two
+surfaces a local researcher needs most:
 
-- `Library` owns import, collection selection, readiness labels, and paper-level parse/extract controls
-- `Workspace` owns search, paper reading, evidence inspection, and saved investigations
-- `Research` owns collection-grounded research-agent threads, artifacts, paper labels, and evidence payloads
-- `Compare` owns structured evidence analysis after extraction is ready
-- `Jobs` owns monitoring, failure diagnosis, and advanced reindex operations
-- `Settings` owns local runtime and selected context state
+- `Study` owns search, paper reading, explicit user work sources, research-agent
+  threads, artifacts, paper labels, evidence payloads, structured comparison,
+  activity, and local runtime context
+- `Library` owns import, collection selection, readiness labels, paper-level
+  parse/extract controls, and processing logs
 
-It still sits directly on the workspaces, collections, papers, chunk/artifact
-search, compare, and jobs APIs so the product can ship a real research
-workspace before a larger frontend stack is introduced.
+It still sits directly on the studies/workspaces, collections, papers,
+chunk/artifact search, compare, jobs, and study-source APIs so the product can
+ship a real research workspace before a larger frontend stack is introduced.
 
 For the supported single-user local workflow, `/app` is now enough to:
 
 - upload a local PDF folder into a new collection
 - process all unprocessed papers or a selected subset from imported to text-ready to evidence-ready
-- monitor background job completion in `Jobs`
-- browse the resulting papers and evidence in `Workspace`
-- generate evidence-grounded experiment plans, hypotheses, field patterns, and critiques in `Research`
-- inspect structured comparison slices in `Compare`
-- save the investigation as a reusable workspace state
+- monitor background job completion in Library or the Study activity panel
+- browse the resulting papers and evidence in Study
+- add explicit text, code, draft, or result sources to the saved Study
+- generate evidence-grounded experiment plans, benchmark plans, revision plans,
+  assumption maps, hypotheses, field patterns, and critiques in Study
+- inspect structured comparison slices in the Study compare panel
+- save the investigation as a reusable study state
 
-The workspace app also includes figure and table browse/comparison surfaces, so
+The study app also includes figure and table browse/comparison surfaces, so
 collaborators can inspect visual evidence without dropping into raw PDFs or ad
 hoc scripts.
 
@@ -79,8 +80,8 @@ The current release surface also exposes:
 
 - first-class `limitations` and research-design elements alongside findings,
   result rows, figures, and tables
-- durable Research threads, messages, artifacts, paper labels, and
-  `research_agent_run` worker jobs
+- durable Research threads, messages, artifacts, paper labels, explicit study
+  sources, and `research_agent_run` worker jobs
 - provider-backed ingest by DOI, arXiv ID, and OpenAlex identifier
 - an `arxie-local` launcher command for single-user local boot/open/stop flows,
   with mounted local source, a lighter default stack, optional `--rebuild`, and

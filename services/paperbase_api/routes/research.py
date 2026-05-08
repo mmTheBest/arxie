@@ -18,7 +18,7 @@ from paperbase.db.models import (
     ResultRow,
     Section,
 )
-from paperbase.db.repositories import CollectionRepository, PaperRepository, ResearchRepository
+from paperbase.db.repositories import CollectionRepository, PaperRepository, ResearchRepository, WorkspaceRepository
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.background_jobs import create_background_job
 from services.paperbase_api.dependencies import get_session
@@ -211,6 +211,10 @@ def _artifact_title(artifact_type: str) -> str:
         "hypotheses": "Hypotheses",
         "experiment_plan": "Experiment plan",
         "critique": "Critique",
+        "experiment_backlog": "Experiment backlog",
+        "benchmark_plan": "Benchmark plan",
+        "revision_plan": "Revision plan",
+        "assumption_map": "Assumption map",
     }
     return titles.get(artifact_type, "Research artifact")
 
@@ -221,9 +225,46 @@ def _infer_artifact_type(message: str) -> str:
         return "hypotheses"
     if "critique" in normalized or "weakness" in normalized or "review" in normalized:
         return "critique"
+    if "benchmark" in normalized or "baseline" in normalized:
+        return "benchmark_plan"
+    if "revision" in normalized or "improve" in normalized:
+        return "revision_plan"
+    if "assumption" in normalized:
+        return "assumption_map"
+    if "backlog" in normalized or "next" in normalized:
+        return "experiment_backlog"
     if "pattern" in normalized or "learn from" in normalized:
         return "field_patterns"
     return "experiment_plan"
+
+
+def _sanitize_source_ids(
+    session: Session,
+    *,
+    workspace_id: str | None,
+    source_ids: list[str],
+) -> list[str]:
+    if not source_ids:
+        return []
+    if workspace_id is None:
+        raise PaperbaseAPIError(
+            status_code=422,
+            error="workspace_required_for_sources",
+            message="Study sources require a research thread linked to a study.",
+        )
+    repository = WorkspaceRepository(session)
+    safe_source_ids: list[str] = []
+    for source_id in source_ids:
+        safe_source_id = sanitize_identifier(source_id, field_name="source_id", max_length=36)
+        source = repository.get_source(safe_source_id)
+        if source is None or source.workspace_id != workspace_id:
+            raise PaperbaseAPIError(
+                status_code=404,
+                error="study_source_not_found",
+                message=f"No study source found for id: {safe_source_id}",
+            )
+        safe_source_ids.append(safe_source_id)
+    return safe_source_ids
 
 
 def _find_matching_active_research_job(
@@ -234,6 +275,7 @@ def _find_matching_active_research_job(
     message: str,
     artifact_type: str,
     selected_paper_ids: list[str],
+    source_ids: list[str],
 ) -> BackgroundJob | None:
     jobs = session.execute(
         select(BackgroundJob)
@@ -251,6 +293,7 @@ def _find_matching_active_research_job(
             and payload.get("user_message") == message
             and payload.get("artifact_type") == artifact_type
             and list(payload.get("selected_paper_ids") or []) == selected_paper_ids
+            and list(payload.get("source_ids") or []) == source_ids
         ):
             return job
     return None
@@ -352,6 +395,11 @@ def create_research_message(
     message_text = sanitize_user_text(payload.message, field_name="message", max_length=20000)
     artifact_type = payload.artifact_type or _infer_artifact_type(message_text)
     selected_paper_ids = list(thread.selected_paper_ids_json or [])
+    source_ids = _sanitize_source_ids(
+        session,
+        workspace_id=thread.workspace_id,
+        source_ids=list(payload.source_ids),
+    )
     active_job = _find_matching_active_research_job(
         session,
         thread_id=thread.id,
@@ -359,6 +407,7 @@ def create_research_message(
         message=message_text,
         artifact_type=artifact_type,
         selected_paper_ids=selected_paper_ids,
+        source_ids=source_ids,
     )
     if active_job is not None:
         active_payload = dict(active_job.payload_json or {})
@@ -387,7 +436,11 @@ def create_research_message(
         artifact_type=artifact_type,
         title=_artifact_title(artifact_type),
         status="pending",
-        input_payload={"message": message_text, "selected_paper_ids": selected_paper_ids},
+        input_payload={
+            "message": message_text,
+            "selected_paper_ids": selected_paper_ids,
+            "source_ids": source_ids,
+        },
         prompt_version=PROMPT_VERSION,
     )
     job = create_background_job(
@@ -401,6 +454,8 @@ def create_research_message(
             "user_message": message_text,
             "artifact_type": artifact_type,
             "selected_paper_ids": selected_paper_ids,
+            "workspace_id": thread.workspace_id,
+            "source_ids": source_ids,
         },
         dispatcher=request.app.state.job_dispatcher,
     )

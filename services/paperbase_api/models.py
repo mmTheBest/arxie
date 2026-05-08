@@ -467,7 +467,48 @@ class WorkspacesResponse(BaseModel):
     data: list[WorkspaceSummaryResponse]
 
 
-ResearchArtifactType = Literal["field_patterns", "hypotheses", "experiment_plan", "critique"]
+StudySourceType = Literal["text", "code_path", "draft_path", "results_path"]
+
+
+class StudySourceCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    source_type: StudySourceType
+    title: str = Field(..., min_length=1, max_length=255)
+    path: str | None = Field(None, min_length=1, max_length=2000)
+    content: str | None = Field(None, min_length=1, max_length=20000)
+
+
+class StudySourceResponse(BaseModel):
+    id: str
+    workspace_id: str
+    source_type: str
+    title: str
+    path: str | None = None
+    content: str | None = None
+    summary: str | None = None
+    read_status: str
+    error_message: str | None = None
+
+
+class SingleStudySourceResponse(BaseModel):
+    data: StudySourceResponse
+
+
+class StudySourcesResponse(BaseModel):
+    data: list[StudySourceResponse]
+
+
+ResearchArtifactType = Literal[
+    "field_patterns",
+    "hypotheses",
+    "experiment_plan",
+    "critique",
+    "experiment_backlog",
+    "benchmark_plan",
+    "revision_plan",
+    "assumption_map",
+]
 ResearchPaperLabelValue = Literal[
     "exemplar",
     "baseline",
@@ -505,6 +546,7 @@ class ResearchMessageCreateRequest(BaseModel):
 
     message: str = Field(..., min_length=1, max_length=20000)
     artifact_type: ResearchArtifactType | None = None
+    source_ids: list[str] = Field(default_factory=list, max_length=50)
 
 
 class ResearchMessageResponse(BaseModel):

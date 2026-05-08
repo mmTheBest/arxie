@@ -36,7 +36,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -224,10 +225,6 @@ h4 {
   align-content: start;
 }
 
-.app-shell[data-active-view="library"] .sidebar-workspaces-section {
-  display: none;
-}
-
 .sidebar-section {
   border-radius: 8px;
   padding: 1rem;
@@ -341,7 +338,8 @@ h4 {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border-radius: 6px;
   border: 1px solid var(--paperbase-line);
@@ -360,7 +358,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   outline: 2px solid rgba(37, 99, 235, 0.25);
   outline-offset: 1px;
 }
@@ -651,6 +650,37 @@ textarea:focus {
   align-items: start;
 }
 
+.study-layout {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.78fr) minmax(0, 1.1fr) minmax(20rem, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.study-panel {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 1rem;
+}
+
+.study-source-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.study-source-card {
+  border: 1px solid var(--paperbase-line);
+  border-radius: 8px;
+  background: var(--paperbase-panel-soft);
+  padding: 0.75rem;
+}
+
+.study-source-card[data-status="error"] {
+  border-color: rgba(180, 35, 24, 0.25);
+  background: #fff5f4;
+}
+
 .research-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(18rem, 0.8fr) minmax(21rem, 0.8fr);
@@ -851,6 +881,7 @@ textarea:focus {
   }
 
   .workspace-grid,
+  .study-layout,
   .research-layout,
   .compare-grid,
   .library-grid,

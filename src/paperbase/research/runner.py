@@ -21,6 +21,7 @@ from paperbase.db.models import (
     ResearchMessage,
     ResultRow,
     Section,
+    StudySource,
 )
 from paperbase.db.repositories import ResearchRepository
 
@@ -57,7 +58,9 @@ class PaperbaseResearchAgentRunner:
             requested=payload.get("artifact_type"),
             message=user_message,
         )
+        workspace_id = str(payload["workspace_id"]) if payload.get("workspace_id") else None
         selected_paper_ids = [str(item) for item in list(payload.get("selected_paper_ids") or [])]
+        source_ids = [str(item) for item in list(payload.get("source_ids") or [])]
 
         with self.session_factory() as session:
             artifact = session.get(ResearchArtifact, artifact_id)
@@ -68,6 +71,8 @@ class PaperbaseResearchAgentRunner:
                 session,
                 collection_id=collection_id,
                 selected_paper_ids=selected_paper_ids,
+                workspace_id=workspace_id,
+                source_ids=source_ids,
             )
             output_payload = self._build_output_payload(
                 artifact_type=artifact_type,
@@ -119,6 +124,8 @@ class PaperbaseResearchAgentRunner:
         *,
         collection_id: str,
         selected_paper_ids: list[str],
+        workspace_id: str | None,
+        source_ids: list[str],
     ) -> dict[str, Any]:
         paper_ids = selected_paper_ids or list(
             session.execute(
@@ -215,7 +222,50 @@ class PaperbaseResearchAgentRunner:
         return {
             "collection_id": collection_id,
             "papers": paper_summaries,
+            "sources": self._study_sources_for_run(
+                session,
+                workspace_id=workspace_id,
+                source_ids=source_ids,
+            ),
         }
+
+    def _study_sources_for_run(
+        self,
+        session: Session,
+        *,
+        workspace_id: str | None,
+        source_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        if workspace_id is None or not source_ids:
+            return []
+        sources = {
+            source.id: source
+            for source in session.execute(
+                select(StudySource)
+                .where(
+                    StudySource.workspace_id == workspace_id,
+                    StudySource.id.in_(source_ids),
+                )
+                .order_by(StudySource.created_at.asc(), StudySource.id.asc())
+            ).scalars()
+        }
+        source_summaries: list[dict[str, Any]] = []
+        for source_id in source_ids:
+            source = sources.get(source_id)
+            if source is None:
+                continue
+            source_summaries.append(
+                {
+                    "source_id": source.id,
+                    "source_type": source.source_type,
+                    "title": source.title,
+                    "path": source.path,
+                    "summary": source.summary or self._summarize_text(source.content or ""),
+                    "read_status": source.read_status,
+                    "error_message": source.error_message,
+                }
+            )
+        return source_summaries
 
     def _result_rows_for_paper(self, session: Session, *, paper_id: str) -> list[dict[str, Any]]:
         rows = session.execute(
@@ -247,6 +297,11 @@ class PaperbaseResearchAgentRunner:
         evidence_payload: dict[str, Any],
     ) -> dict[str, Any]:
         papers = list(evidence_payload.get("papers") or [])
+        sources = [
+            source
+            for source in list(evidence_payload.get("sources") or [])
+            if isinstance(source, dict)
+        ]
         methods = self._unique(item for paper in papers for item in paper.get("methods", []))
         datasets = self._unique(item for paper in papers for item in paper.get("datasets", []))
         limitations = self._unique(item for paper in papers for item in paper.get("limitations", []))
@@ -273,11 +328,80 @@ class PaperbaseResearchAgentRunner:
             "request": user_message,
             "paper_count": len(papers),
             "evidence_basis": [paper["title"] for paper in papers],
+            "source_context": [
+                {
+                    "title": str(source.get("title") or "Study source"),
+                    "source_type": str(source.get("source_type") or "text"),
+                    "summary": str(source.get("summary") or ""),
+                }
+                for source in sources
+            ],
             "general_methodology": [
                 "Separate claims, experimental variables, and evaluation criteria before writing new experiments.",
                 "Use paper-level evidence as constraints, then identify where a new study can challenge one assumption.",
             ],
         }
+        if artifact_type == "benchmark_plan":
+            return {
+                **common,
+                "title": "Benchmark plan",
+                "benchmark_recommendations": [
+                    "Reuse the strongest recurring dataset and metric from the collection as the primary benchmark.",
+                    "Add at least one stress test that targets a weakness visible in the current study context.",
+                    "Report matched baselines under identical splits before adding new model variants.",
+                ],
+                "datasets": datasets[:8],
+                "metrics_or_result_logic": result_notes[:5]
+                or ["Tie each benchmark to a measurable claim and a prior-paper comparison point."],
+                "source_gaps": [
+                    source["summary"]
+                    for source in common["source_context"]
+                    if source.get("summary")
+                ][:5],
+            }
+        if artifact_type == "revision_plan":
+            return {
+                **common,
+                "title": "Revision plan",
+                "revision_priorities": [
+                    "State the main claim as a falsifiable comparison against prior work.",
+                    "Add controls or ablations for each extracted limitation that applies to the user's study.",
+                    "Align evaluation tables with datasets, metrics, and baselines that recur across the collection.",
+                ],
+                "paper_backed_risks": limitations[:6],
+                "source_context_risks": [
+                    source["summary"]
+                    for source in common["source_context"]
+                    if source.get("summary")
+                ][:5],
+            }
+        if artifact_type == "assumption_map":
+            return {
+                **common,
+                "title": "Assumption map",
+                "assumptions_to_challenge": [
+                    "The main method advantage remains after controlling for preprocessing and splits.",
+                    "The graph prior improves generalization rather than only fitting the benchmark distribution.",
+                    "Reported gains are robust to ablations that remove one design choice at a time.",
+                ],
+                "validation_tests": [
+                    "Map each assumption to a measurable comparison.",
+                    "Require one paper-grounded baseline and one study-context check per assumption.",
+                ],
+            }
+        if artifact_type == "experiment_backlog":
+            return {
+                **common,
+                "title": "Experiment backlog",
+                "backlog_items": [
+                    "Reproduce the primary baseline on the collection's recurring benchmark.",
+                    "Run an ablation for the strongest claimed design component.",
+                    "Add a failure-case analysis tied to extracted limitations.",
+                    "Compare against the best reported method using the same metric family.",
+                ],
+                "candidate_baselines": baselines,
+                "datasets": datasets[:8],
+            }
         if artifact_type == "hypotheses":
             return {
                 **common,
@@ -337,16 +461,40 @@ class PaperbaseResearchAgentRunner:
         }
 
     def _resolve_artifact_type(self, *, requested: object, message: str) -> str:
-        if requested in {"field_patterns", "hypotheses", "experiment_plan", "critique"}:
+        valid_types = {
+            "field_patterns",
+            "hypotheses",
+            "experiment_plan",
+            "critique",
+            "experiment_backlog",
+            "benchmark_plan",
+            "revision_plan",
+            "assumption_map",
+        }
+        if requested in valid_types:
             return str(requested)
         normalized = message.casefold()
         if "hypothes" in normalized or "gap" in normalized:
             return "hypotheses"
         if "critique" in normalized or "weakness" in normalized or "review" in normalized:
             return "critique"
+        if "benchmark" in normalized or "baseline" in normalized:
+            return "benchmark_plan"
+        if "revision" in normalized or "improve" in normalized:
+            return "revision_plan"
+        if "assumption" in normalized:
+            return "assumption_map"
+        if "backlog" in normalized or "next" in normalized:
+            return "experiment_backlog"
         if "pattern" in normalized or "learn from" in normalized:
             return "field_patterns"
         return "experiment_plan"
+
+    def _summarize_text(self, text: str) -> str:
+        cleaned = " ".join(text.strip().split())
+        if len(cleaned) <= 360:
+            return cleaned
+        return f"{cleaned[:360].rstrip()}..."
 
     def _assistant_summary(self, output_payload: dict[str, Any]) -> str:
         title = str(output_payload.get("title") or "Research artifact")

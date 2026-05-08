@@ -1,6 +1,7 @@
 (function () {
   const endpoints = {
     workspaces: "/api/v1/workspaces",
+    studies: "/api/v1/studies",
     collections: "/api/v1/collections",
     researchThreads: "/api/v1/research/threads",
     researchArtifacts: "/api/v1/research/artifacts",
@@ -21,9 +22,10 @@
   };
 
   const state = {
-    activeView: "workspace",
+    activeView: "study",
     workspaces: [],
     selectedWorkspace: null,
+    studySources: [],
     collections: [],
     selectedCollection: null,
     papers: [],
@@ -67,6 +69,12 @@
     sidebarCollectionsList: document.getElementById("sidebar-collections-list"),
     sidebarPapersList: document.getElementById("sidebar-papers-list"),
     sidebarWorkspacesList: document.getElementById("sidebar-workspaces-list"),
+    studySourceForm: document.getElementById("study-source-form"),
+    studySourceTypeInput: document.getElementById("study-source-type-input"),
+    studySourceTitleInput: document.getElementById("study-source-title-input"),
+    studySourceValueInput: document.getElementById("study-source-value-input"),
+    studySourceAddButton: document.getElementById("study-source-add-button"),
+    studySourceList: document.getElementById("study-source-list"),
     statusBanner: document.getElementById("status-banner"),
     librarySelectedCollectionMeta: document.getElementById("library-selected-collection-meta"),
     localLibraryUploadForm: document.getElementById("local-library-upload-form"),
@@ -531,7 +539,7 @@
         setStatus("Loading collection…");
         await loadCollectionSurface(collectionId);
         if (state.activeView !== "library") {
-          activateView("workspace");
+          activateView("study");
         }
         setStatus(`Loaded ${state.selectedCollection.title}.`);
       });
@@ -621,6 +629,9 @@
   }
 
   function renderWorkspacesSidebar() {
+    if (!elements.sidebarWorkspacesList) {
+      return;
+    }
     if (state.workspaces.length === 0) {
       elements.sidebarWorkspacesList.innerHTML = '<div class="list-card muted">No saved workspaces yet.</div>';
       return;
@@ -653,8 +664,55 @@
         }
         setStatus("Loading workspace…");
         await openWorkspace(workspaceId);
-        activateView("workspace");
+        activateView("study");
         setStatus(`Loaded ${state.selectedWorkspace.title}.`);
+      });
+    });
+  }
+
+  function renderStudySources() {
+    if (!elements.studySourceList) {
+      return;
+    }
+    if (!state.selectedWorkspace) {
+      elements.studySourceList.innerHTML = '<div class="muted">Save the study before adding code, draft, or result sources.</div>';
+      if (elements.studySourceAddButton) {
+        elements.studySourceAddButton.disabled = true;
+      }
+      return;
+    }
+    if (elements.studySourceAddButton) {
+      elements.studySourceAddButton.disabled = false;
+    }
+    if (state.studySources.length === 0) {
+      elements.studySourceList.innerHTML = '<div class="muted">No work sources added yet.</div>';
+      return;
+    }
+    elements.studySourceList.innerHTML = state.studySources.map((source) => `
+      <div class="study-source-card" data-status="${escapeHtml(source.read_status)}">
+        <div class="list-card-heading">
+          <span class="job-status" data-status="${escapeHtml(source.read_status === "ready" ? "completed" : "failed")}">${escapeHtml(source.source_type)}</span>
+          <div>
+            <div class="list-title">${escapeHtml(source.title)}</div>
+            <div class="muted">${escapeHtml(source.path || "text note")}</div>
+          </div>
+        </div>
+        <p class="summary-copy">${escapeHtml(source.summary || source.error_message || "No summary available.")}</p>
+        <button type="button" class="action-button" data-study-source-delete-id="${source.id}">Remove</button>
+      </div>
+    `).join("");
+
+    elements.studySourceList.querySelectorAll("[data-study-source-delete-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const sourceId = button.getAttribute("data-study-source-delete-id");
+        if (!sourceId) {
+          return;
+        }
+        try {
+          await deleteStudySource(sourceId);
+        } catch (error) {
+          setStatus(error.message);
+        }
       });
     });
   }
@@ -702,7 +760,7 @@
   function renderWorkspaceHeader() {
     if (!state.selectedCollection) {
       elements.workspaceCollectionTitle.textContent = "Search one collection and inspect evidence";
-      elements.workspaceSearchMeta.textContent = "Choose a collection in Library to start a focused workspace.";
+      elements.workspaceSearchMeta.textContent = "Choose a collection in Library to start a focused study.";
       return;
     }
 
@@ -710,7 +768,7 @@
     const query = elements.searchInput.value.trim();
     elements.workspaceSearchMeta.textContent = query
       ? `Active query: ${query}`
-      : "Run a search inside the active collection, then open a paper or save the context.";
+      : "Run a search inside the active collection, then open a paper or save the study.";
   }
 
   function renderWorkspaceReadiness() {
@@ -721,7 +779,7 @@
       elements.workspaceReadinessBanner.innerHTML = `
         <div class="readiness-banner-content" data-status="imported">
           <span class="status-marker" data-status="imported"></span>
-          <span>Select a collection in Library to start a workspace.</span>
+          <span>Select a collection in Library to start a study.</span>
         </div>
       `;
       return;
@@ -793,12 +851,12 @@
   function renderWorkspaceDetail() {
     elements.workspaceTitleInput.value = state.selectedWorkspace
       ? state.selectedWorkspace.title || ""
-      : (state.selectedCollection ? `${state.selectedCollection.title} workspace` : "");
+      : (state.selectedCollection ? `${state.selectedCollection.title} study` : "");
     elements.workspaceFocusInput.value = state.selectedWorkspace ? (state.selectedWorkspace.focus_note || "") : "";
-    elements.saveWorkspaceButton.textContent = state.selectedWorkspace ? "Update Workspace" : "Save Workspace";
+    elements.saveWorkspaceButton.textContent = state.selectedWorkspace ? "Update Study" : "Save Study";
 
     if (!state.selectedCollection && !state.selectedWorkspace) {
-      elements.workspaceMeta.innerHTML = '<div class="muted">Choose a collection, run a search, then save the research context.</div>';
+      elements.workspaceMeta.innerHTML = '<div class="muted">Choose a collection, run a search, then save the study context.</div>';
       return;
     }
 
@@ -987,7 +1045,7 @@
         }
         try {
           await usePaperInResearch(state.selectedPaper.id);
-          activateView("research");
+          activateView("study");
         } catch (error) {
           setStatus(error.message);
         }
@@ -1153,6 +1211,18 @@
     if (artifact.artifact_type === "critique") {
       return `<div class="muted">${escapeHtml((output.risks || []).slice(0, 2).join(" · ") || "Critique generated")}</div>`;
     }
+    if (artifact.artifact_type === "benchmark_plan") {
+      return `<div class="muted">${escapeHtml((output.benchmark_recommendations || []).slice(0, 2).join(" · ") || "Benchmark plan generated")}</div>`;
+    }
+    if (artifact.artifact_type === "revision_plan") {
+      return `<div class="muted">${escapeHtml((output.revision_priorities || []).slice(0, 2).join(" · ") || "Revision plan generated")}</div>`;
+    }
+    if (artifact.artifact_type === "assumption_map") {
+      return `<div class="muted">${escapeHtml((output.assumptions_to_challenge || []).slice(0, 2).join(" · ") || "Assumption map generated")}</div>`;
+    }
+    if (artifact.artifact_type === "experiment_backlog") {
+      return `<div class="muted">${escapeHtml((output.backlog_items || []).slice(0, 2).join(" · ") || "Experiment backlog generated")}</div>`;
+    }
     return `<div class="muted">${escapeHtml((output.patterns || []).slice(0, 2).join(" · ") || "Patterns generated")}</div>`;
   }
 
@@ -1164,10 +1234,22 @@
     }
     const evidence = artifact.evidence_payload || {};
     const papers = evidence.papers || [];
+    const sources = evidence.sources || [];
     elements.researchEvidenceDrawer.innerHTML = `
       <div class="detail-group">
         <strong>${escapeHtml(artifact.title)}</strong>
         <div class="muted">${escapeHtml(artifact.artifact_type)} · ${escapeHtml(artifact.status)}</div>
+      </div>
+      <div class="detail-group">
+        <strong>Study sources</strong>
+        <ul class="detail-list">
+          ${sources.map((source) => `
+            <li>
+              <strong>${escapeHtml(source.title || "Study source")}</strong>
+              <div class="muted">${escapeHtml(source.summary || source.error_message || "No summary")}</div>
+            </li>
+          `).join("") || "<li>No explicit study sources were used.</li>"}
+        </ul>
       </div>
       <div class="detail-group">
         <strong>Evidence papers</strong>
@@ -1434,7 +1516,7 @@
         <div class="muted">${escapeHtml((state.selectedCollection && state.selectedCollection.title) || "None")} ${state.selectedCollection ? `· ${escapeHtml(readiness.label)}` : ""}</div>
       </div>
       <div class="detail-group">
-        <strong>Selected workspace</strong>
+        <strong>Selected study</strong>
         <div class="muted">${escapeHtml((state.selectedWorkspace && state.selectedWorkspace.title) || "None")}</div>
       </div>
       <div class="detail-group">
@@ -1474,15 +1556,12 @@
     `;
   }
 
-  function renderAll() {
-    renderCollectionsSidebar();
-    renderSidebarPapers();
-    renderWorkspacesSidebar();
-    renderLibraryLogs();
+  function renderStudyWorkspace() {
     renderWorkspaceHeader();
     renderWorkspaceReadiness();
     renderPapers();
     renderWorkspaceDetail();
+    renderStudySources();
     renderCollectionSummary();
     renderPaperDetail();
     renderSearchSurfaces();
@@ -1490,6 +1569,14 @@
     renderCompareSurfaces();
     renderJobs();
     renderSettings();
+  }
+
+  function renderAll() {
+    renderCollectionsSidebar();
+    renderSidebarPapers();
+    renderWorkspacesSidebar();
+    renderLibraryLogs();
+    renderStudyWorkspace();
     updateActionButtons();
   }
 
@@ -1613,13 +1700,14 @@
       && state.selectedWorkspace.collection_id !== collectionId
     ) {
       state.selectedWorkspace = null;
+      state.studySources = [];
     }
     seedCompareDraft();
     renderAll();
   }
 
   async function loadWorkspaces(options) {
-    const payload = await fetchJson(endpoints.workspaces);
+    const payload = await fetchJson(endpoints.studies);
     state.workspaces = payload.data || [];
 
     const preferredWorkspaceId = options && options.preferredWorkspaceId ? options.preferredWorkspaceId : null;
@@ -1636,17 +1724,19 @@
     }
     if (state.selectedWorkspace && !state.workspaces.some((item) => item.id === state.selectedWorkspace.id)) {
       state.selectedWorkspace = null;
+      state.studySources = [];
     }
     renderAll();
   }
 
   async function openWorkspace(workspaceId, options) {
-    const payload = await fetchJson(`${endpoints.workspaces}/${workspaceId}`);
+    const payload = await fetchJson(`${endpoints.studies}/${workspaceId}`);
     state.selectedWorkspace = payload.data;
 
     if (state.selectedWorkspace.collection_id) {
       await loadCollectionSurface(state.selectedWorkspace.collection_id, { retainWorkspace: true });
     }
+    await loadStudySources({ render: false });
 
     elements.searchInput.value = state.selectedWorkspace.saved_query || "";
     if (state.selectedWorkspace.saved_query) {
@@ -1663,7 +1753,22 @@
 
     renderAll();
     if (!options || options.activate !== false) {
-      activateView("workspace");
+      activateView("study");
+    }
+  }
+
+  async function loadStudySources(options) {
+    if (!state.selectedWorkspace) {
+      state.studySources = [];
+      if (!options || options.render !== false) {
+        renderStudySources();
+      }
+      return;
+    }
+    const payload = await fetchJson(`${endpoints.studies}/${state.selectedWorkspace.id}/sources`);
+    state.studySources = payload.data || [];
+    if (!options || options.render !== false) {
+      renderStudySources();
     }
   }
 
@@ -1776,7 +1881,10 @@
     if (!state.selectedCollection) {
       throw new Error("Select a collection before starting research.");
     }
-    if (state.research.selectedThread) {
+    if (
+      state.research.selectedThread
+      && (!state.selectedWorkspace || state.research.selectedThread.workspace_id === state.selectedWorkspace.id)
+    ) {
       return state.research.selectedThread;
     }
     const selectedPaperIds = Array.from(state.selectedPaperIds);
@@ -1786,6 +1894,7 @@
       body: JSON.stringify({
         title: `${state.selectedCollection.title} research`,
         collection_id: state.selectedCollection.id,
+        workspace_id: state.selectedWorkspace ? state.selectedWorkspace.id : null,
         selected_paper_ids: selectedPaperIds,
       }),
     });
@@ -1806,6 +1915,9 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message,
+        source_ids: state.studySources
+          .filter((source) => source.read_status === "ready")
+          .map((source) => source.id),
       }),
     });
     elements.researchMessageInput.value = "";
@@ -1843,7 +1955,7 @@
     state.research.messages = [];
     await ensureResearchThread();
     renderAll();
-    setStatus("Paper added to the Research context.");
+    setStatus("Paper added to the Study context.");
   }
 
   async function loadJobs() {
@@ -2007,7 +2119,7 @@
 
   async function saveWorkspace() {
     const title = elements.workspaceTitleInput.value.trim()
-      || (state.selectedCollection ? `${state.selectedCollection.title} workspace` : "Arxie workspace");
+      || (state.selectedCollection ? `${state.selectedCollection.title} study` : "Arxie study");
     const payload = {
       title,
       description: state.selectedWorkspace ? state.selectedWorkspace.description : null,
@@ -2019,23 +2131,67 @@
     };
 
     if (state.selectedWorkspace) {
-      await fetchJson(`${endpoints.workspaces}/${state.selectedWorkspace.id}`, {
+      await fetchJson(`${endpoints.studies}/${state.selectedWorkspace.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       await loadWorkspaces({ preferredWorkspaceId: state.selectedWorkspace.id });
-      setStatus(`Updated workspace ${title}.`);
+      setStatus(`Updated study ${title}.`);
       return;
     }
 
-    const response = await fetchJson(endpoints.workspaces, {
+    const response = await fetchJson(endpoints.studies, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     await loadWorkspaces({ preferredWorkspaceId: response.data.id });
-    setStatus(`Saved workspace ${title}.`);
+    setStatus(`Saved study ${title}.`);
+  }
+
+  async function createStudySource() {
+    if (!state.selectedWorkspace) {
+      throw new Error("Save the study before adding work sources.");
+    }
+    const sourceType = elements.studySourceTypeInput.value;
+    const title = elements.studySourceTitleInput.value.trim()
+      || sourceType.replace("_", " ");
+    const value = elements.studySourceValueInput.value.trim();
+    if (!value) {
+      throw new Error("Enter a source path or text note.");
+    }
+    const body = {
+      source_type: sourceType,
+      title,
+    };
+    if (sourceType === "text") {
+      body.content = value;
+    } else {
+      body.path = value;
+    }
+    const response = await fetchJson(`${endpoints.studies}/${state.selectedWorkspace.id}/sources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    state.studySources.push(response.data);
+    elements.studySourceTitleInput.value = "";
+    elements.studySourceValueInput.value = "";
+    renderAll();
+    setStatus(response.data.read_status === "ready" ? "Added study source." : "Added source with a read error.");
+  }
+
+  async function deleteStudySource(sourceId) {
+    if (!state.selectedWorkspace) {
+      return;
+    }
+    await fetchJson(`${endpoints.studies}/${state.selectedWorkspace.id}/sources/${sourceId}`, {
+      method: "DELETE",
+    });
+    state.studySources = state.studySources.filter((source) => source.id !== sourceId);
+    renderAll();
+    setStatus("Removed study source.");
   }
 
   async function refreshCompare() {
@@ -2153,7 +2309,7 @@
     const preferredWorkspaceId = state.selectedWorkspace ? state.selectedWorkspace.id : null;
     await loadCollections(preferredCollectionId);
     await loadWorkspaces(preferredWorkspaceId ? { preferredWorkspaceId } : undefined);
-    if (state.activeView === "compare" && state.selectedCollection) {
+    if (state.activeView === "study" && state.selectedCollection) {
       await refreshCompare();
     }
   }
@@ -2175,15 +2331,15 @@
 
   async function initialize() {
     try {
-      activateView("workspace");
-      setStatus("Loading Arxie workspace…");
+      activateView("study");
+      setStatus("Loading Arxie study…");
       await loadCollections();
       await loadWorkspaces();
       await loadJobs();
       await loadSystemStatus();
       renderAll();
-      activateView(state.selectedCollection ? "workspace" : "library");
-      setStatus("Arxie workspace ready.");
+      activateView(state.selectedCollection ? "study" : "library");
+      setStatus("Arxie study ready.");
     } catch (error) {
       setStatus(error.message);
     }
@@ -2195,20 +2351,12 @@
       if (!nextView) {
         return;
       }
-      if (nextView === "compare" && state.selectedCollection) {
+      if (nextView === "study" && state.selectedCollection) {
         try {
-          setStatus("Refreshing compare view…");
-          await refreshCompare();
-          setStatus("Compare view ready.");
-        } catch (error) {
-          setStatus(error.message);
-        }
-      }
-      if (nextView === "research" && state.selectedCollection) {
-        try {
-          setStatus("Loading research workspace…");
+          setStatus("Loading study workspace…");
           await loadResearchContext();
-          setStatus("Research workspace ready.");
+          await refreshCompare();
+          setStatus("Study ready.");
         } catch (error) {
           setStatus(error.message);
         }
@@ -2231,10 +2379,10 @@
 
   elements.workspaceOpenCompareButton.addEventListener("click", async () => {
     try {
-      setStatus("Opening compare view…");
+      setStatus("Refreshing compare evidence…");
       await refreshCompare();
-      activateView("compare");
-      setStatus("Compare view ready.");
+      document.getElementById("compare-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      setStatus("Compare evidence ready.");
     } catch (error) {
       setStatus(error.message);
     }
@@ -2252,6 +2400,15 @@
     event.preventDefault();
     try {
       await postResearchMessage();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+
+  elements.studySourceForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await createStudySource();
     } catch (error) {
       setStatus(error.message);
     }
@@ -2326,7 +2483,7 @@
     event.preventDefault();
     try {
       await queueLocalLibraryIngest();
-      activateView("jobs");
+      activateView("library");
     } catch (error) {
       setStatus(error.message);
     }
@@ -2336,7 +2493,7 @@
     event.preventDefault();
     try {
       await queueLocalLibraryUploadIngest();
-      activateView("jobs");
+      activateView("library");
     } catch (error) {
       setStatus(error.message);
     }
