@@ -30,12 +30,6 @@ This release branch ships the `v0.2.0` product surface: persistent corpora, save
 - see each collection's readiness for search and structured comparison before choosing the next action
 - run Arxie answer, chat, literature review, and proposal evidence flows against that saved context
 
-## Current Scope
-
-`v0.2.0` is production-ready for a **single-user, self-hosted** deployment.
-
-It is not a multi-tenant SaaS product. The code keeps ownership boundaries so the system can grow later, but the supported deployment model today is one operator running one server stack.
-
 ## Quick Start
 
 ### 1. Install
@@ -99,13 +93,6 @@ Start the API and worker:
 docker compose -f infra/docker-compose.paperbase.yml up -d paperbase-api paperbase-worker
 ```
 
-### 4. Open Arxie
-
-- Homepage: `http://localhost:8080/`
-- Study app: `http://localhost:8080/app`
-- Liveness: `http://localhost:8080/livez`
-- Readiness: `http://localhost:8080/readyz`
-
 ### Shortcut Launch
 
 If you want a more app-like local workflow, use the launcher command:
@@ -147,33 +134,6 @@ updates are picked up on restart. Use `arxie-local run --rebuild` only after
 dependency or Dockerfile changes. If you later start Arxie with `--with-search`,
 the workspace can use the backend search surface when Elasticsearch is healthy.
 
-### 5. Use Your Own Local Paper Collection
-
-The browser study app is now enough for the single-user local workflow:
-
-1. open `http://localhost:8080/app`
-2. start in **Library** and use **Upload PDF Folder**
-3. select a local folder containing PDFs and optionally set a collection title
-4. stay in **Library** and watch the processing log until the ingest job finishes
-5. use the Library paper list to parse all unprocessed papers
-   or only selected papers
-6. extract all unextracted papers, or select specific text-ready papers and extract
-   just those
-7. switch to **Study** to search the collection, inspect evidence, and label
-   papers as exemplars or baselines
-8. save the study, then add explicit sources such as a draft path, code file path,
-   results file path, or text note
-9. ask Arxie for experiment ideas, benchmark design, revision priorities,
-   assumption checks, hypotheses, field patterns, or critiques grounded in the
-   paper collection plus those explicit sources
-10. use the Study compare panel once extraction is ready to inspect results,
-    methods, tricks, research-design evidence, figures, and tables
-
-If you are running the API and worker directly on the host instead of in Docker,
-the Library module also exposes an advanced absolute-path import form.
-
-For more usage details, see [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
-
 ## Local Process Mode
 
 If you prefer running the services without Compose:
@@ -197,25 +157,6 @@ make paperbase-worker
 make paperbase-compose-config
 ```
 
-## Legacy CLI And RA API
-
-The original `src/ra` assistant still ships with the repo.
-
-Examples:
-
-```bash
-ra query "What are recent approaches to long-context LLMs?"
-ra lit-review "attention mechanisms in computer vision"
-ra trace "Attention Is All You Need"
-ra chat
-```
-
-The legacy FastAPI surface is still available too:
-
-```bash
-uvicorn ra.api.app:app --host 0.0.0.0 --port 8000
-```
-
 ## Product Architecture
 
 ```text
@@ -227,12 +168,6 @@ infra/                  Self-hosting stack and environment files
 ```
 
 Detailed architecture, planning notes, tests, and internal developer process files live on the private development branch, not on this release branch.
-
-## Known Limits
-
-- Deployment is single-user and self-hosted, not collaborative or multi-tenant.
-- Figure and table extraction is phase-1 caption-driven extraction, not full OCR or chart digitization.
-- The legacy RA API and the Paperbase product API coexist; the browser product surface is the Paperbase API at port `8080`.
 
 ## License
 
