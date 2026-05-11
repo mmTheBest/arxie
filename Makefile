@@ -1,7 +1,4 @@
-.PHONY: test-clean-baseline paperbase-api paperbase-worker paperbase-db-upgrade paperbase-compose-config
-
-test-clean-baseline:
-	.venv/bin/python -m pytest tests/ -q --ignore=tests/integration
+.PHONY: paperbase-api paperbase-worker paperbase-db-upgrade paperbase-compose-config
 
 paperbase-api:
 	.venv/bin/paperbase-api

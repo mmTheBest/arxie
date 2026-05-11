@@ -9,7 +9,7 @@ Arxie is a self-hostable research system for serious literature work. It combine
 - hybrid search and comparison surfaces
 - a study-aware research assistant that reasons over paper evidence plus user-provided work context
 
-This repository now ships the `v0.2.0` product surface described in the April 14 PRD: persistent corpora, saved studies, structured evidence, comparison workflows, provider-backed ingest, and a browser study workspace at `/app`.
+This release branch ships the `v0.2.0` product surface: persistent corpora, saved studies, structured evidence, comparison workflows, provider-backed ingest, and a browser study workspace at `/app`.
 
 ## What You Can Do
 
@@ -172,7 +172,7 @@ The browser study app is now enough for the single-user local workflow:
 If you are running the API and worker directly on the host instead of in Docker,
 the Library module also exposes an advanced absolute-path import form.
 
-For scripted or operator-driven ingestion, see [docs/runbooks/paperbase-ingest.md](docs/runbooks/paperbase-ingest.md).
+For more usage details, see [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 
 ## Local Process Mode
 
@@ -226,7 +226,7 @@ services/paperbase_worker/ Background job execution
 infra/                  Self-hosting stack and environment files
 ```
 
-Contributor-facing system docs live in [docs/architecture](docs/architecture/README.md).
+Detailed architecture, planning notes, tests, and internal developer process files live on the private development branch, not on this release branch.
 
 ## Known Limits
 

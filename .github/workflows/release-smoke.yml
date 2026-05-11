@@ -1,0 +1,33 @@
+name: Release Smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Import runtime modules
+        run: |
+          python -c "import ra; import paperbase; import services.paperbase_api"
+          python -c "import services.paperbase_api.main; import services.paperbase_worker.main"
+          ra --help
+          paperbase-db --help
+          arxie-local --help
+
+      - name: Build Docker image
+        run: docker build -t arxie-release-smoke .

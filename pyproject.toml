@@ -71,6 +71,10 @@ where = ["src", "."]
 include = ["ra*", "paperbase*", "services*"]
 exclude = ["tests*", "docs*", "remotion*", "skills*", "tools*"]
 
+[tool.setuptools.package-data]
+"services.paperbase_api" = ["static/*.html", "static/*.css", "static/*.js"]
+"paperbase.db.migrations" = ["script.py.mako"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
