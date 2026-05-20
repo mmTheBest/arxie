@@ -30,4 +30,3 @@ def normalize_summary_key(value: str) -> str:
 def canonicalize_metric_display_name(value: str) -> str:
     display_name = value.strip()
     return _METRIC_NAME_ALIASES.get(normalize_summary_key(display_name), display_name)
-

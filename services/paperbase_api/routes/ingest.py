@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.background_jobs import create_background_job
-from services.paperbase_api.dependencies import get_session
+from services.paperbase_api.dependencies import get_project_id, get_session, get_session_factory
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
     LocalLibraryIngestRequest,
@@ -93,7 +93,7 @@ def queue_local_library_ingest(
         )
 
     job = create_background_job(
-        session_factory=request.app.state.session_factory,
+        session_factory=get_session_factory(request),
         job_type="local_library_ingest",
         payload_json={
             "source_dir": str(source_dir),
@@ -106,6 +106,7 @@ def queue_local_library_ingest(
             "collection_description": payload.collection_description,
         },
         dispatcher=request.app.state.job_dispatcher,
+        project_id=get_project_id(request),
     )
 
     return SingleBackgroundJobResponse(data=background_job_to_response(job))
@@ -146,7 +147,7 @@ def queue_local_library_upload_ingest(
     )
 
     job = create_background_job(
-        session_factory=request.app.state.session_factory,
+        session_factory=get_session_factory(request),
         job_type="local_library_ingest",
         payload_json={
             "source_dir": str(staged_dir),
@@ -155,6 +156,7 @@ def queue_local_library_upload_ingest(
             "collection_description": safe_collection_description,
         },
         dispatcher=request.app.state.job_dispatcher,
+        project_id=get_project_id(request),
     )
     return SingleBackgroundJobResponse(data=background_job_to_response(job))
 
@@ -182,7 +184,7 @@ def queue_provider_identifier_ingest(
     )
 
     job = create_background_job(
-        session_factory=request.app.state.session_factory,
+        session_factory=get_session_factory(request),
         job_type="provider_identifier_ingest",
         payload_json={
             "owner_id": owner_id,
@@ -206,6 +208,7 @@ def queue_provider_identifier_ingest(
             ],
         },
         dispatcher=request.app.state.job_dispatcher,
+        project_id=get_project_id(request),
     )
 
     return SingleBackgroundJobResponse(data=background_job_to_response(job))
@@ -223,7 +226,7 @@ def queue_paper_metadata_refresh(
 ) -> SingleBackgroundJobResponse:
     del session
     job = create_background_job(
-        session_factory=request.app.state.session_factory,
+        session_factory=get_session_factory(request),
         job_type="paper_metadata_refresh",
         payload_json={
             "paper_ids": [
@@ -232,6 +235,7 @@ def queue_paper_metadata_refresh(
             ]
         },
         dispatcher=request.app.state.job_dispatcher,
+        project_id=get_project_id(request),
     )
 
     return SingleBackgroundJobResponse(data=background_job_to_response(job))

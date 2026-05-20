@@ -7,6 +7,7 @@ Commands:
   - chat [--session-id ID] [--deep]
   - search --query "..." --limit 5 --source semantic|arxiv|both
   - get --id <doi|arxiv|semantic_scholar_id>
+  - eval --dataset tests/eval/dataset.json --output results/
 
 Outputs JSON to stdout.
 
@@ -22,13 +23,16 @@ import json
 import logging
 import sys
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from ra.agents.lit_review_agent import LitReviewAgent
 from ra.agents.research_agent import ResearchAgent
+from ra.eval import evaluate_release_gate_cases, load_release_gate_cases
 from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.semantic_scholar import SemanticScholarClient
 from ra.retrieval.unified import Paper, UnifiedRetriever
+from ra.study import cli_handlers as study_cli_handlers
 from ra.tools.retrieval_tools import make_retrieval_tools
 from ra.utils.logging_config import configure_logging_from_env
 from ra.utils.security import sanitize_identifier, sanitize_user_text
@@ -184,6 +188,59 @@ def build_parser() -> argparse.ArgumentParser:
     p_get = sub.add_parser("get", help="Get a paper by id (DOI/arXiv/Semantic Scholar)")
     p_get.add_argument("--id", required=True, dest="identifier", help="Identifier to fetch")
 
+    p_eval = sub.add_parser("eval", help="Run evaluation harness")
+    p_eval.add_argument(
+        "--dataset",
+        required=True,
+        help="Path to eval dataset JSON (e.g., tests/eval/dataset.json)",
+    )
+    p_eval.add_argument(
+        "--output",
+        required=True,
+        help="Directory to write eval results artifacts (JSON + markdown)",
+    )
+    p_eval.add_argument(
+        "--mode",
+        choices=["qa", "proposal_release_gate"],
+        default="qa",
+        help="Eval mode: qa (ResearchAgent benchmark) or proposal_release_gate (v0.2 gate).",
+    )
+
+    p_study = sub.add_parser("study", help="Manage local study-agent memory and runs")
+    study_sub = p_study.add_subparsers(dest="study_command", required=True)
+
+    p_study_create = study_sub.add_parser("create", help="Create a local study brief")
+    p_study_create.add_argument("--id", required=True, dest="study_id", help="Study identifier")
+    p_study_create.add_argument("--title", required=True, help="Study title")
+    p_study_create.add_argument("--goal", required=True, help="Research goal")
+
+    p_study_brief = study_sub.add_parser("brief", help="Show a local study brief")
+    p_study_brief.add_argument("--id", required=True, dest="study_id", help="Study identifier")
+
+    p_study_source = study_sub.add_parser("source", help="Manage study sources")
+    study_source_sub = p_study_source.add_subparsers(dest="study_source_command", required=True)
+    p_study_source_add = study_source_sub.add_parser("add", help="Attach pasted source text")
+    p_study_source_add.add_argument("--id", required=True, dest="study_id", help="Study identifier")
+    p_study_source_add.add_argument(
+        "--type",
+        required=True,
+        dest="source_type",
+        choices=["draft", "note", "code_summary", "result_summary"],
+        help="Source type",
+    )
+    p_study_source_add.add_argument("--title", required=True, help="Source title")
+    p_study_source_add.add_argument("--text", required=True, help="Pasted source text")
+
+    p_study_run = study_sub.add_parser("run", help="Run a deterministic study-agent task")
+    p_study_run.add_argument("--id", required=True, dest="study_id", help="Study identifier")
+    p_study_run.add_argument(
+        "--task",
+        required=True,
+        choices=["design_experiments", "find_benchmarks", "review_draft_claims"],
+        help="Study-agent task",
+    )
+    p_study_run.add_argument("--query", required=True, help="Task query")
+
     return parser
 
 
@@ -334,6 +391,92 @@ async def _cmd_trace(
     }
 
 
+def _build_release_gate_markdown_summary(
+    *,
+    dataset_path: str,
+    report: dict[str, Any],
+) -> str:
+    metrics = report.get("metrics", {})
+    stage_completion_pass_rate = float(metrics.get("stage_completion_pass_rate", 0.0))
+    evidence_link_pass_rate = float(metrics.get("evidence_link_pass_rate", 0.0))
+    gate_pass_rate = float(metrics.get("gate_pass_rate", 0.0))
+    results = report.get("results", [])
+    lines = [
+        "# Proposal Release Gate Summary",
+        "",
+        f"- Dataset: `{dataset_path}`",
+        f"- Total cases: `{report.get('total_cases', 0)}`",
+        f"- Overall pass: `{report.get('overall_pass', False)}`",
+        "",
+        "## Topline Metrics",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
+        f"| stage_completion_pass_rate | {stage_completion_pass_rate:.6f} |",
+        f"| evidence_link_pass_rate | {evidence_link_pass_rate:.6f} |",
+        f"| gate_pass_rate | {gate_pass_rate:.6f} |",
+        "",
+        "## Case Results",
+        "",
+        "| Case ID | Stage Ratio | Link Coverage | Pass |",
+        "|---|---:|---:|---:|",
+    ]
+
+    for row in results:
+        lines.append(
+            "| {id} | {stage_completion_ratio:.6f} | {evidence_link_coverage:.6f} | {pass_value} |".format(
+                id=row.get("id", "unknown"),
+                stage_completion_ratio=float(row.get("stage_completion_ratio", 0.0)),
+                evidence_link_coverage=float(row.get("evidence_link_coverage", 0.0)),
+                pass_value="yes" if bool(row.get("pass", False)) else "no",
+            )
+        )
+
+    return "\n".join(lines) + "\n"
+
+
+def _cmd_eval(dataset: str, output: str, mode: str) -> dict[str, Any]:
+    dataset = sanitize_user_text(dataset, field_name="dataset", max_length=1024)
+    output = sanitize_user_text(output, field_name="output", max_length=1024)
+    mode = sanitize_user_text(mode, field_name="mode", max_length=64)
+
+    if mode == "proposal_release_gate":
+        cases = load_release_gate_cases(dataset)
+        report = evaluate_release_gate_cases(cases)
+
+        output_dir = Path(output)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        json_path = output_dir / "proposal_release_gate_results.json"
+        md_path = output_dir / "proposal_release_gate_summary.md"
+        json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        md_path.write_text(
+            _build_release_gate_markdown_summary(dataset_path=dataset, report=report),
+            encoding="utf-8",
+        )
+
+        return {
+            "mode": mode,
+            "total_cases": report["total_cases"],
+            "metrics": report["metrics"],
+            "overall_pass": report["overall_pass"],
+            "artifacts": {
+                "json": str(json_path.resolve()),
+                "markdown": str(md_path.resolve()),
+            },
+        }
+
+    from tests.eval.harness import EvalHarness
+
+    harness = EvalHarness(dataset_path=dataset, output_dir=output)
+    report = harness.run()
+    return {
+        "mode": mode,
+        "total_questions": report["total_questions"],
+        "metrics": report["metrics"],
+        "artifacts": report["artifacts"],
+    }
+
+
 def _cmd_chat(session_id: str, deep: bool) -> int:
     session_id = sanitize_user_text(session_id, field_name="session_id", max_length=128)
     agent = ResearchAgent(deep_search=deep)
@@ -388,6 +531,20 @@ def main(argv: list[str] | None = None) -> int:
             payload = asyncio.run(_cmd_search(args.query, args.limit, args.source))
         elif args.command == "get":
             payload = asyncio.run(_cmd_get(args.identifier))
+        elif args.command == "eval":
+            payload = _cmd_eval(args.dataset, args.output, args.mode)
+        elif args.command == "study":
+            if args.study_command == "create":
+                payload = study_cli_handlers.create_study(args)
+            elif args.study_command == "brief":
+                payload = study_cli_handlers.get_study_brief(args)
+            elif args.study_command == "source" and args.study_source_command == "add":
+                payload = study_cli_handlers.add_study_source(args)
+            elif args.study_command == "run":
+                payload = study_cli_handlers.run_study_task(args)
+            else:
+                parser.error("Unknown study command.")
+                return 2
         else:
             parser.error(f"Unknown command: {args.command}")
             return 2

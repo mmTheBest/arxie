@@ -13,6 +13,7 @@ def create_background_job(
     job_type: str,
     payload_json: dict[str, object] | None,
     dispatcher: object | None = None,
+    project_id: str | None = None,
 ) -> BackgroundJob:
     with session_factory() as session:
         job = BackgroundJobRepository(session).create(
@@ -24,7 +25,7 @@ def create_background_job(
         return job
 
     try:
-        dispatcher.dispatch(job.id)
+        dispatcher.dispatch(job.id, project_id=project_id)
     except Exception as exc:  # noqa: BLE001
         with session_factory() as session:
             BackgroundJobRepository(session).mark_failed(

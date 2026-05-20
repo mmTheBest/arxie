@@ -32,7 +32,7 @@ from ra.citation import (
 )
 from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.semantic_scholar import SemanticScholarClient
-from ra.retrieval.unified import Paper, UnifiedRetriever
+from ra.retrieval.unified import Paper, UnifiedRetriever  # noqa: F401
 from ra.tools.retrieval_tools import make_retrieval_tools
 from ra.utils.config import load_config
 from ra.utils.logging import UsageLogger
@@ -50,8 +50,10 @@ except Exception:  # pragma: no cover - import availability depends on runtime p
 logger = logging.getLogger(__name__)
 
 _TRANSIENT_HTTP_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+_INLINE_CITATION_SURNAME_RE = r"[A-Z][A-Za-zÀ-ÖØ-öø-ÿ'’\-]*"
 _INLINE_CITATION_RE = re.compile(
-    r"\([A-Z][A-Za-z\-]+(?:\s+et\s+al\.)?(?:\s*&\s*[A-Z][A-Za-z\-]+)?,\s*(?:19|20)\d{2}\)"
+    rf"\({_INLINE_CITATION_SURNAME_RE}(?:\s+et\s+al\.)?"
+    rf"(?:\s*&\s*{_INLINE_CITATION_SURNAME_RE})?,\s*(?:19|20)\d{{2}}\)"
 )
 _DEEP_INITIAL_SEARCH_LIMIT = 10
 _DEEP_FULLTEXT_TOP_K = 3

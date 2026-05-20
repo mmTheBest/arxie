@@ -15,6 +15,7 @@ class PaperbaseConfig:
     redis_url: str = "redis://localhost:6379/0"
     worker_queue_backend: str = "db"
     worker_queue_name: str = "paperbase:jobs"
+    worker_project_id: str | None = None
     worker_retry_limit: int = 3
     worker_stale_job_seconds: float = 900.0
     object_store_endpoint: str = "http://localhost:9000"
@@ -23,6 +24,7 @@ class PaperbaseConfig:
     object_store_access_key: str | None = None
     object_store_secret_key: str | None = None
     object_store_local_root: str = "data/object-store"
+    project_registry_path: str = "data/projects.json"
     upload_staging_dir: str = "data/uploads/paperbase-ingest"
     download_cache_dir: str = "data/cache/paperbase-downloads"
     download_cache_ttl_seconds: int = 86400
@@ -56,6 +58,9 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         worker_queue_name=(
             resolved_env.get("PAPERBASE_WORKER_QUEUE_NAME") or "paperbase:jobs"
         ).strip(),
+        worker_project_id=(
+            (resolved_env.get("PAPERBASE_WORKER_PROJECT_ID") or "").strip() or None
+        ),
         worker_retry_limit=int((resolved_env.get("PAPERBASE_WORKER_RETRY_LIMIT") or "3").strip()),
         worker_stale_job_seconds=float(
             (resolved_env.get("PAPERBASE_WORKER_STALE_JOB_SECONDS") or "900").strip()
@@ -77,6 +82,9 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         ),
         object_store_local_root=(
             resolved_env.get("PAPERBASE_OBJECT_STORE_LOCAL_ROOT") or "data/object-store"
+        ).strip(),
+        project_registry_path=(
+            resolved_env.get("PAPERBASE_PROJECT_REGISTRY_PATH") or "data/projects.json"
         ).strip(),
         upload_staging_dir=(
             resolved_env.get("PAPERBASE_UPLOAD_STAGING_DIR") or "data/uploads/paperbase-ingest"

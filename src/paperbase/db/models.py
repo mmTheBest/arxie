@@ -412,6 +412,66 @@ class ResearchMessage(Base, TimestampMixin):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
 
+class ResearchAgentRun(Base, TimestampMixin):
+    __tablename__ = "research_agent_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    thread_id: Mapped[str | None] = mapped_column(ForeignKey("research_threads.id"), index=True)
+    artifact_id: Mapped[str] = mapped_column(ForeignKey("research_artifacts.id"), nullable=False, index=True)
+    collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    model_policy: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="pending", index=True)
+    input_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    model_name: Mapped[str | None] = mapped_column(String(255))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ResearchAgentStep(Base, TimestampMixin):
+    __tablename__ = "research_agent_steps"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    run_id: Mapped[str] = mapped_column(ForeignKey("research_agent_runs.id"), nullable=False, index=True)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    step_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="completed")
+    input_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    output_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class StudyContextPack(Base, TimestampMixin):
+    __tablename__ = "study_context_packs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    run_id: Mapped[str] = mapped_column(ForeignKey("research_agent_runs.id"), nullable=False, index=True)
+    collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    task_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    cache_key: Mapped[str | None] = mapped_column(String(255), index=True)
+    context_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    selected_item_counts_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    readiness_warnings_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+
+class ResearchValidationReport(Base, TimestampMixin):
+    __tablename__ = "research_validation_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    run_id: Mapped[str] = mapped_column(ForeignKey("research_agent_runs.id"), nullable=False, index=True)
+    artifact_id: Mapped[str] = mapped_column(ForeignKey("research_artifacts.id"), nullable=False, index=True)
+    harness_status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    missing_evidence_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    unsupported_claims_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    readiness_blockers_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    report_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
 class PaperResearchLabel(Base, TimestampMixin):
     __tablename__ = "paper_research_labels"
     __table_args__ = (

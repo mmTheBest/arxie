@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Arxie Study</title>
     <link rel="stylesheet" href="/ui/paperbase-ui.css" />
-    <script defer src="/ui/paperbase-ui.js"></script>
+    <script type="module" src="/ui/js/app.js"></script>
   </head>
   <body>
     <div id="app-shell" class="app-shell" data-active-view="study">
@@ -21,6 +21,7 @@
         <div class="header-status">
           <p class="status-label">Current system status</p>
           <p id="status-banner" class="status-banner">Loading study state…</p>
+          <p id="current-project-summary" class="project-summary">Default local library</p>
         </div>
       </header>
 
@@ -79,6 +80,35 @@
               </div>
               <div id="library-selected-collection-meta" class="module-meta"></div>
             </div>
+
+            <section class="panel project-open-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="panel-kicker">Project</p>
+                  <h3>Open a library folder</h3>
+                </div>
+              </div>
+              <form id="project-open-form" class="inline-form-stack">
+                <label class="field-label" for="project-root-input">Project folder</label>
+                <input
+                  id="project-root-input"
+                  type="text"
+                  placeholder="/Users/you/Research/scRegNet"
+                  autocomplete="off"
+                />
+                <label class="field-label" for="project-title-input">Project title</label>
+                <input
+                  id="project-title-input"
+                  type="text"
+                  placeholder="Optional display name"
+                  autocomplete="off"
+                />
+                <button id="project-open-button" type="submit" class="action-button action-button-primary">
+                  Open Project
+                </button>
+              </form>
+              <div id="recent-projects-list" class="stacked-list recent-projects-list"></div>
+            </section>
 
             <div class="library-grid">
               <section class="panel">
@@ -186,98 +216,56 @@
           </section>
 
           <section id="study-view" class="module-view" data-view="study">
-            <div class="module-header">
-              <div>
-                <p class="panel-kicker">Study</p>
-                <h2 id="workspace-collection-title">Search one collection and inspect evidence</h2>
-              </div>
-              <div class="module-actions">
-                <button id="workspace-open-compare-button" type="button" class="action-button">
-                  Compare evidence
-                </button>
-              </div>
-            </div>
+            <div class="notebook-study-layout">
+              <aside id="paper-sources-panel" class="notebook-rail paper-sources-rail">
+                <div class="rail-header">
+                  <p class="panel-kicker">Sources</p>
+                  <h2>Paper Sources</h2>
+                  <div id="research-collection-context" class="module-meta"></div>
+                </div>
+                <div id="workspace-readiness-banner" class="readiness-banner"></div>
+                <form id="search-form" class="source-search-form">
+                  <input
+                    id="paper-source-search-input"
+                    type="search"
+                    placeholder="Filter paper sources"
+                    autocomplete="off"
+                  />
+                  <input
+                    id="paper-search-input"
+                    name="q"
+                    type="search"
+                    placeholder="Search the collection"
+                    autocomplete="off"
+                  />
+                  <button type="submit" class="action-button">Search</button>
+                </form>
+                <p id="workspace-search-meta" class="muted">
+                  Select papers to narrow chat context. With none selected, Arxie uses the full collection.
+                </p>
+                <div id="paper-source-list" class="paper-source-list"></div>
+              </aside>
 
-            <div id="workspace-readiness-banner" class="readiness-banner"></div>
-
-            <div class="study-layout">
-              <section id="workspace-detail-panel" class="panel workspace-detail-panel">
-                <div class="panel-header">
+              <section id="arxie-chat-panel" class="notebook-chat-panel">
+                <div class="chat-header">
                   <div>
-                    <p class="panel-kicker">Study Context</p>
-                    <h3>Goal and work sources</h3>
+                    <p class="panel-kicker">Study</p>
+                    <h2 id="workspace-collection-title">Ask Arxie</h2>
                   </div>
+                  <button id="save-workspace-button" class="action-button" type="button">
+                    Save Study
+                  </button>
                 </div>
-
-                <label class="field-label" for="workspace-title-input">Study title</label>
-                <input
-                  id="workspace-title-input"
-                  type="text"
-                  placeholder="e.g. scRegNet benchmark study"
-                />
-                <label class="field-label" for="workspace-focus-input">Study goal</label>
-                <textarea
-                  id="workspace-focus-input"
-                  rows="4"
-                  placeholder="What are you trying to prove, test, or improve?"
-                ></textarea>
-                <div id="workspace-meta" class="detail-group"></div>
-                <button id="save-workspace-button" class="action-button action-button-primary" type="button">
-                  Save Study
-                </button>
-
-                <div class="detail-divider"></div>
-
-                <div class="detail-section">
-                  <h4>Explicit work sources</h4>
-                  <form id="study-source-form" class="inline-form-stack">
-                    <label class="field-label" for="study-source-type-input">Source type</label>
-                    <select id="study-source-type-input">
-                      <option value="text">Text note</option>
-                      <option value="code_path">Code file path</option>
-                      <option value="draft_path">Draft file path</option>
-                      <option value="results_path">Results file path</option>
-                    </select>
-                    <label class="field-label" for="study-source-title-input">Source title</label>
-                    <input id="study-source-title-input" type="text" placeholder="e.g. current results" />
-                    <label class="field-label" for="study-source-value-input">Path or note</label>
-                    <textarea
-                      id="study-source-value-input"
-                      rows="4"
-                      placeholder="Paste a note, or enter an exact local file path"
-                    ></textarea>
-                    <button id="study-source-add-button" class="action-button" type="submit">
-                      Add Source
-                    </button>
-                  </form>
-                  <div id="study-source-list" class="study-source-list"></div>
-                </div>
-
-                <div class="detail-divider"></div>
-
-                <div class="detail-section">
-                  <h4>Collection snapshot</h4>
-                  <div id="collection-summary"></div>
-                </div>
-              </section>
-
-              <section class="panel research-chat-panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Agent</p>
-                    <h3>Research agent</h3>
-                  </div>
-                </div>
-                <div id="research-collection-context" class="module-meta"></div>
                 <div id="research-readiness-banner" class="readiness-banner"></div>
-                <div id="research-thread-list" class="stacked-list research-thread-list"></div>
+                <div id="research-thread-list" class="research-thread-list"></div>
                 <div id="research-chat-log" class="research-chat-log"></div>
                 <form id="research-message-form" class="research-message-form">
-                  <label class="field-label" for="research-message-input">Research request</label>
+                  <div id="research-suggestion-list" class="suggestion-chip-list"></div>
+                  <label class="field-label" for="research-message-input">Ask Arxie</label>
                   <textarea
                     id="research-message-input"
-                    rows="5"
-                    placeholder="Suggest benchmarks, ablations, and revision priorities from my papers and sources"
+                    rows="4"
+                    placeholder="Ask Arxie to compare methods, design benchmarks, critique your draft, or suggest experiments"
                   ></textarea>
                   <div class="button-row button-row-left">
                     <button
@@ -291,219 +279,67 @@
                 </form>
               </section>
 
-              <section class="panel workspace-panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Search</p>
-                    <h3>Papers and evidence</h3>
-                  </div>
+              <aside id="studio-panel" class="notebook-rail studio-rail">
+                <div class="rail-header">
+                  <p class="panel-kicker">Studio</p>
+                  <h2>Work and outputs</h2>
                 </div>
-                <div class="workspace-toolbar">
-                  <div class="workspace-toolbar-copy">
-                    <p class="workspace-toolbar-label">Saved query</p>
-                    <p id="workspace-search-meta" class="muted">
-                      Run a search inside the selected collection, then save the study.
-                    </p>
-                  </div>
-                  <form id="search-form" class="search-form">
-                    <input
-                      id="paper-search-input"
-                      name="q"
-                      type="search"
-                      placeholder="Search title, abstract, or evidence keywords"
-                      autocomplete="off"
-                    />
-                    <button type="submit" class="action-button action-button-primary">Search</button>
+                <section class="studio-section">
+                  <h3>Study setup</h3>
+                  <label class="field-label" for="workspace-title-input">Study title</label>
+                  <input
+                    id="workspace-title-input"
+                    type="text"
+                    placeholder="e.g. scRegNet benchmark study"
+                  />
+                  <label class="field-label" for="workspace-focus-input">Study goal</label>
+                  <textarea
+                    id="workspace-focus-input"
+                    rows="3"
+                    placeholder="What are you trying to prove, test, or improve?"
+                  ></textarea>
+                  <div id="workspace-meta" class="detail-group"></div>
+                </section>
+
+                <section class="studio-section">
+                  <h3>Your work</h3>
+                  <form id="study-source-form" class="inline-form-stack">
+                    <label class="field-label" for="study-source-type-input">Source type</label>
+                    <select id="study-source-type-input">
+                      <option value="text">Text note</option>
+                      <option value="code_path">Code file path</option>
+                      <option value="draft_path">Draft file path</option>
+                      <option value="results_path">Results file path</option>
+                    </select>
+                    <label class="field-label" for="study-source-title-input">Source title</label>
+                    <input id="study-source-title-input" type="text" placeholder="e.g. current results" />
+                    <label class="field-label" for="study-source-value-input">Path or note</label>
+                    <textarea
+                      id="study-source-value-input"
+                      rows="3"
+                      placeholder="Paste a note, or enter an exact local file path"
+                    ></textarea>
+                    <button id="study-source-add-button" class="action-button" type="submit">
+                      Add Source
+                    </button>
                   </form>
-                </div>
-                <div id="paper-list" class="stacked-list"></div>
-                <div class="evidence-grid">
-                  <div class="surface-card">
-                    <h4>Chunk hits</h4>
-                    <div id="chunk-search-surface"></div>
-                  </div>
-                  <div class="surface-card">
-                    <h4>Artifact hits</h4>
-                    <div id="artifact-search-surface"></div>
-                  </div>
-                </div>
-              </section>
+                  <div id="study-source-list" class="study-source-list"></div>
+                </section>
 
-              <section class="panel research-artifact-panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Outputs</p>
-                    <h3>Research artifacts</h3>
-                  </div>
-                </div>
-                <div id="research-artifact-list" class="stacked-list"></div>
-              </section>
+                <section class="studio-section">
+                  <h3>Saved outputs</h3>
+                  <div id="saved-output-list" class="stacked-list"></div>
+                  <div id="research-artifact-list" class="stacked-list"></div>
+                </section>
 
-              <aside class="panel research-evidence-panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Evidence</p>
-                    <h3>Grounding</h3>
-                  </div>
-                </div>
-                <div id="research-evidence-drawer" class="research-evidence-drawer"></div>
-                <div class="detail-divider"></div>
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Paper Detail</p>
-                    <h3>Selected paper</h3>
-                  </div>
-                </div>
-                <div id="paper-detail"></div>
-                <div class="detail-divider"></div>
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Activity</p>
-                    <h3>Research job log</h3>
-                  </div>
-                </div>
-                <div id="research-job-log" class="research-job-log"></div>
+                <section class="studio-section">
+                  <h3>Grounding</h3>
+                  <div id="research-evidence-drawer" class="research-evidence-drawer"></div>
+                  <div id="paper-detail"></div>
+                  <div id="research-job-log" class="research-job-log"></div>
+                </section>
               </aside>
             </div>
-
-            <section id="compare-panel" class="study-panel">
-            <div class="module-header">
-              <div>
-                <p class="panel-kicker">Compare</p>
-                <h2>Compare structured evidence across the active collection</h2>
-              </div>
-              <div id="compare-collection-context" class="module-meta"></div>
-            </div>
-
-            <div id="compare-readiness-banner" class="readiness-banner"></div>
-
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <p class="panel-kicker">Comparison Controls</p>
-                  <h3>Choose the slice you want to compare</h3>
-                </div>
-                <button id="compare-refresh-button" type="button" class="action-button action-button-primary">
-                  Refresh Compare View
-                </button>
-              </div>
-              <div class="compare-controls">
-                <div>
-                  <label class="field-label" for="compare-dataset-input">Dataset</label>
-                  <input id="compare-dataset-input" type="text" placeholder="e.g. mESC" />
-                </div>
-                <div>
-                  <label class="field-label" for="compare-metric-input">Metric</label>
-                  <input id="compare-metric-input" type="text" placeholder="e.g. AUROC" />
-                </div>
-                <div>
-                  <label class="field-label" for="compare-method-input">Method focus</label>
-                  <input id="compare-method-input" type="text" placeholder="Optional method family" />
-                </div>
-              </div>
-            </section>
-
-            <div class="compare-grid">
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Results</p>
-                    <h3>Metric-ranked result rows</h3>
-                  </div>
-                </div>
-                <div id="compare-results-surface"></div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Methods</p>
-                    <h3>Method summaries</h3>
-                  </div>
-                </div>
-                <div id="compare-methods-surface"></div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Engineering Tricks</p>
-                    <h3>Implementation patterns</h3>
-                  </div>
-                </div>
-                <div id="compare-tricks-surface"></div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Artifacts</p>
-                    <h3>Figures and tables</h3>
-                  </div>
-                </div>
-                <div class="artifact-grid">
-                  <div class="surface-card">
-                    <h4>Figures</h4>
-                    <div id="compare-figures-surface"></div>
-                  </div>
-                  <div class="surface-card">
-                    <h4>Tables</h4>
-                    <div id="compare-tables-surface"></div>
-                  </div>
-                </div>
-              </section>
-            </div>
-          </section>
-
-          <section id="activity-panel" class="study-panel">
-            <div class="module-header">
-              <div>
-                <p class="panel-kicker">Activity</p>
-                <h2>Queue and processing log</h2>
-              </div>
-              <div class="button-row">
-                <button id="refresh-jobs-button" class="action-button" type="button">Refresh Jobs</button>
-                <button id="reindex-button" class="action-button action-button-primary" type="button">
-                  Queue Reindex
-                </button>
-              </div>
-            </div>
-
-            <section class="panel">
-              <div id="jobs-list" class="stacked-list"></div>
-            </section>
-          </section>
-
-          <section id="runtime-panel" class="study-panel">
-            <div class="module-header">
-              <div>
-                <p class="panel-kicker">Local runtime</p>
-                <h2>System and context status</h2>
-              </div>
-            </div>
-
-            <div class="settings-grid">
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Current Context</p>
-                    <h3>Study and collection state</h3>
-                  </div>
-                </div>
-                <div id="settings-summary"></div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="panel-kicker">Local Operation</p>
-                    <h3>Runtime and backend configuration</h3>
-                  </div>
-                </div>
-                <div id="settings-runtime-summary"></div>
-              </section>
-            </div>
-          </section>
           </section>
         </main>
       </div>

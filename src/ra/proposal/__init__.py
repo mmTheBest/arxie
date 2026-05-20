@@ -1,5 +1,22 @@
 """Proposal domain package."""
 
+from ra.proposal.artifact_sync import (
+    ArtifactNode,
+    ArtifactNodeNotFoundError,
+    ArtifactSyncManager,
+    ProposalArtifact,
+    ProvenanceNotFoundError,
+)
+from ra.proposal.assembler import (
+    ClaimEvidenceLabel,
+    ProposalAssembler,
+    ProposalClaim,
+    ProposalDraftCompleteness,
+    ProposalDraft,
+    ProposalDraftSection,
+    ProposalReference,
+    ProposalSectionCompleteness,
+)
 from ra.proposal.branching import (
     BranchAlreadyExistsError,
     BranchComparisonItem,
@@ -10,18 +27,16 @@ from ra.proposal.branching import (
     HypothesisBranch,
     HypothesisBranchManager,
 )
-from ra.proposal.artifact_sync import (
-    ArtifactNode,
-    ArtifactNodeNotFoundError,
-    ArtifactSyncManager,
-    ProposalArtifact,
-    ProvenanceNotFoundError,
-)
 from ra.proposal.evidence_mapper import (
     EvidenceItem,
     EvidenceMapper,
     EvidenceMappingResult,
     LandscapeSummary,
+)
+from ra.proposal.export import (
+    ProposalExportDocument,
+    ProposalExporter,
+    ProposalExportFormat,
 )
 from ra.proposal.models import ProposalStage, ProposalWorkflowState, StageState
 from ra.proposal.session_service import ProposalSessionService
@@ -43,6 +58,17 @@ __all__ = [
     "ProposalStage",
     "ProposalWorkflowState",
     "StageState",
+    "ClaimEvidenceLabel",
+    "ProposalClaim",
+    "ProposalDraftSection",
+    "ProposalReference",
+    "ProposalDraft",
+    "ProposalSectionCompleteness",
+    "ProposalDraftCompleteness",
+    "ProposalAssembler",
+    "ProposalExportFormat",
+    "ProposalExportDocument",
+    "ProposalExporter",
     "BranchScorecard",
     "HypothesisBranch",
     "BranchComparisonItem",

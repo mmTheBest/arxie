@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.config import load_paperbase_config
 from paperbase.db.session import make_session_factory
+from paperbase.projects import ProjectRegistry
 from paperbase.version import get_version
 from ra.utils.logging_config import configure_logging_from_env
 from services.paperbase_api.errors import register_exception_handlers
@@ -26,6 +27,7 @@ from services.paperbase_api.routes.extraction import (
 from services.paperbase_api.routes.ingest import router as ingest_router
 from services.paperbase_api.routes.jobs import router as jobs_router
 from services.paperbase_api.routes.papers import router as papers_router
+from services.paperbase_api.routes.projects import router as projects_router
 from services.paperbase_api.routes.research import router as research_router
 from services.paperbase_api.routes.search import router as search_router
 from services.paperbase_api.routes.ui import STATIC_DIR, router as ui_router
@@ -40,6 +42,7 @@ def create_app(
     job_dispatcher: object | None = None,
     embedding_provider: object | None = None,
     dependency_checker: object | None = None,
+    project_registry: ProjectRegistry | None = None,
 ) -> FastAPI:
     """Create the Paperbase API application."""
 
@@ -53,6 +56,9 @@ def create_app(
         session_factory=resolved_session_factory,
         config=config,
         search_backend=search_backend,
+    )
+    resolved_project_registry = project_registry or ProjectRegistry(
+        registry_path=config.project_registry_path
     )
 
     app = FastAPI(
@@ -72,6 +78,7 @@ def create_app(
     app.state.job_dispatcher = job_dispatcher
     app.state.embedding_provider = embedding_provider
     app.state.dependency_checker = resolved_dependency_checker
+    app.state.project_registry = resolved_project_registry
     app.state.upload_staging_dir = Path(config.upload_staging_dir)
 
     register_exception_handlers(app)
@@ -109,6 +116,7 @@ def create_app(
 
     app.include_router(search_router)
     app.include_router(papers_router)
+    app.include_router(projects_router)
     app.include_router(compare_router)
     app.include_router(collections_router)
     app.include_router(workspaces_router)

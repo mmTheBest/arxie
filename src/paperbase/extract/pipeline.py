@@ -25,14 +25,9 @@ from paperbase.db.models import (
 from paperbase.extract.contracts import StructuredExtractionBundle
 from paperbase.schemas.extraction import (
     DatasetExtraction,
-    EngineeringTrickExtraction,
     EvidenceSpanPayload,
-    FindingExtraction,
-    GlossaryTermExtraction,
-    LimitationExtraction,
     MethodExtraction,
     MetricExtraction,
-    ResultExtraction,
 )
 
 

@@ -7,4 +7,3 @@ This package will own the persistent research database layer:
 - extraction and indexing
 - collection and annotation models
 """
-

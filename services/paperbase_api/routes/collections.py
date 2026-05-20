@@ -30,7 +30,7 @@ from paperbase.db.repositories import (
 )
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.background_jobs import create_background_job
-from services.paperbase_api.dependencies import get_session
+from services.paperbase_api.dependencies import get_project_id, get_session, get_session_factory
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
     AnnotationCreateRequest,
@@ -701,10 +701,11 @@ def parse_collection(
         return SingleBackgroundJobResponse(data=background_job_to_response(active_job))
 
     job = create_background_job(
-        session_factory=request.app.state.session_factory,
+        session_factory=get_session_factory(request),
         job_type="collection_parse",
         payload_json=job_payload,
         dispatcher=request.app.state.job_dispatcher,
+        project_id=get_project_id(request),
     )
 
     return SingleBackgroundJobResponse(data=background_job_to_response(job))

@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from fastapi import Body, FastAPI, Path
+from fastapi import Body, FastAPI, Path, Query
 from fastapi.responses import RedirectResponse
 
 from ra.agents.lit_review_agent import LitReviewAgent
@@ -48,21 +48,32 @@ from ra.api.proposal_models import (
     ProposalArtifactEditSourceResponse,
     ProposalArtifactNodeResponse,
     ProposalArtifactNodeUpsertRequest,
-    ProposalEvidenceQueryRequest,
-    ProposalEvidenceQueryResponse,
-    ProposalConversationMessageCreateRequest,
-    ProposalConversationMessageResponse,
-    ProposalConversationThreadResponse,
-    ProposalEvidenceInspectorResponse,
     ProposalBranchCompareRequest,
     ProposalBranchCompareResponse,
     ProposalBranchCreateRequest,
     ProposalBranchListResponse,
     ProposalBranchResponse,
+    ProposalConversationMessageCreateRequest,
+    ProposalConversationMessageResponse,
+    ProposalConversationThreadResponse,
+    ProposalEvidenceInspectorResponse,
+    ProposalEvidenceQueryRequest,
+    ProposalEvidenceQueryResponse,
     ProposalSessionCreateRequest,
+    ProposalSessionExportResponse,
     ProposalSessionResponse,
     ProposalStageAdvanceRequest,
     ProposalStageUpdateRequest,
+)
+from ra.api.study_models import (
+    StudyBriefResponse,
+    StudyBriefUpdateRequest,
+    StudyCreateRequest,
+    StudyRunCreateRequest,
+    StudyRunListResponse,
+    StudyRunResponse,
+    StudySourceCreateRequest,
+    StudySourceResponse,
 )
 from ra.proposal import (
     ArtifactNodeNotFoundError,
@@ -73,6 +84,9 @@ from ra.proposal import (
     HypothesisBranchManager,
     InMemoryProposalSessionStore,
     ProposalArtifact,
+    ProposalAssembler,
+    ProposalExporter,
+    ProposalExportFormat,
     ProposalSessionService,
     ProposalStage,
     ProposalStageEngine,
@@ -84,6 +98,17 @@ from ra.proposal import (
 )
 from ra.retrieval.runtime import build_runtime_retriever
 from ra.retrieval.unified import UnifiedRetriever
+from ra.study import (
+    JsonStudyStore,
+    StudyAgentRuntime,
+    StudyAlreadyExistsError,
+    StudyBriefService,
+    StudyNotFoundError,
+    StudyRunNotFoundError,
+    StudyStoreError,
+    StudyTaskError,
+    StudyVersionConflictError,
+)
 from ra.utils.logging_config import configure_logging_from_env
 
 logger = logging.getLogger(__name__)
@@ -95,6 +120,10 @@ ProposalSessionServiceFactory = Callable[[], ProposalSessionService]
 BranchManagerFactory = Callable[[], HypothesisBranchManager]
 EvidenceMapperFactory = Callable[[], EvidenceMapper]
 ArtifactSyncManagerFactory = Callable[[], ArtifactSyncManager]
+ProposalAssemblerFactory = Callable[[], ProposalAssembler]
+ProposalExporterFactory = Callable[[], ProposalExporter]
+StudyBriefServiceFactory = Callable[[], StudyBriefService]
+StudyAgentRuntimeFactory = Callable[[StudyBriefService], StudyAgentRuntime]
 
 OPENAPI_TAGS = [
     {
@@ -111,6 +140,10 @@ OPENAPI_TAGS = [
     {
         "name": "proposal",
         "description": "Stage-gated proposal workflow endpoints for session state management.",
+    },
+    {
+        "name": "study",
+        "description": "Local study-agent memory, source, and deterministic task endpoints.",
     },
 ]
 
@@ -352,6 +385,22 @@ def _default_artifact_sync_manager_factory() -> ArtifactSyncManager:
     return ArtifactSyncManager()
 
 
+def _default_proposal_assembler_factory() -> ProposalAssembler:
+    return ProposalAssembler()
+
+
+def _default_proposal_exporter_factory() -> ProposalExporter:
+    return ProposalExporter()
+
+
+def _default_study_service_factory() -> StudyBriefService:
+    return StudyBriefService(store=JsonStudyStore())
+
+
+def _default_study_runtime_factory(service: StudyBriefService) -> StudyAgentRuntime:
+    return StudyAgentRuntime(service=service)
+
+
 def _sources_for_request(source: str) -> tuple[str, ...]:
     if source == "both":
         return ("semantic_scholar", "arxiv")
@@ -519,6 +568,39 @@ def _get_or_create_artifact_sync_manager(app: FastAPI) -> ArtifactSyncManager:
     return manager
 
 
+def _get_or_create_proposal_assembler(app: FastAPI) -> ProposalAssembler:
+    assembler = getattr(app.state, "proposal_assembler", None)
+    if assembler is None:
+        assembler = app.state.proposal_assembler_factory()
+        app.state.proposal_assembler = assembler
+    return assembler
+
+
+def _get_or_create_proposal_exporter(app: FastAPI) -> ProposalExporter:
+    exporter = getattr(app.state, "proposal_exporter", None)
+    if exporter is None:
+        exporter = app.state.proposal_exporter_factory()
+        app.state.proposal_exporter = exporter
+    return exporter
+
+
+def _get_or_create_study_service(app: FastAPI) -> StudyBriefService:
+    service = getattr(app.state, "study_service", None)
+    if service is None:
+        service = app.state.study_service_factory()
+        app.state.study_service = service
+    return service
+
+
+def _get_or_create_study_runtime(app: FastAPI) -> StudyAgentRuntime:
+    runtime = getattr(app.state, "study_runtime", None)
+    if runtime is None:
+        service = _get_or_create_study_service(app)
+        runtime = app.state.study_runtime_factory(service)
+        app.state.study_runtime = runtime
+    return runtime
+
+
 def _version_conflict_details(exc: SessionVersionConflictError) -> list[dict[str, Any]]:
     return [
         {
@@ -540,6 +622,16 @@ def _stage_transition_details(exc: StageTransitionError) -> list[dict[str, Any]]
     if exc.missing_fields:
         details["missing_fields"] = list(exc.missing_fields)
     return [details]
+
+
+def _study_version_conflict_details(exc: StudyVersionConflictError) -> list[dict[str, Any]]:
+    return [
+        {
+            "study_id": exc.study_id,
+            "expected_version": exc.expected_version,
+            "current_version": exc.current_version,
+        }
+    ]
 
 
 async def _run_search_batch(
@@ -594,6 +686,10 @@ def create_app(
     branch_manager_factory: BranchManagerFactory | None = None,
     evidence_mapper_factory: EvidenceMapperFactory | None = None,
     artifact_sync_manager_factory: ArtifactSyncManagerFactory | None = None,
+    proposal_assembler_factory: ProposalAssemblerFactory | None = None,
+    proposal_exporter_factory: ProposalExporterFactory | None = None,
+    study_service_factory: StudyBriefServiceFactory | None = None,
+    study_runtime_factory: StudyAgentRuntimeFactory | None = None,
 ) -> FastAPI:
     """Create the FastAPI app instance.
 
@@ -612,6 +708,10 @@ def create_app(
     artifact_sync_manager_factory = (
         artifact_sync_manager_factory or _default_artifact_sync_manager_factory
     )
+    proposal_assembler_factory = proposal_assembler_factory or _default_proposal_assembler_factory
+    proposal_exporter_factory = proposal_exporter_factory or _default_proposal_exporter_factory
+    study_service_factory = study_service_factory or _default_study_service_factory
+    study_runtime_factory = study_runtime_factory or _default_study_runtime_factory
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -621,7 +721,11 @@ def create_app(
         app.state.branch_manager = branch_manager_factory()
         app.state.evidence_mapper = evidence_mapper_factory()
         app.state.artifact_sync_manager = artifact_sync_manager_factory()
+        app.state.proposal_assembler = proposal_assembler_factory()
+        app.state.proposal_exporter = proposal_exporter_factory()
         app.state.proposal_conversations = {}
+        app.state.study_service = study_service_factory()
+        app.state.study_runtime = study_runtime_factory(app.state.study_service)
         try:
             yield
         finally:
@@ -652,12 +756,20 @@ def create_app(
     app.state.branch_manager_factory = branch_manager_factory
     app.state.evidence_mapper_factory = evidence_mapper_factory
     app.state.artifact_sync_manager_factory = artifact_sync_manager_factory
+    app.state.proposal_assembler_factory = proposal_assembler_factory
+    app.state.proposal_exporter_factory = proposal_exporter_factory
+    app.state.study_service_factory = study_service_factory
+    app.state.study_runtime_factory = study_runtime_factory
     app.state.chat_agents = {}
     app.state.proposal_session_service = proposal_session_service_factory()
     app.state.branch_manager = branch_manager_factory()
     app.state.evidence_mapper = evidence_mapper_factory()
     app.state.artifact_sync_manager = artifact_sync_manager_factory()
+    app.state.proposal_assembler = proposal_assembler_factory()
+    app.state.proposal_exporter = proposal_exporter_factory()
     app.state.proposal_conversations = {}
+    app.state.study_service = study_service_factory()
+    app.state.study_runtime = study_runtime_factory(app.state.study_service)
 
     register_exception_handlers(app)
 
@@ -1172,6 +1284,317 @@ def create_app(
         return await _run_lit_review_pipeline(payload)
 
     @app.post(
+        "/api/studies",
+        response_model=StudyBriefResponse,
+        status_code=201,
+        summary="Create Study Brief",
+        description="Creates durable local study memory for deterministic study-agent tasks.",
+        response_description="Created study brief.",
+        responses={
+            409: _error_response_doc(
+                description="Study already exists.",
+                error="study_exists",
+                message="Study 'study-1' already exists.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["study"],
+    )
+    async def create_study(payload: StudyCreateRequest) -> StudyBriefResponse:
+        service = _get_or_create_study_service(app)
+        try:
+            brief = service.create_brief(
+                study_id=payload.study_id,
+                title=payload.title,
+                research_goal=payload.research_goal,
+                collection_id=payload.collection_id,
+                domain=payload.domain,
+                current_method=payload.current_method,
+                datasets=payload.datasets,
+                metrics=payload.metrics,
+                constraints=payload.constraints,
+                decisions=payload.decisions,
+                risks=payload.risks,
+                open_questions=payload.open_questions,
+            )
+        except StudyAlreadyExistsError as exc:
+            raise RAAPIError(
+                status_code=409,
+                error="study_exists",
+                message=str(exc),
+                details=[{"study_id": exc.study_id}],
+            ) from exc
+        except StudyStoreError as exc:
+            raise RAAPIError(
+                status_code=500,
+                error="study_store_error",
+                message="Study store could not be accessed.",
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+        return StudyBriefResponse.from_domain(brief)
+
+    @app.get(
+        "/api/studies/{study_id}",
+        response_model=StudyBriefResponse,
+        summary="Get Study Brief",
+        description="Returns durable study memory for one local study.",
+        response_description="Study brief.",
+        responses={
+            404: _error_response_doc(
+                description="Study not found.",
+                error="study_not_found",
+                message="Study 'study-1' was not found.",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["study"],
+    )
+    async def get_study(study_id: str = Path(..., min_length=1)) -> StudyBriefResponse:
+        service = _get_or_create_study_service(app)
+        try:
+            return StudyBriefResponse.from_domain(service.get_brief(study_id))
+        except StudyNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="study_not_found",
+                message=str(exc),
+                details=[{"study_id": exc.study_id}],
+            ) from exc
+
+    @app.patch(
+        "/api/studies/{study_id}/brief",
+        response_model=StudyBriefResponse,
+        summary="Update Study Brief",
+        description="Updates study memory with optimistic version checks.",
+        response_description="Updated study brief.",
+        responses={
+            404: _error_response_doc(
+                description="Study not found.",
+                error="study_not_found",
+                message="Study 'study-1' was not found.",
+            ),
+            409: _error_response_doc(
+                description="Study version conflict.",
+                error="study_version_conflict",
+                message="Version conflict for study 'study-1'.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["study"],
+    )
+    async def update_study_brief(
+        study_id: str = Path(..., min_length=1),
+        payload: StudyBriefUpdateRequest = Body(...),
+    ) -> StudyBriefResponse:
+        service = _get_or_create_study_service(app)
+        try:
+            brief = service.update_brief(
+                study_id,
+                expected_version=payload.expected_version,
+                title=payload.title,
+                research_goal=payload.research_goal,
+                collection_id=payload.collection_id,
+                domain=payload.domain,
+                current_method=payload.current_method,
+                datasets=payload.datasets,
+                metrics=payload.metrics,
+                constraints=payload.constraints,
+                decisions=payload.decisions,
+                risks=payload.risks,
+                open_questions=payload.open_questions,
+            )
+        except StudyNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="study_not_found",
+                message=str(exc),
+                details=[{"study_id": exc.study_id}],
+            ) from exc
+        except StudyVersionConflictError as exc:
+            raise RAAPIError(
+                status_code=409,
+                error="study_version_conflict",
+                message=str(exc),
+                details=_study_version_conflict_details(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(status_code=400, error="invalid_input", message=str(exc)) from exc
+        return StudyBriefResponse.from_domain(brief)
+
+    @app.post(
+        "/api/studies/{study_id}/sources",
+        response_model=StudySourceResponse,
+        status_code=201,
+        summary="Attach Study Source",
+        description="Attaches pasted text source context such as a draft, note, or result summary.",
+        response_description="Created study source.",
+        responses={
+            404: _error_response_doc(
+                description="Study not found.",
+                error="study_not_found",
+                message="Study 'study-1' was not found.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["study"],
+    )
+    async def add_study_source(
+        study_id: str = Path(..., min_length=1),
+        payload: StudySourceCreateRequest = Body(...),
+    ) -> StudySourceResponse:
+        service = _get_or_create_study_service(app)
+        try:
+            source = service.add_source(
+                study_id,
+                source_type=payload.source_type,
+                title=payload.title,
+                content=payload.content,
+                summary=payload.summary,
+                extracted_facts=payload.extracted_facts,
+            )
+        except StudyNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="study_not_found",
+                message=str(exc),
+                details=[{"study_id": exc.study_id}],
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(status_code=400, error="invalid_input", message=str(exc)) from exc
+        return StudySourceResponse.from_domain(source)
+
+    @app.post(
+        "/api/studies/{study_id}/runs",
+        response_model=StudyRunResponse,
+        status_code=201,
+        summary="Run Study-Agent Task",
+        description="Runs a deterministic study-agent task and persists its trace.",
+        response_description="Created study-agent run.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid study task.",
+                error="invalid_study_task",
+                message="Unsupported study task.",
+            ),
+            404: _error_response_doc(
+                description="Study not found.",
+                error="study_not_found",
+                message="Study 'study-1' was not found.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["study"],
+    )
+    async def run_study_task(
+        study_id: str = Path(..., min_length=1),
+        payload: StudyRunCreateRequest = Body(...),
+    ) -> StudyRunResponse:
+        runtime = _get_or_create_study_runtime(app)
+        try:
+            run = runtime.run_task(
+                study_id=study_id,
+                task_type=payload.task_type,
+                query=payload.query,
+                papers=[paper.to_domain() for paper in payload.papers],
+            )
+        except StudyNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="study_not_found",
+                message=str(exc),
+                details=[{"study_id": exc.study_id}],
+            ) from exc
+        except StudyTaskError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_study_task",
+                message=str(exc),
+            ) from exc
+        return StudyRunResponse.from_domain(run)
+
+    @app.get(
+        "/api/studies/{study_id}/runs/{run_id}",
+        response_model=StudyRunResponse,
+        summary="Get Study-Agent Run",
+        description="Returns a persisted study-agent run and its trace.",
+        response_description="Study-agent run.",
+        responses={
+            404: _error_response_doc(
+                description="Run not found.",
+                error="study_run_not_found",
+                message="Run 'run-1' was not found for study 'study-1'.",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["study"],
+    )
+    async def get_study_run(
+        study_id: str = Path(..., min_length=1),
+        run_id: str = Path(..., min_length=1),
+    ) -> StudyRunResponse:
+        service = _get_or_create_study_service(app)
+        try:
+            return StudyRunResponse.from_domain(service.get_run(study_id, run_id))
+        except StudyNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="study_not_found",
+                message=str(exc),
+                details=[{"study_id": exc.study_id}],
+            ) from exc
+        except StudyRunNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="study_run_not_found",
+                message=str(exc),
+                details=[{"study_id": exc.study_id, "run_id": exc.run_id}],
+            ) from exc
+
+    @app.get(
+        "/api/studies/{study_id}/runs",
+        response_model=StudyRunListResponse,
+        summary="List Study-Agent Runs",
+        description="Lists persisted study-agent runs for a study.",
+        response_description="Study-agent run list.",
+        responses={
+            404: _error_response_doc(
+                description="Study not found.",
+                error="study_not_found",
+                message="Study 'study-1' was not found.",
+            ),
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["study"],
+    )
+    async def list_study_runs(
+        study_id: str = Path(..., min_length=1),
+    ) -> StudyRunListResponse:
+        service = _get_or_create_study_service(app)
+        try:
+            runs = service.list_runs(study_id)
+        except StudyNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="study_not_found",
+                message=str(exc),
+                details=[{"study_id": exc.study_id}],
+            ) from exc
+        return StudyRunListResponse(
+            study_id=study_id,
+            count=len(runs),
+            results=[StudyRunResponse.from_domain(run) for run in runs],
+        )
+
+    @app.post(
         "/api/proposal/sessions",
         response_model=ProposalSessionResponse,
         status_code=201,
@@ -1261,6 +1684,69 @@ def create_app(
             ) from exc
 
         return ProposalSessionResponse.from_snapshot(snapshot)
+
+    @app.get(
+        "/api/proposal/sessions/{session_id}/export",
+        response_model=ProposalSessionExportResponse,
+        summary="Export Proposal Session Draft",
+        description=(
+            "Assembles a deterministic proposal draft from session stage state and "
+            "returns markdown or PDF export content."
+        ),
+        response_description="Rendered proposal export payload.",
+        responses={
+            400: _error_response_doc(
+                description="Invalid export request.",
+                error="invalid_input",
+                message="session_id must not be empty",
+            ),
+            404: _error_response_doc(
+                description="Session not found.",
+                error="session_not_found",
+                message="Session 'proposal-session-1' was not found.",
+            ),
+            422: VALIDATION_ERROR_RESPONSE,
+            500: INTERNAL_ERROR_RESPONSE,
+        },
+        tags=["proposal"],
+    )
+    async def export_proposal_session(
+        session_id: str = Path(
+            ...,
+            min_length=1,
+            max_length=128,
+            description="Proposal session identifier.",
+        ),
+        export_format: ProposalExportFormat = Query(
+            default=ProposalExportFormat.MARKDOWN,
+            alias="format",
+            description="Export format (`markdown` or `pdf`).",
+        ),
+    ) -> ProposalSessionExportResponse:
+        service = _get_or_create_proposal_session_service(app)
+        assembler = _get_or_create_proposal_assembler(app)
+        exporter = _get_or_create_proposal_exporter(app)
+        try:
+            snapshot = service.get_session(session_id)
+            draft = assembler.assemble(session_id=snapshot.session_id, state=snapshot.state)
+            exported = exporter.render(draft, export_format=export_format)
+        except SessionNotFoundError as exc:
+            raise RAAPIError(
+                status_code=404,
+                error="session_not_found",
+                message=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise RAAPIError(
+                status_code=400,
+                error="invalid_input",
+                message=str(exc),
+            ) from exc
+
+        return ProposalSessionExportResponse.from_domain(
+            session_id=snapshot.session_id,
+            export=exported,
+        )
 
     @app.patch(
         "/api/proposal/sessions/{session_id}/stages/{stage}",
@@ -1525,7 +2011,11 @@ def create_app(
         ),
         artifact: ProposalArtifact = Path(
             ...,
-            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+            description=(
+                "Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`, "
+                "`data_options_table`, `feasibility_scorecard`, `experiment_flow_diagram`, "
+                "`analysis_plan_tree`, `outcome_comparison_matrix`)."
+            ),
         ),
         node_id: str = Path(
             ...,
@@ -1725,7 +2215,11 @@ def create_app(
         ),
         artifact: ProposalArtifact = Path(
             ...,
-            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+            description=(
+                "Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`, "
+                "`data_options_table`, `feasibility_scorecard`, `experiment_flow_diagram`, "
+                "`analysis_plan_tree`, `outcome_comparison_matrix`)."
+            ),
         ),
         node_id: str = Path(
             ...,
@@ -1799,7 +2293,11 @@ def create_app(
         ),
         artifact: ProposalArtifact = Path(
             ...,
-            description="Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`).",
+            description=(
+                "Artifact identifier (`logical_tree`, `evidence_map`, `hypothesis_tree`, "
+                "`data_options_table`, `feasibility_scorecard`, `experiment_flow_diagram`, "
+                "`analysis_plan_tree`, `outcome_comparison_matrix`)."
+            ),
         ),
         node_id: str = Path(
             ...,
@@ -1921,7 +2419,8 @@ def create_app(
         summary="Get Proposal Evidence Inspector",
         description=(
             "Returns the evidence-inspector contract payload for the dashboard shell. "
-            "Current implementation returns placeholder items until persisted inspector state is wired."
+            "Current implementation returns placeholder items until persisted inspector "
+            "state is wired."
         ),
         response_description="Evidence inspector payload.",
         responses={

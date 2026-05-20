@@ -148,7 +148,6 @@ class PDFParser:
         # Build sections in order.
         sections: list[Section] = []
         for i, m in enumerate(matches):
-            start = m.start()
             end = matches[i + 1].start() if i + 1 < len(matches) else len(normalized)
             title = normalized[m.start() : m.end()].strip()
             content = normalized[m.end() : end].strip()

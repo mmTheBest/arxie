@@ -17,6 +17,8 @@ from ra.proposal import (
     HypothesisBranch,
     LandscapeSummary,
     ProposalArtifact,
+    ProposalExportDocument,
+    ProposalExportFormat,
     ProposalSessionSnapshot,
     ProposalStage,
 )
@@ -144,6 +146,52 @@ class ProposalSessionResponse(BaseModel):
         )
 
 
+class ProposalSessionExportResponse(BaseModel):
+    class ProposalSectionCompletenessResponse(BaseModel):
+        section_id: str
+        title: str
+        complete: bool
+        missing_fields: list[str] = Field(default_factory=list)
+
+    class ProposalDraftCompletenessResponse(BaseModel):
+        complete: bool
+        sections: list["ProposalSessionExportResponse.ProposalSectionCompletenessResponse"]
+
+    session_id: str
+    format: ProposalExportFormat
+    content_type: str
+    filename: str
+    content: str
+    completeness: ProposalDraftCompletenessResponse
+
+    @classmethod
+    def from_domain(
+        cls,
+        *,
+        session_id: str,
+        export: ProposalExportDocument,
+    ) -> ProposalSessionExportResponse:
+        return cls(
+            session_id=session_id,
+            format=export.export_format,
+            content_type=export.content_type,
+            filename=export.filename,
+            content=export.content,
+            completeness=cls.ProposalDraftCompletenessResponse(
+                complete=export.completeness.complete,
+                sections=[
+                    cls.ProposalSectionCompletenessResponse(
+                        section_id=section_check.section_id,
+                        title=section_check.title,
+                        complete=section_check.complete,
+                        missing_fields=list(section_check.missing_fields),
+                    )
+                    for section_check in export.completeness.checks
+                ],
+            ),
+        )
+
+
 class ProposalEvidencePaperInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -259,7 +307,9 @@ class ProposalEvidenceQueryResponse(BaseModel):
     @classmethod
     def from_domain(cls, result: EvidenceMappingResult) -> ProposalEvidenceQueryResponse:
         return cls(
-            supporting=[ProposalEvidenceItemResponse.from_domain(item) for item in result.supporting],
+            supporting=[
+                ProposalEvidenceItemResponse.from_domain(item) for item in result.supporting
+            ],
             contradicting=[
                 ProposalEvidenceItemResponse.from_domain(item)
                 for item in result.contradicting

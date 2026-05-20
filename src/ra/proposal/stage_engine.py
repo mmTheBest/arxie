@@ -77,14 +77,14 @@ _REQUIRED_FIELDS: dict[ProposalStage, tuple[str, ...]] = {
         "selected_primary_hypothesis",
     ),
     ProposalStage.DATA_FEASIBILITY_PLANNING: (
-        "candidate_datasets",
-        "feasibility_constraints",
+        "data_options_table",
+        "feasibility_scorecard",
         "selected_data_strategy",
     ),
     ProposalStage.EXPERIMENT_ANALYSIS_DESIGN: (
-        "experiment_design",
-        "analysis_plan",
-        "controls_and_confounders",
+        "experiment_flow_diagram",
+        "analysis_plan_tree",
+        "outcome_comparison_matrix",
     ),
     ProposalStage.PROPOSAL_ASSEMBLY: (
         "background_and_gap",

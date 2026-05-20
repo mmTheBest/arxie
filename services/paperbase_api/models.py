@@ -35,6 +35,29 @@ class ReadinessResponse(BaseModel):
     dependencies: list[DependencyStatusResponse] = Field(default_factory=list)
 
 
+class ProjectOpenRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    root_path: str = Field(..., min_length=1, max_length=4096)
+    title: str | None = Field(None, min_length=1, max_length=255)
+
+
+class ProjectResponse(BaseModel):
+    id: str
+    title: str
+    root_path: str
+    database_path: str
+    last_opened_at: str
+
+
+class SingleProjectResponse(BaseModel):
+    data: ProjectResponse
+
+
+class ProjectsResponse(BaseModel):
+    data: list[ProjectResponse]
+
+
 class PaperSummaryResponse(BaseModel):
     id: str
     title: str
@@ -502,6 +525,8 @@ class StudySourcesResponse(BaseModel):
 ResearchArtifactType = Literal[
     "field_patterns",
     "hypotheses",
+    "literature_review",
+    "comparison",
     "experiment_plan",
     "critique",
     "experiment_backlog",
@@ -546,6 +571,7 @@ class ResearchMessageCreateRequest(BaseModel):
 
     message: str = Field(..., min_length=1, max_length=20000)
     artifact_type: ResearchArtifactType | None = None
+    suggestion_id: str | None = Field(None, min_length=1, max_length=128)
     source_ids: list[str] = Field(default_factory=list, max_length=50)
 
 
@@ -563,6 +589,9 @@ class ResearchArtifactPatchRequest(BaseModel):
 
     title: str | None = Field(None, min_length=1, max_length=255)
     status: str | None = Field(None, min_length=1, max_length=64)
+    is_saved: bool | None = None
+    saved_format: Literal["markdown", "csv", "script", "note"] | None = None
+    saved_title: str | None = Field(None, min_length=1, max_length=255)
 
 
 class ResearchArtifactResponse(BaseModel):
@@ -578,6 +607,9 @@ class ResearchArtifactResponse(BaseModel):
     model_name: str | None = None
     prompt_version: str | None = None
     error_message: str | None = None
+    is_saved: bool = False
+    saved_format: str | None = None
+    saved_title: str | None = None
 
 
 class ResearchThreadDetailResponseData(ResearchThreadResponse):
@@ -605,14 +637,85 @@ class ResearchArtifactsResponse(BaseModel):
     data: list[ResearchArtifactResponse]
 
 
+class ResearchAgentStepResponse(BaseModel):
+    id: str
+    run_id: str
+    ordinal: int
+    step_type: str
+    label: str
+    status: str
+    input_json: dict[str, Any] = Field(default_factory=dict)
+    output_json: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+
+
+class StudyContextPackResponse(BaseModel):
+    id: str
+    run_id: str
+    collection_id: str
+    workspace_id: str | None = None
+    task_type: str
+    cache_key: str | None = None
+    context_summary: dict[str, Any] = Field(default_factory=dict)
+    selected_item_counts: dict[str, Any] = Field(default_factory=dict)
+    readiness_warnings: list[str] = Field(default_factory=list)
+
+
+class ResearchValidationReportResponse(BaseModel):
+    id: str
+    run_id: str
+    artifact_id: str
+    harness_status: str
+    missing_evidence: list[str] = Field(default_factory=list)
+    unsupported_claims: list[str] = Field(default_factory=list)
+    readiness_blockers: list[str] = Field(default_factory=list)
+    report: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResearchAgentRunResponse(BaseModel):
+    id: str
+    thread_id: str | None = None
+    artifact_id: str
+    collection_id: str
+    workspace_id: str | None = None
+    skill_id: str
+    artifact_type: str
+    model_policy: str
+    status: str
+    input_json: dict[str, Any] = Field(default_factory=dict)
+    model_name: str | None = None
+    error_message: str | None = None
+    steps: list[ResearchAgentStepResponse] = Field(default_factory=list)
+    context_pack: StudyContextPackResponse | None = None
+    validation_report: ResearchValidationReportResponse | None = None
+
+
+class SingleResearchAgentRunResponse(BaseModel):
+    data: ResearchAgentRunResponse
+
+
 class ResearchMessageJobResponseData(BaseModel):
     message: ResearchMessageResponse
     artifact: ResearchArtifactResponse
     job: BackgroundJobResponse
+    run_id: str | None = None
 
 
 class ResearchMessageJobResponse(BaseModel):
     data: ResearchMessageJobResponseData
+
+
+class ResearchSuggestionResponse(BaseModel):
+    id: str
+    label: str
+    instruction: str
+    skill_id: str
+    artifact_type: str
+    readiness: str
+
+
+class ResearchSuggestionsResponse(BaseModel):
+    data: list[ResearchSuggestionResponse]
 
 
 class PaperResearchLabelPatchRequest(BaseModel):

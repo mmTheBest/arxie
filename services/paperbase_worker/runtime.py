@@ -33,6 +33,7 @@ class PaperbaseWorker:
         extraction_client_factory: Callable[[], object] | None = None,
         parser_factory: Callable[[], object] | None = None,
         provider_resolver: object | None = None,
+        research_model_client_factory: Callable[[], object | None] | None = None,
         job_consumer: object | None = None,
         job_dispatcher: object | None = None,
         retry_limit: int = 3,
@@ -41,12 +42,14 @@ class PaperbaseWorker:
         download_cache_dir: str | None = None,
         download_cache_ttl_seconds: int = 86400,
         stale_running_seconds: float = 900.0,
+        project_id: str | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.search_backend = search_backend
         self.extraction_client_factory = extraction_client_factory
         self.parser_factory = parser_factory
         self.provider_resolver = provider_resolver
+        self.research_model_client_factory = research_model_client_factory
         self.job_consumer = job_consumer
         self.job_dispatcher = job_dispatcher
         self.retry_limit = retry_limit
@@ -55,6 +58,7 @@ class PaperbaseWorker:
         self.download_cache_dir = download_cache_dir
         self.download_cache_ttl_seconds = download_cache_ttl_seconds
         self.stale_running_seconds = stale_running_seconds
+        self.project_id = project_id
 
     def process_next_job(self) -> str | None:
         self.recover_stale_running_jobs()
@@ -93,7 +97,7 @@ class PaperbaseWorker:
                 )
         if self.job_dispatcher is not None:
             for job_id in recovered_ids:
-                self.job_dispatcher.dispatch(job_id)
+                self.job_dispatcher.dispatch(job_id, project_id=self.project_id)
         return recovered_ids
 
     def _execute_claimed_job(self, job) -> str:  # noqa: ANN001
@@ -126,7 +130,7 @@ class PaperbaseWorker:
             else:
                 repository.mark_failed(job_id, error_message=error_message)
         if should_retry:
-            self.job_dispatcher.dispatch(job_id)
+            self.job_dispatcher.dispatch(job_id, project_id=self.project_id)
 
     def _execute_job(self, *, job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         if job_type == "search_reindex":
@@ -258,8 +262,16 @@ class PaperbaseWorker:
         }
 
     def _execute_research_agent_run(self, payload: dict[str, Any]) -> dict[str, Any]:
-        result = PaperbaseResearchAgentRunner(session_factory=self.session_factory).run(payload)
+        result = PaperbaseResearchAgentRunner(
+            session_factory=self.session_factory,
+            model_client=(
+                self.research_model_client_factory()
+                if self.research_model_client_factory is not None
+                else None
+            ),
+        ).run(payload)
         return {
+            "run_id": result.run_id,
             "collection_id": result.collection_id,
             "thread_id": result.thread_id,
             "artifact_id": result.artifact_id,

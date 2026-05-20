@@ -22,9 +22,13 @@ from paperbase.db.models import (
     PaperResearchLabel,
     PaperSource,
     PaperTag,
+    ResearchAgentRun,
+    ResearchAgentStep,
     ResearchArtifact,
     ResearchMessage,
     ResearchThread,
+    ResearchValidationReport,
+    StudyContextPack,
     StudySource,
     Tag,
     Venue,
@@ -927,6 +931,198 @@ class BackgroundJobRepository:
             .order_by(BackgroundJob.started_at.asc())
         )
         return self.session.execute(statement).scalars().all()
+
+
+class ResearchAgentRunRepository:
+    """Persistence helpers for traceable Paperbase research-agent runs."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create_run(
+        self,
+        *,
+        thread_id: str | None,
+        artifact_id: str,
+        collection_id: str,
+        workspace_id: str | None,
+        skill_id: str,
+        artifact_type: str,
+        model_policy: str,
+        input_json: dict[str, Any] | None = None,
+    ) -> ResearchAgentRun:
+        run = ResearchAgentRun(
+            thread_id=thread_id,
+            artifact_id=artifact_id,
+            collection_id=collection_id,
+            workspace_id=workspace_id,
+            skill_id=skill_id,
+            artifact_type=artifact_type,
+            model_policy=model_policy,
+            status="pending",
+            input_json=input_json or {},
+        )
+        self.session.add(run)
+        self.session.commit()
+        self.session.refresh(run)
+        return run
+
+    def get_run(self, run_id: str) -> ResearchAgentRun | None:
+        return self.session.get(ResearchAgentRun, run_id)
+
+    def get_run_for_artifact(self, artifact_id: str) -> ResearchAgentRun | None:
+        statement = (
+            select(ResearchAgentRun)
+            .where(ResearchAgentRun.artifact_id == artifact_id)
+            .order_by(ResearchAgentRun.created_at.desc(), ResearchAgentRun.id.desc())
+            .limit(1)
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def mark_running(self, run_id: str) -> ResearchAgentRun:
+        run = self._require_run(run_id)
+        run.status = "running"
+        run.started_at = _utc_now()
+        run.finished_at = None
+        run.error_message = None
+        self.session.commit()
+        self.session.refresh(run)
+        return run
+
+    def mark_finished(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        model_name: str | None = None,
+        error_message: str | None = None,
+    ) -> ResearchAgentRun:
+        run = self._require_run(run_id)
+        run.status = status
+        if model_name is not None:
+            run.model_name = model_name
+        run.error_message = error_message
+        run.finished_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(run)
+        return run
+
+    def append_step(
+        self,
+        *,
+        run_id: str,
+        step_type: str,
+        label: str,
+        status: str = "completed",
+        input_json: dict[str, Any] | None = None,
+        output_json: dict[str, Any] | None = None,
+        error_message: str | None = None,
+    ) -> ResearchAgentStep:
+        ordinal = self._next_step_ordinal(run_id)
+        step = ResearchAgentStep(
+            run_id=run_id,
+            ordinal=ordinal,
+            step_type=step_type,
+            label=label,
+            status=status,
+            input_json=input_json or {},
+            output_json=output_json or {},
+            error_message=error_message,
+        )
+        self.session.add(step)
+        self.session.commit()
+        self.session.refresh(step)
+        return step
+
+    def list_steps(self, *, run_id: str) -> Sequence[ResearchAgentStep]:
+        statement = (
+            select(ResearchAgentStep)
+            .where(ResearchAgentStep.run_id == run_id)
+            .order_by(ResearchAgentStep.ordinal.asc(), ResearchAgentStep.created_at.asc())
+        )
+        return self.session.execute(statement).scalars().all()
+
+    def create_context_pack(
+        self,
+        *,
+        run_id: str,
+        collection_id: str,
+        workspace_id: str | None,
+        task_type: str,
+        context_json: dict[str, Any],
+        selected_item_counts: dict[str, Any],
+        readiness_warnings: list[str],
+        cache_key: str | None = None,
+    ) -> StudyContextPack:
+        context_pack = StudyContextPack(
+            run_id=run_id,
+            collection_id=collection_id,
+            workspace_id=workspace_id,
+            task_type=task_type,
+            cache_key=cache_key,
+            context_json=context_json,
+            selected_item_counts_json=selected_item_counts,
+            readiness_warnings_json=readiness_warnings,
+        )
+        self.session.add(context_pack)
+        self.session.commit()
+        self.session.refresh(context_pack)
+        return context_pack
+
+    def get_context_pack(self, *, run_id: str) -> StudyContextPack | None:
+        statement = (
+            select(StudyContextPack)
+            .where(StudyContextPack.run_id == run_id)
+            .order_by(StudyContextPack.created_at.desc(), StudyContextPack.id.desc())
+            .limit(1)
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def create_validation_report(
+        self,
+        *,
+        run_id: str,
+        artifact_id: str,
+        harness_status: str,
+        missing_evidence: list[str],
+        unsupported_claims: list[str],
+        readiness_blockers: list[str],
+        report_json: dict[str, Any],
+    ) -> ResearchValidationReport:
+        report = ResearchValidationReport(
+            run_id=run_id,
+            artifact_id=artifact_id,
+            harness_status=harness_status,
+            missing_evidence_json=missing_evidence,
+            unsupported_claims_json=unsupported_claims,
+            readiness_blockers_json=readiness_blockers,
+            report_json=report_json,
+        )
+        self.session.add(report)
+        self.session.commit()
+        self.session.refresh(report)
+        return report
+
+    def get_validation_report(self, *, run_id: str) -> ResearchValidationReport | None:
+        statement = (
+            select(ResearchValidationReport)
+            .where(ResearchValidationReport.run_id == run_id)
+            .order_by(ResearchValidationReport.created_at.desc(), ResearchValidationReport.id.desc())
+            .limit(1)
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def _require_run(self, run_id: str) -> ResearchAgentRun:
+        run = self.get_run(run_id)
+        if run is None:
+            raise ValueError(f"No research agent run found for id: {run_id}")
+        return run
+
+    def _next_step_ordinal(self, run_id: str) -> int:
+        steps = self.session.execute(
+            select(ResearchAgentStep.ordinal).where(ResearchAgentStep.run_id == run_id)
+        ).scalars().all()
+        return (max(steps) + 1) if steps else 0
 
 
 class PaperSourceRepository:
