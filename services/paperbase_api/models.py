@@ -585,10 +585,9 @@ class ResearchMessageResponse(BaseModel):
 
 
 class ResearchArtifactPatchRequest(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     title: str | None = Field(None, min_length=1, max_length=255)
-    status: str | None = Field(None, min_length=1, max_length=64)
     is_saved: bool | None = None
     saved_format: Literal["markdown", "csv", "script", "note"] | None = None
     saved_title: str | None = Field(None, min_length=1, max_length=255)

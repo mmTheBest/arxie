@@ -13,6 +13,7 @@ from services.paperbase_api.models import (
     ProjectsResponse,
     SingleProjectResponse,
 )
+from services.paperbase_api.path_policy import ensure_host_path_allowed
 
 router = APIRouter(tags=["projects"])
 
@@ -46,10 +47,15 @@ def list_projects(request: Request) -> ProjectsResponse:
 )
 def open_project(payload: ProjectOpenRequest, request: Request) -> SingleProjectResponse:
     root_path = sanitize_user_text(payload.root_path, field_name="root_path", max_length=4096)
+    safe_root_path = ensure_host_path_allowed(
+        root_path,
+        config=request.app.state.paperbase_config,
+        field_name="root_path",
+    )
     title = (
         sanitize_user_text(payload.title, field_name="title", max_length=255)
         if payload.title is not None
         else None
     )
-    project = _registry(request).open_project(root_path=root_path, title=title)
+    project = _registry(request).open_project(root_path=safe_root_path, title=title)
     return SingleProjectResponse(data=_project_to_response(project))

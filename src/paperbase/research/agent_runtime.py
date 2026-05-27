@@ -18,7 +18,7 @@ from paperbase.research.skills import (
     select_research_skill,
 )
 
-TERMINAL_RUN_STATUSES = {"completed", "blocked", "failed"}
+TERMINAL_RUN_STATUSES = {"completed", "blocked"}
 
 
 class PaperbaseResearchAgentRuntime:

@@ -842,24 +842,38 @@ class BackgroundJobRepository:
         return self.session.execute(statement).scalars().all()
 
     def claim_next(self, *, job_types: Sequence[str] | None = None) -> BackgroundJob | None:
-        statement: Select[tuple[BackgroundJob]] = (
-            select(BackgroundJob)
+        candidate_statement = (
+            select(BackgroundJob.id)
             .where(BackgroundJob.status == "pending")
             .order_by(BackgroundJob.created_at.asc())
             .limit(1)
         )
         if job_types is not None:
-            statement = statement.where(BackgroundJob.job_type.in_(job_types))
-        job = self.session.execute(statement).scalar_one_or_none()
-        if job is None:
+            candidate_statement = candidate_statement.where(BackgroundJob.job_type.in_(job_types))
+        started_at = _utc_now()
+        result = self.session.execute(
+            update(BackgroundJob)
+            .where(
+                BackgroundJob.id == candidate_statement.scalar_subquery(),
+                BackgroundJob.status == "pending",
+            )
+            .values(
+                status="running",
+                attempt_count=BackgroundJob.attempt_count + 1,
+                started_at=started_at,
+                finished_at=None,
+                error_message=None,
+            )
+            .returning(BackgroundJob.id)
+        )
+        claimed_id = result.scalar_one_or_none()
+        if claimed_id is None:
+            self.session.rollback()
             return None
-
-        job.status = "running"
-        job.attempt_count += 1
-        job.started_at = _utc_now()
-        job.finished_at = None
-        job.error_message = None
         self.session.commit()
+        job = self.session.get(BackgroundJob, claimed_id)
+        if job is None:
+            raise ValueError(f"Claimed background job disappeared: {claimed_id}")
         self.session.refresh(job)
         return job
 

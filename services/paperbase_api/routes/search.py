@@ -26,6 +26,7 @@ from paperbase.db.models import (
     Tag,
 )
 from paperbase.db.repositories import PaperRepository
+from paperbase.search.index_names import search_index_name
 from paperbase.search.query_builder import build_search_query
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.background_jobs import create_background_job
@@ -100,6 +101,22 @@ def _try_search_backend(
             exc,
         )
         return None
+
+
+def _project_search_index_name(request: Request, kind: str) -> str:
+    return search_index_name(kind, project_id=get_project_id(request))
+
+
+def _project_search_filters(
+    request: Request,
+    filters: dict[str, object] | None,
+) -> dict[str, object] | None:
+    project_id = get_project_id(request)
+    if not project_id:
+        return filters
+    scoped_filters = dict(filters or {})
+    scoped_filters["project_id"] = project_id
+    return scoped_filters
 
 
 def _base_paper_search_statement():
@@ -331,9 +348,9 @@ def search_papers(
 
     documents = _try_search_backend(
         search_backend=search_backend,
-        index_name="paperbase-papers",
+        index_name=_project_search_index_name(request, "papers"),
         query_text=safe_query,
-        filters=search_filters,
+        filters=_project_search_filters(request, search_filters),
         embedding_provider=request.app.state.embedding_provider,
         limit=limit,
     )
@@ -409,9 +426,12 @@ def search_chunks(
 
     documents = _try_search_backend(
         search_backend=search_backend,
-        index_name="paperbase-chunks",
+        index_name=_project_search_index_name(request, "chunks"),
         query_text=safe_query,
-        filters={"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
+        filters=_project_search_filters(
+            request,
+            {"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
+        ),
         embedding_provider=request.app.state.embedding_provider,
         limit=limit,
     )
@@ -488,11 +508,14 @@ def search_artifacts(
     if search_backend is not None:
         documents: list[SearchArtifactHitResponse] = []
         backend_failed = False
-        filters = {"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None
+        filters = _project_search_filters(
+            request,
+            {"collection_ids": [safe_collection_id]} if safe_collection_id is not None else None,
+        )
         if safe_kind in {"all", "figure"}:
             figure_documents = _try_search_backend(
                 search_backend=search_backend,
-                index_name="paperbase-figures",
+                index_name=_project_search_index_name(request, "figures"),
                 query_text=safe_query,
                 filters=filters,
                 embedding_provider=request.app.state.embedding_provider,
@@ -515,7 +538,7 @@ def search_artifacts(
         if safe_kind in {"all", "table"} and not backend_failed:
             table_documents = _try_search_backend(
                 search_backend=search_backend,
-                index_name="paperbase-tables",
+                index_name=_project_search_index_name(request, "tables"),
                 query_text=safe_query,
                 filters=filters,
                 embedding_provider=request.app.state.embedding_provider,

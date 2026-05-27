@@ -9,7 +9,9 @@ Arxie is a self-hostable research system for serious literature work. It combine
 - hybrid search and comparison surfaces
 - a study-aware research assistant that reasons over paper evidence plus user-provided work context
 
-This release branch ships the `v0.2.0` product surface: persistent corpora, saved studies, structured evidence, comparison workflows, provider-backed ingest, and a browser study workspace at `/app`.
+This repository now ships the `v0.2.0` product surface described in the April 14 PRD:
+persistent corpora, saved studies, structured evidence, provider-backed ingest, and a
+browser study workspace at `/app`.
 
 ## What You Can Do
 
@@ -20,7 +22,7 @@ This release branch ships the `v0.2.0` product surface: persistent corpora, save
   protocols, validity threats, and reproducibility signals
 - search papers, chunks, and artifacts with Elasticsearch-backed hybrid retrieval
   in the self-hosted stack, plus explicit local fallbacks for development
-- compare results, methods, tricks, figures, and tables across a corpus slice
+- ask Arxie to compare results, methods, tricks, figures, and tables through the Study chat
 - save studies with a collection, query, focus note, filters, pinned papers, and explicit work sources
 - generate collection-grounded research artifacts: experiment plans, hypotheses,
   benchmark plans, revision plans, assumption maps, field patterns, and critiques
@@ -29,6 +31,12 @@ This release branch ships the `v0.2.0` product surface: persistent corpora, save
   what you have already built or written without auto-scanning your filesystem
 - see each collection's readiness for search and structured comparison before choosing the next action
 - run Arxie answer, chat, literature review, and proposal evidence flows against that saved context
+
+## Current Scope
+
+`v0.2.0` is production-ready for a **single-user, self-hosted** deployment.
+
+It is not a multi-tenant SaaS product. The code keeps ownership boundaries so the system can grow later, but the supported deployment model today is one operator running one server stack.
 
 ## Quick Start
 
@@ -66,6 +74,13 @@ Important runtime defaults:
 - `PAPERBASE_WORKER_QUEUE_BACKEND=redis` in the shipped server stack
 - `PAPERBASE_OBJECT_STORE_BACKEND=s3` in the shipped server stack
 - `PAPERBASE_EMBEDDING_PROVIDER=openai` for production semantic retrieval
+- `PAPERBASE_WORKER_PROJECT_ID` can bind a worker to one opened project; leave
+  it empty for the default database worker
+- `PAPERBASE_UPLOAD_MAX_FILE_COUNT`, `PAPERBASE_UPLOAD_MAX_SINGLE_FILE_BYTES`,
+  and `PAPERBASE_UPLOAD_MAX_TOTAL_BYTES` bound browser PDF-folder uploads while
+  raw multipart request bytes are streamed
+- `PAPERBASE_HOSTED_MODE=true` requires project-open and local-library import
+  paths to live under `PAPERBASE_LOCAL_PATH_IMPORT_ALLOWED_ROOTS`
 
 If you intentionally want a lighter local process mode, you can switch to:
 
@@ -92,6 +107,13 @@ Start the API and worker:
 ```bash
 docker compose -f infra/docker-compose.paperbase.yml up -d paperbase-api paperbase-worker
 ```
+
+### 4. Open Arxie
+
+- Homepage: `http://localhost:8080/`
+- Study app: `http://localhost:8080/app`
+- Liveness: `http://localhost:8080/livez`
+- Readiness: `http://localhost:8080/readyz`
 
 ### Shortcut Launch
 
@@ -134,6 +156,33 @@ updates are picked up on restart. Use `arxie-local run --rebuild` only after
 dependency or Dockerfile changes. If you later start Arxie with `--with-search`,
 the workspace can use the backend search surface when Elasticsearch is healthy.
 
+### 5. Use Your Own Local Paper Collection
+
+The browser study app is now enough for the single-user local workflow:
+
+1. open `http://localhost:8080/app`
+2. start in **Library** and use **Upload PDF Folder**
+3. select a local folder containing PDFs and optionally set a collection title
+4. stay in **Library** and watch the processing log until the ingest job finishes
+5. use the Library paper list to parse all unprocessed papers
+   or only selected papers
+6. extract all unextracted papers, or select specific text-ready papers and extract
+   just those
+7. switch to **Study** to search the collection, inspect evidence, and label
+   papers as exemplars or baselines
+8. save the study, then add explicit sources such as a draft path, code file path,
+   results file path, or text note
+9. ask Arxie for experiment ideas, benchmark design, revision priorities,
+   assumption checks, hypotheses, field patterns, or critiques grounded in the
+   paper collection plus those explicit sources
+10. ask comparison questions in the Study chat once extraction is ready; save or
+    export the generated outputs you want to keep
+
+If you are running the API and worker directly on the host instead of in Docker,
+the Library module also exposes an advanced absolute-path import form.
+
+For scripted or operator-driven ingestion, see [docs/runbooks/paperbase-ingest.md](docs/runbooks/paperbase-ingest.md).
+
 ## Local Process Mode
 
 If you prefer running the services without Compose:
@@ -157,6 +206,27 @@ make paperbase-worker
 make paperbase-compose-config
 ```
 
+## Adjacent CLI And RA API
+
+The `src/ra` assistant and proposal workflows still ship with the repo as
+developer-facing and scripted interfaces. The browser product path is `/app`,
+served by `services/paperbase_api/`.
+
+Examples:
+
+```bash
+ra query "What are recent approaches to long-context LLMs?"
+ra lit-review "attention mechanisms in computer vision"
+ra trace "Attention Is All You Need"
+ra chat
+```
+
+The RA FastAPI surface is still available too:
+
+```bash
+uvicorn ra.api.app:app --host 0.0.0.0 --port 8000
+```
+
 ## Product Architecture
 
 ```text
@@ -167,7 +237,15 @@ services/paperbase_worker/ Background job execution
 infra/                  Self-hosting stack and environment files
 ```
 
-Detailed architecture, planning notes, tests, and internal developer process files live on the private development branch, not on this release branch.
+Public runtime docs live in `docs/API.md`, `docs/MIGRATION.md`, and
+`docs/USAGE_EXAMPLES.md`. Contributor architecture notes are maintained on
+development branches.
+
+## Known Limits
+
+- Deployment is single-user and self-hosted, not collaborative or multi-tenant.
+- Figure and table extraction is phase-1 caption-driven extraction, not full OCR or chart digitization.
+- The legacy RA API and the Paperbase product API coexist; the browser product surface is the Paperbase API at port `8080`.
 
 ## License
 

@@ -97,9 +97,7 @@ class ProposalAssembler:
         contradicting_refs = _extract_references(evidence_payload.get("contradicting_evidence"))
         explicit_refs = _extract_references(assembly_payload.get("references"))
 
-        all_refs = dict(supporting_refs)
-        all_refs.update(contradicting_refs)
-        all_refs.update(explicit_refs)
+        all_refs = _merge_references(supporting_refs, contradicting_refs, explicit_refs)
 
         framing_summary = _first_non_empty(
             assembly_payload.get("background_and_gap"),
@@ -123,12 +121,16 @@ class ProposalAssembler:
                 fallback="Data strategy was not provided.",
             ),
             _first_non_empty(
-                experiment_payload.get("experiment_design"),
-                fallback="Experiment design was not provided.",
+                experiment_payload.get("experiment_flow_diagram"),
+                fallback="Experiment flow diagram was not provided.",
             ),
             _first_non_empty(
-                experiment_payload.get("analysis_plan"),
-                fallback="Analysis plan was not provided.",
+                experiment_payload.get("analysis_plan_tree"),
+                fallback="Analysis plan tree was not provided.",
+            ),
+            _first_non_empty(
+                experiment_payload.get("outcome_comparison_matrix"),
+                fallback="Outcome comparison matrix was not provided.",
             ),
         )
 
@@ -257,12 +259,16 @@ class ProposalAssembler:
                         data_payload.get("selected_data_strategy"),
                     ),
                     (
-                        "experiment_analysis_design.experiment_design",
-                        experiment_payload.get("experiment_design"),
+                        "experiment_analysis_design.experiment_flow_diagram",
+                        experiment_payload.get("experiment_flow_diagram"),
                     ),
                     (
-                        "experiment_analysis_design.analysis_plan",
-                        experiment_payload.get("analysis_plan"),
+                        "experiment_analysis_design.analysis_plan_tree",
+                        experiment_payload.get("analysis_plan_tree"),
+                    ),
+                    (
+                        "experiment_analysis_design.outcome_comparison_matrix",
+                        experiment_payload.get("outcome_comparison_matrix"),
                     ),
                 ),
             ),
@@ -338,6 +344,25 @@ def _extract_references(value: Any) -> dict[str, ProposalReference]:
             )
 
     return references
+
+
+def _merge_references(
+    *reference_groups: Mapping[str, ProposalReference],
+) -> dict[str, ProposalReference]:
+    merged: dict[str, ProposalReference] = {}
+    for references in reference_groups:
+        for reference_id, reference in references.items():
+            existing = merged.get(reference_id)
+            if existing is None:
+                merged[reference_id] = reference
+                continue
+            if existing.provenance_link is None and reference.provenance_link is not None:
+                merged[reference_id] = ProposalReference(
+                    reference_id=existing.reference_id,
+                    title=existing.title,
+                    provenance_link=reference.provenance_link,
+                )
+    return merged
 
 
 def _as_sequence(value: Any) -> tuple[Any, ...]:

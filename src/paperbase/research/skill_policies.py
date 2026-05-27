@@ -46,6 +46,24 @@ _POLICIES: dict[str, ResearchSkillPolicy] = {
         model_policy="required",
         allow_deterministic_fallback=False,
     ),
+    "field_pattern_analysis": ResearchSkillPolicy(
+        skill_id="field_pattern_analysis",
+        artifact_type="field_patterns",
+        model_policy="deterministic",
+        allow_deterministic_fallback=True,
+    ),
+    "experiment_backlog": ResearchSkillPolicy(
+        skill_id="experiment_backlog",
+        artifact_type="experiment_backlog",
+        model_policy="deterministic",
+        allow_deterministic_fallback=True,
+    ),
+    "assumption_mapping": ResearchSkillPolicy(
+        skill_id="assumption_mapping",
+        artifact_type="assumption_map",
+        model_policy="deterministic",
+        allow_deterministic_fallback=True,
+    ),
     "hypothesis_generation": ResearchSkillPolicy(
         skill_id="hypothesis_generation",
         artifact_type="hypotheses",

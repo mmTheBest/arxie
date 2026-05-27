@@ -1239,6 +1239,11 @@ import {
       }).filter(Boolean).join(" · ");
       return `<div class="muted">${escapeHtml(rowSummary || output.summary || "Comparison generated")}</div>`;
     }
+    if (artifact.artifact_type === "literature_review") {
+      const firstTheme = (output.themes || [])[0] || {};
+      const themeSummary = [firstTheme.title, firstTheme.summary].filter(Boolean).join(" - ");
+      return `<div class="muted">${escapeHtml(themeSummary || output.summary || "Literature review generated")}</div>`;
+    }
     return `<div class="muted">${escapeHtml((output.patterns || []).slice(0, 2).join(" · ") || "Patterns generated")}</div>`;
   }
 

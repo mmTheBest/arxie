@@ -39,14 +39,14 @@ runtime instead of the default database.
 | 4 | Citation influence tracing | Tool-level (`trace_influence`), no dedicated REST route |
 | 5 | Claim confidence scoring | Query/chat answer text annotations |
 | 6 | Stateful conversational mode | `POST /api/chat` with `session_id` |
-| 7 | Demo/visualization assets | Not a REST surface (`remotion/`) |
+| 7 | Demo/visualization assets | Not a REST surface |
 | 8 | Proposal workspace + export completeness + artifact sync + branching | `POST/GET/PATCH /api/proposal/*` |
 | Paperbase Study/Library | Project-scoped libraries, local PDF upload/import, parse/extract jobs, Study sources, research threads, artifacts, and run traces | `/api/v1/projects`, `/api/v1/collections`, `/api/v1/studies`, `/api/v1/research/*`, `/api/v1/jobs` |
 | Legacy study agent | Local study memory, user sources, deterministic task runs, and trace retrieval | `POST/GET/PATCH /api/studies/*` in the legacy RA API |
-| REL-001 | Proposal release-gate evaluator contract hardening | `ra eval --mode proposal_release_gate`, `tools/paperclip-release-gate-check.sh` |
-| REL-002 | Mypy duplicate-module gate unblock | Packaging/runtime fix (`tests/__init__.py`); enables repo-wide `mypy src tests` execution |
-| REL-003 | Executable v0.2 typing policy gate | `python -m ra.eval.mypy_gate`, `tools/paperclip-mypy-release-gate-check.sh` |
-| REL-004 | Paperclip QA preflight and closure gating automation | `tools/paperclip-quality-preflight.sh`, `tools/paperclip-task-close.sh`, `.github/workflows/arxie-quality-gates.yml` |
+| REL-001 | Proposal release-gate evaluator contract hardening | `ra eval --mode proposal_release_gate` |
+| REL-002 | Mypy duplicate-module gate unblock | Packaging/runtime fix; enables development-branch type checking |
+| REL-003 | Executable v0.2 typing policy gate | `python -m ra.eval.mypy_gate` |
+| REL-004 | Paperclip QA preflight and closure gating automation | Development-branch release gates; public runtime smoke checks use the release workflow |
 
 ## Documentation cross-reference by completed feature
 
@@ -112,6 +112,24 @@ runtime instead of the default database.
 | `GET` | `/api/v1/extraction-profiles` | List extraction profiles |
 | `POST` | `/api/v1/extraction-profiles` | Create an extraction profile |
 
+Local-library upload uses a streaming multipart parser instead of FastAPI's
+`UploadFile` materialization path and compares multipart media types
+case-insensitively. The parser enforces `PAPERBASE_UPLOAD_MAX_FILE_COUNT`,
+`PAPERBASE_UPLOAD_MAX_SINGLE_FILE_BYTES`, and `PAPERBASE_UPLOAD_MAX_TOTAL_BYTES`
+while request bytes are read. The total limit applies to raw multipart request
+bytes, including boundaries, headers, part bodies, and epilogue data. Multipart
+header name, value, count, and per-part total header bytes are separately capped
+so crafted part headers cannot grow unbounded in memory. All uploaded file parts
+count toward the file limit, including non-PDF parts that are later discarded;
+only PDFs are staged for ingest. The parser only accepts requests that reach the
+terminal multipart boundary, so truncated bodies cannot enqueue partial staged
+PDFs. Rejected, malformed, interrupted, metadata-invalid, or otherwise failed
+uploads clean their staging directory before returning or propagating an error.
+In hosted mode, project-open and local-path import requests are accepted only
+when the submitted host path is under `PAPERBASE_LOCAL_PATH_IMPORT_ALLOWED_ROOTS`,
+and the worker checks the source root before recursive scanning, then
+revalidates each discovered PDF path so symlinks cannot escape configured roots.
+
 ### Paperbase search, paper browse, and compare
 
 | Method | Path | Purpose |
@@ -155,6 +173,12 @@ runtime instead of the default database.
 | `PATCH` | `/api/v1/research/artifacts/{artifact_id}` | Save, rename, or update an artifact |
 | `GET` | `/api/v1/collections/{collection_id}/research-labels` | List paper research labels |
 | `PATCH` | `/api/v1/collections/{collection_id}/papers/{paper_id}/research-label` | Update a paper research label |
+
+Thread creation validates that an optional `workspace_id` exists and is either
+collection-neutral or belongs to the requested `collection_id`. Artifact patch
+requests are limited to `title`, `is_saved`, `saved_format`, and `saved_title`;
+artifact `status` is server-owned and changes only through agent or worker
+execution.
 
 ### Proposal workflow (Priority 8)
 
@@ -466,8 +490,9 @@ Completeness nuance:
 - For `method`, export completeness currently evaluates:
   - `proposal_assembly.method_summary`
   - `data_feasibility_planning.selected_data_strategy`
-  - `experiment_analysis_design.experiment_design`
-  - `experiment_analysis_design.analysis_plan`
+  - `experiment_analysis_design.experiment_flow_diagram`
+  - `experiment_analysis_design.analysis_plan_tree`
+  - `experiment_analysis_design.outcome_comparison_matrix`
 
 Example `completeness` payload shape:
 
@@ -481,7 +506,7 @@ Example `completeness` payload shape:
         "title": "Method",
         "complete": false,
         "missing_fields": [
-          "experiment_analysis_design.analysis_plan"
+          "experiment_analysis_design.analysis_plan_tree"
         ]
       }
     ]
@@ -684,15 +709,15 @@ These completed release checks are CLI/runtime contracts, not HTTP endpoints.
 
 Mode options:
 
-- `--mode qa` (default): runs the benchmark harness (`tests.eval.harness.EvalHarness`).
+- `--mode qa` (default): runs the benchmark harness.
 - `--mode proposal_release_gate`: runs the v0.2 proposal release-gate evaluator.
 
 Default QA mode:
 
 ```bash
 python -m ra.cli eval \
-  --dataset tests/eval/dataset.json \
-  --output results/
+  --dataset path/to/qa-dataset.json \
+  --output path/to/results/
 ```
 
 QA mode success output includes:
@@ -706,15 +731,9 @@ Proposal release-gate mode:
 
 ```bash
 python -m ra.cli eval \
-  --dataset tests/eval/proposal_release_gate_dataset.json \
-  --output results/ \
+  --dataset path/to/proposal-release-gate-dataset.json \
+  --output path/to/results/ \
   --mode proposal_release_gate
-```
-
-Release wrapper:
-
-```bash
-tools/paperclip-release-gate-check.sh
 ```
 
 Success output includes:
@@ -722,6 +741,7 @@ Success output includes:
 - `mode`
 - `total_cases`
 - `metrics.stage_completion_pass_rate`
+- `metrics.draft_completeness_pass_rate`
 - `metrics.evidence_link_pass_rate`
 - `metrics.gate_pass_rate`
 - `overall_pass`
@@ -732,11 +752,13 @@ Generated Markdown artifact contract (`proposal_release_gate_summary.md`):
 
 - Section `## Topline Metrics` with rows for:
   - `stage_completion_pass_rate`
+  - `draft_completeness_pass_rate`
   - `evidence_link_pass_rate`
   - `gate_pass_rate`
 - Section `## Case Results` with columns:
   - `Case ID`
   - `Stage Ratio`
+  - `Draft Complete`
   - `Link Coverage`
   - `Pass`
 
@@ -744,7 +766,7 @@ Contract semantics:
 
 - Dataset must be a non-empty JSON list; empty datasets are rejected.
 - Stage completion ratio is calculated across the full canonical stage sequence from `ProposalStageEngine.stage_sequence` (currently 7 stages, including `proposal_assembly`).
-- `overall_pass` only becomes `true` when all cases pass both stage completion and evidence-link coverage thresholds.
+- `overall_pass` only becomes `true` when all cases pass stage completion, export draft completeness, and evidence-link coverage thresholds.
 
 Failure output contract:
 
@@ -766,12 +788,6 @@ Run the executable v0.2 mypy policy:
 
 ```bash
 python -m ra.eval.mypy_gate
-```
-
-Run the wrapper used in release automation:
-
-```bash
-tools/paperclip-mypy-release-gate-check.sh
 ```
 
 Expected JSON contract (shape):
@@ -800,32 +816,10 @@ Policy semantics:
 
 ### Paperclip QA preflight and closure checks (REL-004)
 
-Run the PRD + reviewer + eval preflight bundle:
-
-```bash
-tools/paperclip-quality-preflight.sh docs/TASK_PRD.md docs/REVIEW_CHECKPOINT.md
-```
-
-Run the closure wrapper (preflight + release-gate checks):
-
-```bash
-tools/paperclip-task-close.sh docs/TASK_PRD.md docs/REVIEW_CHECKPOINT.md auto
-```
-
-Equivalent granular commands:
-
-```bash
-python tools/validate_task_prd.py docs/TASK_PRD.md
-python tools/validate_task_prd.py docs/TASK_PRD.md --require-done-checked
-python tools/validate_reviewer_checkpoint.py docs/REVIEW_CHECKPOINT.md
-pytest -q tests/eval
-tools/paperclip-release-gate-check.sh
-```
-
-Automation entry points:
-
-- Make targets: `qa-prd`, `qa-review`, `qa-eval`, `qa-release-gate`, `qa-close`.
-- CI workflow: `.github/workflows/arxie-quality-gates.yml` (`pull_request` + `workflow_dispatch`).
+Maintainer release branches run PRD, reviewer, eval, and release-gate checks
+before syncing the public release branch. The public release branch exposes the
+runtime smoke workflow and install/runtime commands instead of the development
+gate bundle.
 
 Contract semantics:
 

@@ -24,6 +24,7 @@ from paperbase.db.models import (
 )
 from paperbase.db.repositories import PaperRepository
 from paperbase.search.embeddings import EmbeddingProvider
+from paperbase.search.index_names import search_index_name, search_index_prefix
 from paperbase.search.index_templates import (
     chunk_index_template,
     figure_index_template,
@@ -107,16 +108,19 @@ class PaperbaseSearchReindexer:
         *,
         session_factory: sessionmaker[Session],
         backend: SearchBackend,
-        index_prefix: str = "paperbase",
+        index_prefix: str | None = None,
+        project_id: str | None = None,
         embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.backend = backend
         self.embedding_provider = embedding_provider
-        self.paper_index_name = f"{index_prefix}-papers"
-        self.chunk_index_name = f"{index_prefix}-chunks"
-        self.figure_index_name = f"{index_prefix}-figures"
-        self.table_index_name = f"{index_prefix}-tables"
+        self.project_id = project_id
+        resolved_index_prefix = index_prefix or search_index_prefix(project_id)
+        self.paper_index_name = search_index_name("papers", index_prefix=resolved_index_prefix)
+        self.chunk_index_name = search_index_name("chunks", index_prefix=resolved_index_prefix)
+        self.figure_index_name = search_index_name("figures", index_prefix=resolved_index_prefix)
+        self.table_index_name = search_index_name("tables", index_prefix=resolved_index_prefix)
 
     def reindex_all(self) -> dict[str, int]:
         paper_documents = self._build_paper_documents()
@@ -175,6 +179,7 @@ class PaperbaseSearchReindexer:
                 methods=methods_by_paper_id.get(paper.id, []),
                 metrics=metrics_by_paper_id.get(paper.id, []),
                 collection_ids=collection_ids_by_paper_id.get(paper.id, []),
+                project_id=self.project_id,
                 extraction_state="extracted" if paper.id in extracted_paper_ids else "unextracted",
                 embedding_vector=self._embed_text(
                     " ".join(
@@ -215,6 +220,7 @@ class PaperbaseSearchReindexer:
                 section_title=section.title if section is not None else None,
                 text=chunk.text,
                 collection_ids=collection_ids_by_paper_id.get(paper.id, []),
+                project_id=self.project_id,
                 embedding_vector=self._embed_text(
                     " ".join(
                         filter(
@@ -249,6 +255,7 @@ class PaperbaseSearchReindexer:
                 figure_label=figure.figure_label,
                 caption=figure.caption,
                 collection_ids=collection_ids_by_paper_id.get(paper.id, []),
+                project_id=self.project_id,
                 embedding_vector=self._embed_text(
                     " ".join(filter(None, [paper.canonical_title, figure.figure_label, figure.caption]))
                 ),
@@ -275,6 +282,7 @@ class PaperbaseSearchReindexer:
                 caption=table.caption,
                 structured_payload=dict(table.structured_payload_json or {}),
                 collection_ids=collection_ids_by_paper_id.get(paper.id, []),
+                project_id=self.project_id,
                 embedding_vector=self._embed_text(
                     " ".join(
                         filter(

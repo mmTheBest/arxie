@@ -20,10 +20,11 @@ def build_paper_document(
     methods: list[str] | None = None,
     metrics: list[str] | None = None,
     collection_ids: list[str] | None = None,
+    project_id: str | None = None,
     extraction_state: str = "unextracted",
     embedding_vector: list[float] | None = None,
 ) -> dict[str, object]:
-    return {
+    document: dict[str, object] = {
         "paper_id": paper_id,
         "provider": provider,
         "external_id": external_id,
@@ -42,6 +43,9 @@ def build_paper_document(
         "extraction_state": extraction_state,
         "embedding": embedding_vector or [],
     }
+    if project_id is not None:
+        document["project_id"] = project_id
+    return document
 
 
 def build_chunk_document(
@@ -52,9 +56,10 @@ def build_chunk_document(
     section_title: str | None,
     text: str,
     collection_ids: list[str] | None = None,
+    project_id: str | None = None,
     embedding_vector: list[float] | None = None,
 ) -> dict[str, object]:
-    return {
+    document: dict[str, object] = {
         "chunk_id": chunk_id,
         "paper_id": paper_id,
         "title": title,
@@ -63,6 +68,9 @@ def build_chunk_document(
         "collection_ids": collection_ids or [],
         "embedding": embedding_vector or [],
     }
+    if project_id is not None:
+        document["project_id"] = project_id
+    return document
 
 
 def build_figure_document(
@@ -73,9 +81,10 @@ def build_figure_document(
     figure_label: str | None,
     caption: str | None,
     collection_ids: list[str] | None = None,
+    project_id: str | None = None,
     embedding_vector: list[float] | None = None,
 ) -> dict[str, object]:
-    return {
+    document: dict[str, object] = {
         "figure_id": figure_id,
         "paper_id": paper_id,
         "title": title,
@@ -84,6 +93,9 @@ def build_figure_document(
         "collection_ids": collection_ids or [],
         "embedding": embedding_vector or [],
     }
+    if project_id is not None:
+        document["project_id"] = project_id
+    return document
 
 
 def build_table_document(
@@ -95,9 +107,10 @@ def build_table_document(
     caption: str | None,
     structured_payload: dict[str, object] | None = None,
     collection_ids: list[str] | None = None,
+    project_id: str | None = None,
     embedding_vector: list[float] | None = None,
 ) -> dict[str, object]:
-    return {
+    document: dict[str, object] = {
         "table_id": table_id,
         "paper_id": paper_id,
         "title": title,
@@ -107,3 +120,6 @@ def build_table_document(
         "collection_ids": collection_ids or [],
         "embedding": embedding_vector or [],
     }
+    if project_id is not None:
+        document["project_id"] = project_id
+    return document

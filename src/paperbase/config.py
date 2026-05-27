@@ -18,6 +18,8 @@ class PaperbaseConfig:
     worker_project_id: str | None = None
     worker_retry_limit: int = 3
     worker_stale_job_seconds: float = 900.0
+    hosted_mode: bool = False
+    local_path_import_allowed_roots: tuple[str, ...] = ()
     object_store_endpoint: str = "http://localhost:9000"
     object_store_backend: str = "filesystem"
     object_store_bucket: str = "paperbase"
@@ -26,6 +28,9 @@ class PaperbaseConfig:
     object_store_local_root: str = "data/object-store"
     project_registry_path: str = "data/projects.json"
     upload_staging_dir: str = "data/uploads/paperbase-ingest"
+    upload_max_file_count: int = 500
+    upload_max_single_file_bytes: int = 100 * 1024 * 1024
+    upload_max_total_bytes: int = 2 * 1024 * 1024 * 1024
     download_cache_dir: str = "data/cache/paperbase-downloads"
     download_cache_ttl_seconds: int = 86400
     embedding_provider: str = "auto"
@@ -42,6 +47,14 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
     require_search_backend_raw = (
         resolved_env.get("PAPERBASE_REQUIRE_SEARCH_BACKEND") or "false"
     ).strip().lower()
+    hosted_mode_raw = (resolved_env.get("PAPERBASE_HOSTED_MODE") or "false").strip().lower()
+    allowed_roots = tuple(
+        item.strip()
+        for item in (
+            resolved_env.get("PAPERBASE_LOCAL_PATH_IMPORT_ALLOWED_ROOTS") or ""
+        ).split(",")
+        if item.strip()
+    )
     return PaperbaseConfig(
         database_url=(
             resolved_env.get("PAPERBASE_DATABASE_URL")
@@ -65,6 +78,8 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         worker_stale_job_seconds=float(
             (resolved_env.get("PAPERBASE_WORKER_STALE_JOB_SECONDS") or "900").strip()
         ),
+        hosted_mode=hosted_mode_raw in {"1", "true", "yes", "on"},
+        local_path_import_allowed_roots=allowed_roots,
         object_store_endpoint=(
             resolved_env.get("PAPERBASE_OBJECT_STORE_ENDPOINT") or "http://localhost:9000"
         ).strip(),
@@ -89,6 +104,21 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         upload_staging_dir=(
             resolved_env.get("PAPERBASE_UPLOAD_STAGING_DIR") or "data/uploads/paperbase-ingest"
         ).strip(),
+        upload_max_file_count=int(
+            (resolved_env.get("PAPERBASE_UPLOAD_MAX_FILE_COUNT") or "500").strip()
+        ),
+        upload_max_single_file_bytes=int(
+            (
+                resolved_env.get("PAPERBASE_UPLOAD_MAX_SINGLE_FILE_BYTES")
+                or str(100 * 1024 * 1024)
+            ).strip()
+        ),
+        upload_max_total_bytes=int(
+            (
+                resolved_env.get("PAPERBASE_UPLOAD_MAX_TOTAL_BYTES")
+                or str(2 * 1024 * 1024 * 1024)
+            ).strip()
+        ),
         download_cache_dir=(
             resolved_env.get("PAPERBASE_DOWNLOAD_CACHE_DIR") or "data/cache/paperbase-downloads"
         ).strip(),

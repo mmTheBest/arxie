@@ -32,6 +32,7 @@ def paper_index_template() -> dict[str, object]:
                 "methods": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "metrics": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "collection_ids": {"type": "keyword"},
+                "project_id": {"type": "keyword"},
                 "extraction_state": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
@@ -50,6 +51,7 @@ def chunk_index_template() -> dict[str, object]:
                 "section_title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "text": {"type": "text"},
                 "collection_ids": {"type": "keyword"},
+                "project_id": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
         },
@@ -67,6 +69,7 @@ def figure_index_template() -> dict[str, object]:
                 "figure_label": {"type": "keyword"},
                 "caption": {"type": "text"},
                 "collection_ids": {"type": "keyword"},
+                "project_id": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
         },
@@ -85,6 +88,7 @@ def table_index_template() -> dict[str, object]:
                 "caption": {"type": "text"},
                 "structured_payload": {"type": "object", "enabled": False},
                 "collection_ids": {"type": "keyword"},
+                "project_id": {"type": "keyword"},
                 "embedding": _dense_vector_property(),
             }
         },

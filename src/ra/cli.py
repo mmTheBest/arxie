@@ -398,6 +398,7 @@ def _build_release_gate_markdown_summary(
 ) -> str:
     metrics = report.get("metrics", {})
     stage_completion_pass_rate = float(metrics.get("stage_completion_pass_rate", 0.0))
+    draft_completeness_pass_rate = float(metrics.get("draft_completeness_pass_rate", 0.0))
     evidence_link_pass_rate = float(metrics.get("evidence_link_pass_rate", 0.0))
     gate_pass_rate = float(metrics.get("gate_pass_rate", 0.0))
     results = report.get("results", [])
@@ -413,20 +414,26 @@ def _build_release_gate_markdown_summary(
         "| Metric | Value |",
         "|---|---:|",
         f"| stage_completion_pass_rate | {stage_completion_pass_rate:.6f} |",
+        f"| draft_completeness_pass_rate | {draft_completeness_pass_rate:.6f} |",
         f"| evidence_link_pass_rate | {evidence_link_pass_rate:.6f} |",
         f"| gate_pass_rate | {gate_pass_rate:.6f} |",
         "",
         "## Case Results",
         "",
-        "| Case ID | Stage Ratio | Link Coverage | Pass |",
-        "|---|---:|---:|---:|",
+        "| Case ID | Stage Ratio | Draft Complete | Link Coverage | Pass |",
+        "|---|---:|---|---:|---:|",
     ]
 
     for row in results:
+        case_line = (
+            "| {id} | {stage_completion_ratio:.6f} | {draft_complete} | "
+            "{evidence_link_coverage:.6f} | {pass_value} |"
+        )
         lines.append(
-            "| {id} | {stage_completion_ratio:.6f} | {evidence_link_coverage:.6f} | {pass_value} |".format(
+            case_line.format(
                 id=row.get("id", "unknown"),
                 stage_completion_ratio=float(row.get("stage_completion_ratio", 0.0)),
+                draft_complete="yes" if bool(row.get("draft_completeness_pass", False)) else "no",
                 evidence_link_coverage=float(row.get("evidence_link_coverage", 0.0)),
                 pass_value="yes" if bool(row.get("pass", False)) else "no",
             )

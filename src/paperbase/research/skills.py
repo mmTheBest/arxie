@@ -120,6 +120,24 @@ def default_research_skill_registry() -> ResearchSkillRegistry:
         handler=_experiment_planning,
     )
     registry.register(
+        skill_id="field_pattern_analysis",
+        artifact_type="field_patterns",
+        description="Extract recurring methods, datasets, metrics, and limitation patterns.",
+        handler=_field_pattern_analysis,
+    )
+    registry.register(
+        skill_id="experiment_backlog",
+        artifact_type="experiment_backlog",
+        description="Produce a prioritized backlog of experiments from collection evidence.",
+        handler=_experiment_backlog,
+    )
+    registry.register(
+        skill_id="assumption_mapping",
+        artifact_type="assumption_map",
+        description="Map assumptions worth challenging with paper-grounded tests.",
+        handler=_assumption_mapping,
+    )
+    registry.register(
         skill_id="hypothesis_generation",
         artifact_type="hypotheses",
         description="Generate collection-grounded hypotheses and validation plans.",
@@ -156,10 +174,10 @@ def select_research_skill(
         "benchmark_plan": "benchmark_planning",
         "revision_plan": "revision_planning",
         "experiment_plan": "experiment_planning",
-        "experiment_backlog": "experiment_planning",
+        "experiment_backlog": "experiment_backlog",
         "hypotheses": "hypothesis_generation",
-        "field_patterns": "literature_review",
-        "assumption_map": "experiment_planning",
+        "field_patterns": "field_pattern_analysis",
+        "assumption_map": "assumption_mapping",
     }
     if artifact_type in artifact_map:
         return artifact_map[str(artifact_type)]
@@ -188,6 +206,9 @@ def artifact_type_for_skill(skill_id: str, *, fallback: str = "experiment_plan")
         "benchmark_planning": "benchmark_plan",
         "revision_planning": "revision_plan",
         "experiment_planning": "experiment_plan",
+        "field_pattern_analysis": "field_patterns",
+        "experiment_backlog": "experiment_backlog",
+        "assumption_mapping": "assumption_map",
         "hypothesis_generation": "hypotheses",
     }.get(skill_id, fallback)
 
@@ -369,6 +390,81 @@ def _experiment_planning(context: ResearchSkillContext) -> dict[str, Any]:
             "Lock preprocessing and train/test splits before comparing methods.",
             "Report failure cases and sensitivity to key experimental variables.",
         ],
+    }
+
+
+def _field_pattern_analysis(context: ResearchSkillContext) -> dict[str, Any]:
+    papers = _papers(context)
+    common = _common_payload(context, artifact_type="field_patterns", title="Field patterns")
+    methods = _unique(item for paper in papers for item in paper.get("methods", []))
+    datasets = _unique(item for paper in papers for item in paper.get("datasets", []))
+    metrics = _unique(item for paper in papers for item in paper.get("metrics", []))
+    limitations = _unique(item for paper in papers for item in paper.get("limitations", []))
+    patterns = [
+        f"Methods recur around {_join_or_default(methods, 'methods that still need extraction')}.",
+        f"Evaluation is framed by {_join_or_default(datasets + metrics, 'datasets and metrics that still need extraction')}.",
+        f"Limitations cluster around {_join_or_default(limitations, 'validity threats that still need extraction')}.",
+    ]
+    return {
+        **common,
+        "patterns": patterns,
+        "method_patterns": methods[:8],
+        "dataset_patterns": datasets[:8],
+        "metric_patterns": metrics[:8],
+        "limitation_patterns": limitations[:8],
+    }
+
+
+def _experiment_backlog(context: ResearchSkillContext) -> dict[str, Any]:
+    papers = _papers(context)
+    common = _common_payload(context, artifact_type="experiment_backlog", title="Experiment backlog")
+    design_elements = [
+        item
+        for paper in papers
+        for item in paper.get("research_design_elements", [])
+        if isinstance(item, dict) and item.get("title")
+    ]
+    backlog_items = [
+        str(item.get("title"))
+        for item in design_elements
+    ][:6] or [
+        "Run matched baselines on the collection's most common dataset.",
+        "Add one ablation that removes a core method assumption.",
+        "Report sensitivity analysis for the strongest validity threat.",
+    ]
+    return {
+        **common,
+        "backlog_items": backlog_items,
+        "prioritization_rule": "Prioritize items with direct paper evidence and clear evaluation metrics.",
+        "next_actions": [
+            "Assign each backlog item a dataset, metric, and expected failure mode.",
+            "Link each planned experiment to at least one paper or study source.",
+        ],
+    }
+
+
+def _assumption_mapping(context: ResearchSkillContext) -> dict[str, Any]:
+    papers = _papers(context)
+    common = _common_payload(context, artifact_type="assumption_map", title="Assumption map")
+    methods = _unique(item for paper in papers for item in paper.get("methods", []))
+    limitations = _unique(item for paper in papers for item in paper.get("limitations", []))
+    assumptions = [
+        f"{method} remains reliable under the target data conditions."
+        for method in methods[:3]
+    ]
+    assumptions.extend(
+        f"The study can control for limitation: {limitation}."
+        for limitation in limitations[:3]
+    )
+    return {
+        **common,
+        "assumptions_to_challenge": assumptions
+        or ["The central method assumption is not yet explicit; extract methods or add study sources."],
+        "challenge_tests": [
+            "Create one falsification test per assumption.",
+            "Use collection metrics to define pass/fail criteria.",
+        ],
+        "evidence_gaps": _research_gaps(limitations, context),
     }
 
 

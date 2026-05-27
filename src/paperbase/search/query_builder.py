@@ -47,6 +47,10 @@ def build_search_query(
     if collection_ids:
         bool_query["filter"].append({"terms": {"collection_ids": list(collection_ids)}})
 
+    project_id = filters.get("project_id")
+    if project_id:
+        bool_query["filter"].append({"term": {"project_id": project_id}})
+
     venue = filters.get("venue")
     if venue:
         bool_query["filter"].append({"terms": {"venue.keyword": list(venue)}})

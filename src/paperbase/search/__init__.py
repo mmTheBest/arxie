@@ -6,6 +6,7 @@ from paperbase.search.index_templates import (
     paper_index_template,
     table_index_template,
 )
+from paperbase.search.index_names import search_index_name, search_index_prefix
 from paperbase.search.indexer import (
     build_chunk_document,
     build_figure_document,
@@ -26,5 +27,7 @@ __all__ = [
     "figure_index_template",
     "paper_index_template",
     "PaperbaseSearchReindexer",
+    "search_index_name",
+    "search_index_prefix",
     "table_index_template",
 ]

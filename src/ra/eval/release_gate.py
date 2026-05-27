@@ -94,6 +94,7 @@ def evaluate_release_gate_cases(cases: list[ReleaseGateCase]) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
 
     stage_passes = 0
+    draft_completeness_passes = 0
     evidence_link_passes = 0
     overall_passes = 0
 
@@ -113,10 +114,12 @@ def evaluate_release_gate_cases(cases: list[ReleaseGateCase]) -> dict[str, Any]:
         evidence_link_coverage = _evidence_link_coverage(draft)
 
         stage_completion_pass = stage_completion_ratio >= case.min_stage_completion_ratio
+        draft_completeness_pass = draft.completeness.complete
         evidence_link_pass = evidence_link_coverage >= case.min_evidence_link_coverage
-        gate_pass = stage_completion_pass and evidence_link_pass
+        gate_pass = stage_completion_pass and draft_completeness_pass and evidence_link_pass
 
         stage_passes += int(stage_completion_pass)
+        draft_completeness_passes += int(draft_completeness_pass)
         evidence_link_passes += int(evidence_link_pass)
         overall_passes += int(gate_pass)
 
@@ -128,6 +131,12 @@ def evaluate_release_gate_cases(cases: list[ReleaseGateCase]) -> dict[str, Any]:
                 "expected_stage_count": len(_GATE_STAGE_SEQUENCE),
                 "stage_completion_ratio": round(stage_completion_ratio, 6),
                 "min_stage_completion_ratio": case.min_stage_completion_ratio,
+                "draft_completeness_pass": draft_completeness_pass,
+                "incomplete_draft_sections": [
+                    check.section_id
+                    for check in draft.completeness.checks
+                    if not check.complete
+                ],
                 "evidence_link_coverage": round(evidence_link_coverage, 6),
                 "min_evidence_link_coverage": case.min_evidence_link_coverage,
                 "stage_completion_pass": stage_completion_pass,
@@ -139,6 +148,7 @@ def evaluate_release_gate_cases(cases: list[ReleaseGateCase]) -> dict[str, Any]:
     total_cases = len(cases)
     metrics = {
         "stage_completion_pass_rate": _safe_rate(stage_passes, total_cases),
+        "draft_completeness_pass_rate": _safe_rate(draft_completeness_passes, total_cases),
         "evidence_link_pass_rate": _safe_rate(evidence_link_passes, total_cases),
         "gate_pass_rate": _safe_rate(overall_passes, total_cases),
     }

@@ -229,6 +229,35 @@ def _ensure_collection_paper(session: Session, *, collection_id: str, paper_id: 
     return safe_paper_id
 
 
+def _resolve_thread_workspace_id(
+    session: Session,
+    *,
+    collection_id: str,
+    workspace_id: str | None,
+) -> str | None:
+    if workspace_id is None:
+        return None
+    safe_workspace_id = sanitize_identifier(
+        workspace_id,
+        field_name="workspace_id",
+        max_length=36,
+    )
+    workspace = WorkspaceRepository(session).get_by_id(safe_workspace_id)
+    if workspace is None:
+        raise PaperbaseAPIError(
+            status_code=404,
+            error="workspace_not_found",
+            message=f"No workspace found for id: {safe_workspace_id}",
+        )
+    if workspace.collection_id is not None and workspace.collection_id != collection_id:
+        raise PaperbaseAPIError(
+            status_code=400,
+            error="workspace_collection_mismatch",
+            message="Research thread workspace must belong to the selected collection.",
+        )
+    return safe_workspace_id
+
+
 def _sanitize_selected_paper_ids(
     session: Session,
     *,
@@ -528,15 +557,16 @@ def create_research_thread(
         collection_id=safe_collection_id,
         paper_ids=list(payload.selected_paper_ids),
     )
+    workspace_id = _resolve_thread_workspace_id(
+        session,
+        collection_id=safe_collection_id,
+        workspace_id=payload.workspace_id,
+    )
     thread = ResearchRepository(session).create_thread(
         owner_id=sanitize_user_text(payload.owner_id, field_name="owner_id", max_length=128),
         title=sanitize_user_text(payload.title, field_name="title", max_length=255),
         collection_id=safe_collection_id,
-        workspace_id=(
-            sanitize_identifier(payload.workspace_id, field_name="workspace_id", max_length=36)
-            if payload.workspace_id is not None
-            else None
-        ),
+        workspace_id=workspace_id,
         selected_paper_ids=selected_paper_ids,
     )
     return SingleResearchThreadResponse(data=_thread_to_response(thread))
@@ -826,11 +856,7 @@ def update_research_artifact(
             if payload.title is not None
             else None
         ),
-        status=(
-            sanitize_user_text(payload.status, field_name="status", max_length=64)
-            if payload.status is not None
-            else None
-        ),
+        status=None,
         output_payload=output_payload if output_payload != dict(artifact.output_payload_json or {}) else None,
     )
     return SingleResearchArtifactResponse(data=_artifact_to_response(updated))

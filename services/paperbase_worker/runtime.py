@@ -16,9 +16,9 @@ from paperbase.ingest.provider_identifiers import (
     ingest_provider_identifiers,
     refresh_paper_metadata,
 )
+from paperbase.parsing.runner import CollectionParseRunner
 from paperbase.research.runner import PaperbaseResearchAgentRunner
 from paperbase.search.embeddings import EmbeddingProvider
-from paperbase.parsing.runner import CollectionParseRunner
 from paperbase.search.runtime import PaperbaseSearchReindexer
 
 
@@ -156,6 +156,7 @@ class PaperbaseWorker:
         reindexer = PaperbaseSearchReindexer(
             session_factory=self.session_factory,
             backend=self.search_backend,
+            project_id=self.project_id,
             embedding_provider=self.embedding_provider,
         )
         indexed = reindexer.reindex_all()

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
-from uuid import uuid4
+import shutil
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from ra.utils.security import sanitize_identifier, sanitize_user_text
@@ -18,52 +18,15 @@ from services.paperbase_api.models import (
     ProviderIdentifierIngestRequest,
     SingleBackgroundJobResponse,
 )
+from services.paperbase_api.path_policy import ensure_host_path_allowed
 from services.paperbase_api.routes.jobs import background_job_to_response
+from services.paperbase_api.upload_parser import stage_streamed_local_library_upload
 
 router = APIRouter(tags=["ingest"])
 
 
-def _safe_uploaded_relative_path(filename: str | None) -> Path:
-    raw_name = (filename or "").replace("\\", "/").strip()
-    candidate = PurePosixPath(raw_name or "upload.pdf")
-    safe_parts = [part for part in candidate.parts if part not in {"", ".", "..", "/"}]
-    if not safe_parts:
-        safe_parts = ["upload.pdf"]
-    return Path(*safe_parts)
-
-
-def _stage_uploaded_pdf_directory(
-    *,
-    staging_root: Path,
-    files: list[UploadFile],
-) -> Path:
-    staged_dir = staging_root / uuid4().hex
-    staged_dir.mkdir(parents=True, exist_ok=True)
-
-    stored_any = False
-    for upload in files:
-        relative_path = _safe_uploaded_relative_path(upload.filename)
-        if relative_path.suffix.lower() != ".pdf":
-            continue
-
-        destination = staged_dir / relative_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        with destination.open("wb") as handle:
-            while True:
-                chunk = upload.file.read(1024 * 1024)
-                if not chunk:
-                    break
-                handle.write(chunk)
-        stored_any = True
-
-    if not stored_any:
-        raise PaperbaseAPIError(
-            status_code=400,
-            error="invalid_input",
-            message="At least one PDF file is required for local library upload.",
-        )
-
-    return staged_dir
+def _cleanup_staged_upload(staged_dir: Path) -> None:
+    shutil.rmtree(staged_dir, ignore_errors=True)
 
 
 @router.post(
@@ -79,6 +42,11 @@ def queue_local_library_ingest(
     source_dir = Path(
         sanitize_user_text(payload.source_dir, field_name="source_dir", max_length=4096)
     ).expanduser()
+    source_dir = ensure_host_path_allowed(
+        source_dir,
+        config=request.app.state.paperbase_config,
+        field_name="source_dir",
+    )
     if not source_dir.exists():
         raise PaperbaseAPIError(
             status_code=404,
@@ -116,48 +84,82 @@ def queue_local_library_ingest(
     "/api/v1/ingest/local-library-upload",
     response_model=SingleBackgroundJobResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["files"],
+                        "properties": {
+                            "files": {
+                                "type": "array",
+                                "items": {"type": "string", "format": "binary"},
+                            },
+                            "owner_id": {"type": "string", "default": "local-user"},
+                            "collection_title": {"type": "string"},
+                            "collection_description": {"type": "string"},
+                        },
+                    }
+                }
+            },
+        }
+    },
 )
-def queue_local_library_upload_ingest(
+async def queue_local_library_upload_ingest(
     request: Request,
     session: Session = Depends(get_session),
-    files: list[UploadFile] = File(...),
-    owner_id: str = Form("local-user"),
-    collection_title: str | None = Form(None),
-    collection_description: str | None = Form(None),
 ) -> SingleBackgroundJobResponse:
     del session
     staging_root = Path(request.app.state.upload_staging_dir).expanduser()
-    staging_root.mkdir(parents=True, exist_ok=True)
-    staged_dir = _stage_uploaded_pdf_directory(staging_root=staging_root, files=files)
-
-    safe_owner_id = sanitize_user_text(owner_id, field_name="owner_id", max_length=128)
-    safe_collection_title = (
-        sanitize_user_text(collection_title, field_name="collection_title", max_length=255)
-        if collection_title is not None and collection_title.strip()
-        else None
+    upload = await stage_streamed_local_library_upload(
+        request=request,
+        staging_root=staging_root,
+        max_file_count=request.app.state.upload_max_file_count,
+        max_single_file_bytes=request.app.state.upload_max_single_file_bytes,
+        max_total_bytes=request.app.state.upload_max_total_bytes,
     )
-    safe_collection_description = (
-        sanitize_user_text(
-            collection_description,
-            field_name="collection_description",
-            max_length=5000,
+
+    try:
+        safe_owner_id = sanitize_user_text(upload.owner_id, field_name="owner_id", max_length=128)
+        safe_collection_title = (
+            sanitize_user_text(upload.collection_title, field_name="collection_title", max_length=255)
+            if upload.collection_title is not None and upload.collection_title.strip()
+            else None
         )
-        if collection_description is not None and collection_description.strip()
-        else None
-    )
+        safe_collection_description = (
+            sanitize_user_text(
+                upload.collection_description,
+                field_name="collection_description",
+                max_length=5000,
+            )
+            if upload.collection_description is not None and upload.collection_description.strip()
+            else None
+        )
 
-    job = create_background_job(
-        session_factory=get_session_factory(request),
-        job_type="local_library_ingest",
-        payload_json={
-            "source_dir": str(staged_dir),
-            "owner_id": safe_owner_id,
-            "collection_title": safe_collection_title,
-            "collection_description": safe_collection_description,
-        },
-        dispatcher=request.app.state.job_dispatcher,
-        project_id=get_project_id(request),
-    )
+        job = create_background_job(
+            session_factory=get_session_factory(request),
+            job_type="local_library_ingest",
+            payload_json={
+                "source_dir": str(upload.staged_dir),
+                "owner_id": safe_owner_id,
+                "collection_title": safe_collection_title,
+                "collection_description": safe_collection_description,
+            },
+            dispatcher=request.app.state.job_dispatcher,
+            project_id=get_project_id(request),
+        )
+    except ValueError as exc:
+        _cleanup_staged_upload(upload.staged_dir)
+        raise PaperbaseAPIError(
+            status_code=400,
+            error="invalid_input",
+            message=str(exc),
+        ) from exc
+    except Exception:
+        _cleanup_staged_upload(upload.staged_dir)
+        raise
     return SingleBackgroundJobResponse(data=background_job_to_response(job))
 
 

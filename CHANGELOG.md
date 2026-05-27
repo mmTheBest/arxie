@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Hardened local-library upload limits, hosted path policy, and symlink checks.
+- Isolated project-bound search indexes and search backend filters.
+- Fixed research-agent retry handling for failed model-backed runs.
+- Aligned proposal export and release-gate completeness with the current stage contract.
+- Fixed release-candidate regressions in uppercase PDF ingest, proposal provenance merging,
+  release-gate enforcement, legacy research artifact schemas, and literature-review previews.
+
 ## v0.2.0
 
 - Added the Paperbase-backed Arxie local research workspace.

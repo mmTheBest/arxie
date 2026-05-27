@@ -79,7 +79,11 @@ def create_app(
     app.state.embedding_provider = embedding_provider
     app.state.dependency_checker = resolved_dependency_checker
     app.state.project_registry = resolved_project_registry
+    app.state.paperbase_config = config
     app.state.upload_staging_dir = Path(config.upload_staging_dir)
+    app.state.upload_max_file_count = config.upload_max_file_count
+    app.state.upload_max_single_file_bytes = config.upload_max_single_file_bytes
+    app.state.upload_max_total_bytes = config.upload_max_total_bytes
 
     register_exception_handlers(app)
     app.mount("/ui", StaticFiles(directory=Path(STATIC_DIR)), name="paperbase-ui")
