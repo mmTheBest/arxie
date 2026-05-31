@@ -9,6 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.models import (
+    Chunk,
     Dataset,
     EngineeringTrick,
     EvidenceSpan,
@@ -23,6 +24,11 @@ from paperbase.db.models import (
     Section,
 )
 from paperbase.extract.contracts import StructuredExtractionBundle
+from paperbase.extract.readiness import (
+    EXTRACTION_METADATA_DIAGNOSTICS_KEY,
+    extraction_metadata_payload,
+    extraction_source_content_hash,
+)
 from paperbase.schemas.extraction import (
     DatasetExtraction,
     EvidenceSpanPayload,
@@ -48,6 +54,12 @@ class PaperExtractionResult:
     extraction_run_id: str
     run_status: str
     result_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceSpanAnchor:
+    section_id: str | None = None
+    chunk_id: str | None = None
 
 
 def _normalize_name(value: str | None, fallback: str) -> str:
@@ -78,11 +90,13 @@ class PaperExtractionPipeline:
         extraction_profile_id: str | None = None,
     ) -> PaperExtractionResult:
         paper_text = self._load_paper_text(paper_id)
+        source_content_hash = extraction_source_content_hash(paper_text)
         run_id = self._start_run(
             paper_id=paper_id,
             extraction_profile_id=extraction_profile_id,
             prompt_version=prompt_version,
             schema_version=schema_version,
+            source_content_hash=source_content_hash,
         )
 
         try:
@@ -118,6 +132,7 @@ class PaperExtractionPipeline:
         extraction_profile_id: str | None,
         prompt_version: str,
         schema_version: str,
+        source_content_hash: str,
     ) -> str:
         with self.session_factory() as session:
             run = ExtractionRun(
@@ -127,6 +142,14 @@ class PaperExtractionPipeline:
                 prompt_version=prompt_version,
                 schema_version=schema_version,
                 status="running",
+                diagnostics_json={
+                    EXTRACTION_METADATA_DIAGNOSTICS_KEY: extraction_metadata_payload(
+                        extraction_profile_id=extraction_profile_id,
+                        prompt_version=prompt_version,
+                        schema_version=schema_version,
+                        source_content_hash=source_content_hash,
+                    )
+                },
             )
             session.add(run)
             session.commit()
@@ -139,7 +162,9 @@ class PaperExtractionPipeline:
             if run is None:
                 return
             run.status = "failed"
-            run.diagnostics_json = {"error": error_message}
+            diagnostics = dict(run.diagnostics_json or {})
+            diagnostics["error"] = error_message
+            run.diagnostics_json = diagnostics
             session.commit()
 
     def _persist_bundle(
@@ -312,6 +337,7 @@ class PaperExtractionPipeline:
                 raise ValueError(f"Extraction run {extraction_run_id} no longer exists")
             run.status = "completed"
             run.diagnostics_json = {
+                **dict(run.diagnostics_json or {}),
                 "datasets": len(bundle.datasets),
                 "methods": len(bundle.methods),
                 "metrics": len(bundle.metrics),
@@ -387,10 +413,17 @@ class PaperExtractionPipeline:
         evidence_spans: list[EvidenceSpanPayload],
     ) -> None:
         for evidence in evidence_spans:
+            anchor = self._resolve_evidence_anchor(
+                session,
+                paper_id=paper_id,
+                evidence=evidence,
+            )
             session.add(
                 EvidenceSpan(
                     paper_id=paper_id,
                     extraction_run_id=extraction_run_id,
+                    section_id=anchor.section_id,
+                    chunk_id=anchor.chunk_id,
                     target_type=target_type,
                     target_id=target_id,
                     page_number=evidence.page_number,
@@ -399,3 +432,95 @@ class PaperExtractionPipeline:
                     end_char=evidence.end_char,
                 )
             )
+
+    def _resolve_evidence_anchor(
+        self,
+        session: Session,
+        *,
+        paper_id: str,
+        evidence: EvidenceSpanPayload,
+    ) -> EvidenceSpanAnchor:
+        sections = (
+            session.execute(
+                select(Section)
+                .where(Section.paper_id == paper_id)
+                .order_by(Section.ordinal.asc())
+            )
+            .scalars()
+            .all()
+        )
+        if not sections:
+            return EvidenceSpanAnchor()
+
+        quote = evidence.quote_text.strip()
+        if quote:
+            for section in sections:
+                if quote in section.text:
+                    return EvidenceSpanAnchor(
+                        section_id=section.id,
+                        chunk_id=self._chunk_id_containing_text(
+                            session,
+                            paper_id=paper_id,
+                            section_id=section.id,
+                            text=quote,
+                        ),
+                    )
+
+        section = self._section_for_paper_text_range(
+            sections,
+            start_char=evidence.start_char,
+            end_char=evidence.end_char,
+        )
+        if section is None:
+            return EvidenceSpanAnchor()
+        return EvidenceSpanAnchor(
+            section_id=section.id,
+            chunk_id=None,
+        )
+
+    def _chunk_id_containing_text(
+        self,
+        session: Session,
+        *,
+        paper_id: str,
+        section_id: str,
+        text: str,
+    ) -> str | None:
+        chunks = (
+            session.execute(
+                select(Chunk)
+                .where(
+                    Chunk.paper_id == paper_id,
+                    Chunk.section_id == section_id,
+                )
+                .order_by(Chunk.ordinal.asc())
+            )
+            .scalars()
+            .all()
+        )
+        for chunk in chunks:
+            if text in chunk.text:
+                return chunk.id
+        return None
+
+    def _section_for_paper_text_range(
+        self,
+        sections: list[Section],
+        *,
+        start_char: int | None,
+        end_char: int | None,
+    ) -> Section | None:
+        if start_char is None or end_char is None or start_char < 0 or end_char <= start_char:
+            return None
+
+        cursor = 0
+        for section in sections:
+            if not section.text.strip():
+                continue
+            section_prefix = f"{section.title}\n"
+            text_start = cursor + len(section_prefix)
+            text_end = text_start + len(section.text)
+            if start_char >= text_start and end_char <= text_end:
+                return section
+            cursor = text_end + 2
+        return None

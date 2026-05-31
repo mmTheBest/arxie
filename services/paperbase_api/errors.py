@@ -46,6 +46,15 @@ def _error_response(
     )
 
 
+def _validation_error_details(exc: RequestValidationError) -> list[dict[str, Any]]:
+    details: list[dict[str, Any]] = []
+    for item in exc.errors():
+        detail = dict(item)
+        detail.pop("input", None)
+        details.append(detail)
+    return details
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PaperbaseAPIError)
     async def _paperbase_api_error_handler(  # noqa: ANN202
@@ -70,7 +79,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=422,
             error="validation_error",
             message="Invalid request payload.",
-            details=[dict(item) for item in exc.errors()],
+            details=_validation_error_details(exc),
         )
 
     @app.exception_handler(Exception)

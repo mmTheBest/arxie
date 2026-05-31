@@ -7,15 +7,17 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -337,7 +339,9 @@ class CollectionPaper(Base, TimestampMixin):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
-    collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
+    collection_id: Mapped[str] = mapped_column(
+        ForeignKey("collections.id"), nullable=False, index=True
+    )
     paper_id: Mapped[str] = mapped_column(ForeignKey("papers.id"), nullable=False, index=True)
     position: Mapped[int | None] = mapped_column(Integer)
     membership_note: Mapped[str | None] = mapped_column(Text)
@@ -370,6 +374,17 @@ class StudySource(Base, TimestampMixin):
     summary: Mapped[str | None] = mapped_column(Text)
     read_status: Mapped[str] = mapped_column(String(64), nullable=False, default="ready")
     error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class StudyBrief(Base, TimestampMixin):
+    __tablename__ = "study_briefs"
+    __table_args__ = (UniqueConstraint("workspace_id", name="uq_study_briefs_workspace"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), nullable=False)
+    brief_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False, default="agent")
 
 
 class ResearchThread(Base, TimestampMixin):
@@ -457,6 +472,116 @@ class StudyContextPack(Base, TimestampMixin):
     context_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     selected_item_counts_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     readiness_warnings_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+
+class ResearchMemoryRecord(Base, TimestampMixin):
+    __tablename__ = "research_memory_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "collection_id",
+            "workspace_id",
+            "memory_type",
+            "version_key",
+            name="uq_research_memory_records_scope_type_version",
+        ),
+        Index(
+            "uq_research_memory_records_null_workspace_type_version",
+            "collection_id",
+            "memory_type",
+            "version_key",
+            unique=True,
+            sqlite_where=text("workspace_id IS NULL"),
+            postgresql_where=text("workspace_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    paper_id: Mapped[str | None] = mapped_column(ForeignKey("papers.id"), index=True)
+    memory_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    source_refs_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, default=list, nullable=False
+    )
+    confidence: Mapped[float | None] = mapped_column(Float)
+    version_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+
+class ResearchGraphNode(Base, TimestampMixin):
+    __tablename__ = "research_graph_nodes"
+    __table_args__ = (
+        UniqueConstraint(
+            "collection_id",
+            "workspace_id",
+            "node_type",
+            "stable_key",
+            name="uq_research_graph_nodes_scope_type_key",
+        ),
+        Index(
+            "uq_research_graph_nodes_null_workspace_type_key",
+            "collection_id",
+            "node_type",
+            "stable_key",
+            unique=True,
+            sqlite_where=text("workspace_id IS NULL"),
+            postgresql_where=text("workspace_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    collection_id: Mapped[str] = mapped_column(
+        ForeignKey("collections.id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    node_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    stable_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class ResearchGraphEdge(Base, TimestampMixin):
+    __tablename__ = "research_graph_edges"
+    __table_args__ = (
+        UniqueConstraint(
+            "collection_id",
+            "workspace_id",
+            "source_node_id",
+            "target_node_id",
+            "edge_type",
+            name="uq_research_graph_edges_scope_nodes_type",
+        ),
+        Index(
+            "uq_research_graph_edges_null_workspace_nodes_type",
+            "collection_id",
+            "source_node_id",
+            "target_node_id",
+            "edge_type",
+            unique=True,
+            sqlite_where=text("workspace_id IS NULL"),
+            postgresql_where=text("workspace_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+    collection_id: Mapped[str] = mapped_column(
+        ForeignKey("collections.id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    source_node_id: Mapped[str] = mapped_column(
+        ForeignKey("research_graph_nodes.id"), nullable=False, index=True
+    )
+    target_node_id: Mapped[str] = mapped_column(
+        ForeignKey("research_graph_nodes.id"), nullable=False, index=True
+    )
+    edge_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    evidence_refs_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, default=list, nullable=False
+    )
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
 
 class ResearchValidationReport(Base, TimestampMixin):

@@ -26,7 +26,7 @@ from paperbase.db.repositories import (
     WorkspaceRepository,
 )
 from paperbase.research.skill_policies import policy_for_skill
-from paperbase.research.skills import artifact_type_for_skill, select_research_skill
+from paperbase.research.skills import artifact_type_for_skill, select_research_skill_with_source
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.background_jobs import create_background_job
 from services.paperbase_api.dependencies import get_project_id, get_session, get_session_factory
@@ -63,6 +63,8 @@ from services.paperbase_api.routes.jobs import background_job_to_response
 router = APIRouter(tags=["research"])
 ACTIVE_JOB_STATUSES = {"pending", "queued", "running"}
 PROMPT_VERSION = "research-agent-v1"
+CONTEXT_DIAGNOSTIC_ITEM_LIMIT = 8
+CONTEXT_DIAGNOSTIC_FEATURE_LIMIT = 8
 
 
 def _thread_to_response(thread) -> ResearchThreadResponse:  # noqa: ANN001
@@ -129,6 +131,240 @@ def _label_to_response(label) -> PaperResearchLabelResponse:  # noqa: ANN001
     )
 
 
+def _intelligence_layers_summary(
+    *,
+    context: dict[str, Any],
+    selected_item_counts: dict[str, Any],
+) -> dict[str, Any]:
+    layers = context.get("intelligence_layers")
+    if not isinstance(layers, dict):
+        layers = {}
+    field_graph = layers.get("field_graph")
+    if not isinstance(field_graph, dict):
+        field_graph = {}
+    study_brief = layers.get("study_brief")
+    study_brief_version = (
+        study_brief.get("version")
+        if isinstance(study_brief, dict)
+        else None
+    )
+    study_brief_count = _summary_count(
+        selected_item_counts,
+        "study_brief",
+        1 if isinstance(study_brief, dict) else 0,
+    )
+    return {
+        "evidence_memory": _summary_count(
+            selected_item_counts,
+            "evidence_memory",
+            _dict_list_count(layers.get("evidence_memory")),
+        ),
+        "pattern_memory": _summary_count(
+            selected_item_counts,
+            "pattern_memory",
+            _dict_list_count(layers.get("pattern_memory")),
+        ),
+        "field_graph": {
+            "nodes": _summary_count(
+                selected_item_counts,
+                "graph_nodes",
+                _dict_list_count(field_graph.get("nodes")),
+            ),
+            "edges": _summary_count(
+                selected_item_counts,
+                "graph_edges",
+                _dict_list_count(field_graph.get("edges")),
+            ),
+        },
+        "study_brief": {
+            "included": study_brief_count > 0,
+            "version": study_brief_version,
+        },
+    }
+
+
+def _summary_count(
+    selected_item_counts: dict[str, Any],
+    key: str,
+    fallback: int,
+) -> int:
+    value = selected_item_counts.get(key)
+    if isinstance(value, int):
+        return value
+    return fallback
+
+
+def _dict_list_count(value: Any) -> int:
+    if not isinstance(value, list):
+        return 0
+    return len([item for item in value if isinstance(item, dict)])
+
+
+def _support_label_counts(report: dict[str, Any]) -> dict[str, Any]:
+    support_statuses = report.get("recommendation_support_status_counts")
+    supporting_layers = report.get("recommendation_supporting_layer_counts")
+    return {
+        "support_statuses": dict(support_statuses) if isinstance(support_statuses, dict) else {},
+        "supporting_layers": dict(supporting_layers) if isinstance(supporting_layers, dict) else {},
+    }
+
+
+def _context_diagnostics(
+    *,
+    context: dict[str, Any],
+    selected_item_counts: dict[str, Any],
+) -> dict[str, Any]:
+    layers = context.get("intelligence_layers")
+    if not isinstance(layers, dict):
+        layers = {}
+    field_graph = layers.get("field_graph")
+    if not isinstance(field_graph, dict):
+        field_graph = {}
+
+    papers = _dict_items(context.get("papers"))
+    sources = _dict_items(context.get("sources"))
+    evidence_memory = _dict_items(layers.get("evidence_memory"))
+    pattern_memory = _dict_items(layers.get("pattern_memory"))
+    graph_nodes = _dict_items(field_graph.get("nodes"))
+    graph_edges = _dict_items(field_graph.get("edges"))
+    study_brief = layers.get("study_brief")
+    study_brief_items = [study_brief] if isinstance(study_brief, dict) else []
+    all_items = [
+        *papers,
+        *sources,
+        *evidence_memory,
+        *pattern_memory,
+        *graph_nodes,
+        *graph_edges,
+        *study_brief_items,
+    ]
+    return {
+        "item_counts": {
+            key: value
+            for key, value in selected_item_counts.items()
+            if isinstance(key, str) and isinstance(value, int)
+        },
+        "context_roles": _count_string_field(all_items, "context_role"),
+        "intelligence_layers": _count_string_field(all_items, "intelligence_layer"),
+        "top_papers": [
+            _diagnostic_item(item, item_type="paper", id_key="paper_id", label_key="title")
+            for item in papers[:CONTEXT_DIAGNOSTIC_ITEM_LIMIT]
+        ],
+        "top_sources": [
+            _diagnostic_item(item, item_type="source", id_key="source_id", label_key="title")
+            for item in sources[:CONTEXT_DIAGNOSTIC_ITEM_LIMIT]
+        ],
+        "top_memory": [
+            _diagnostic_item(
+                item,
+                item_type="memory",
+                id_key="memory_record_id",
+                label_key="title",
+            )
+            for item in [*evidence_memory, *pattern_memory][:CONTEXT_DIAGNOSTIC_ITEM_LIMIT]
+        ],
+        "top_graph_nodes": [
+            _diagnostic_item(
+                item,
+                item_type="graph_node",
+                id_key="graph_node_id",
+                label_key="label",
+            )
+            for item in graph_nodes[:CONTEXT_DIAGNOSTIC_ITEM_LIMIT]
+        ],
+        "top_graph_edges": [
+            _diagnostic_item(
+                item,
+                item_type="graph_edge",
+                id_key="graph_edge_id",
+                label_key="edge_type",
+            )
+            for item in graph_edges[:CONTEXT_DIAGNOSTIC_ITEM_LIMIT]
+        ],
+    }
+
+
+def _dict_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _count_string_field(items: list[dict[str, Any]], field_name: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        value = item.get(field_name)
+        if not isinstance(value, str) or not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _diagnostic_item(
+    item: dict[str, Any],
+    *,
+    item_type: str,
+    id_key: str,
+    label_key: str,
+) -> dict[str, Any]:
+    diagnostic = {
+        "item_type": item_type,
+        "id": str(item.get(id_key) or ""),
+        "label": _diagnostic_text(item.get(label_key)),
+        "context_role": (
+            item.get("context_role") if isinstance(item.get("context_role"), str) else None
+        ),
+        "context_reason": _diagnostic_text(item.get("context_reason")),
+        "selection_score": (
+            item.get("selection_score")
+            if isinstance(item.get("selection_score"), int | float)
+            else None
+        ),
+        "selection_features": _diagnostic_features(item.get("selection_features")),
+        "intelligence_layer": (
+            item.get("intelligence_layer")
+            if isinstance(item.get("intelligence_layer"), str)
+            else None
+        ),
+    }
+    if item_type == "source":
+        diagnostic["source_type"] = (
+            item.get("source_type") if isinstance(item.get("source_type"), str) else None
+        )
+        diagnostic["source_locator"] = (
+            item.get("source_locator")
+            if isinstance(item.get("source_locator"), str)
+            else None
+        )
+        diagnostic["has_path"] = bool(item.get("has_path"))
+    return diagnostic
+
+
+def _diagnostic_features(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    features: dict[str, Any] = {}
+    for key, feature_value in list(value.items())[:CONTEXT_DIAGNOSTIC_FEATURE_LIMIT]:
+        if not isinstance(key, str):
+            continue
+        if isinstance(feature_value, str):
+            features[key] = _diagnostic_text(feature_value)
+        elif isinstance(feature_value, bool | int | float) or feature_value is None:
+            features[key] = feature_value
+        elif isinstance(feature_value, list | tuple | set | dict):
+            features[key] = len(feature_value)
+    return features
+
+
+def _diagnostic_text(value: Any, *, limit: int = 240) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
 def _run_to_response(session: Session, run) -> ResearchAgentRunResponse:  # noqa: ANN001
     repository = ResearchAgentRunRepository(session)
     context_pack = repository.get_context_pack(run_id=run.id)
@@ -136,6 +372,11 @@ def _run_to_response(session: Session, run) -> ResearchAgentRunResponse:  # noqa
     context_response = None
     if context_pack is not None:
         context = dict(context_pack.context_json or {})
+        selected_item_counts = dict(context_pack.selected_item_counts_json or {})
+        intelligence_layers_summary = _intelligence_layers_summary(
+            context=context,
+            selected_item_counts=selected_item_counts,
+        )
         context_response = StudyContextPackResponse(
             id=context_pack.id,
             run_id=context_pack.run_id,
@@ -147,12 +388,19 @@ def _run_to_response(session: Session, run) -> ResearchAgentRunResponse:  # noqa
                 "paper_count": len(context.get("papers", []) or []),
                 "source_count": len(context.get("sources", []) or []),
                 "task_type": context.get("task_type"),
+                "intelligence_layers": intelligence_layers_summary,
             },
-            selected_item_counts=dict(context_pack.selected_item_counts_json or {}),
+            intelligence_layers_summary=intelligence_layers_summary,
+            context_diagnostics=_context_diagnostics(
+                context=context,
+                selected_item_counts=selected_item_counts,
+            ),
+            selected_item_counts=selected_item_counts,
             readiness_warnings=list(context_pack.readiness_warnings_json or []),
         )
     validation_response = None
     if validation_report is not None:
+        report = dict(validation_report.report_json or {})
         validation_response = ResearchValidationReportResponse(
             id=validation_report.id,
             run_id=validation_report.run_id,
@@ -161,7 +409,8 @@ def _run_to_response(session: Session, run) -> ResearchAgentRunResponse:  # noqa
             missing_evidence=list(validation_report.missing_evidence_json or []),
             unsupported_claims=list(validation_report.unsupported_claims_json or []),
             readiness_blockers=list(validation_report.readiness_blockers_json or []),
-            report=dict(validation_report.report_json or {}),
+            support_label_counts=_support_label_counts(report),
+            report=report,
         )
     return ResearchAgentRunResponse(
         id=run.id,
@@ -626,10 +875,13 @@ def create_research_message(
 
     message_text = sanitize_user_text(payload.message, field_name="message", max_length=20000)
     inferred_artifact_type = payload.artifact_type or _infer_artifact_type(message_text)
-    skill_id = select_research_skill(
+    skill_id, skill_selection_source = select_research_skill_with_source(
         message_text,
         suggestion_id=payload.suggestion_id,
-        artifact_type=inferred_artifact_type,
+        artifact_type=payload.artifact_type,
+        inferred_artifact_type=(
+            inferred_artifact_type if payload.artifact_type is None else None
+        ),
     )
     if payload.artifact_type is not None:
         artifact_type = payload.artifact_type
@@ -690,6 +942,7 @@ def create_research_message(
             "source_ids": source_ids,
             "skill_id": skill_id,
             "suggestion_id": payload.suggestion_id,
+            "skill_selection_source": skill_selection_source,
         },
         prompt_version=PROMPT_VERSION,
     )
@@ -707,6 +960,7 @@ def create_research_message(
             "selected_paper_ids": selected_paper_ids,
             "source_ids": source_ids,
             "suggestion_id": payload.suggestion_id,
+            "skill_selection_source": skill_selection_source,
         },
     )
     job = create_background_job(
@@ -722,6 +976,7 @@ def create_research_message(
             "artifact_type": artifact_type,
             "skill_id": skill_id,
             "suggestion_id": payload.suggestion_id,
+            "skill_selection_source": skill_selection_source,
             "selected_paper_ids": selected_paper_ids,
             "workspace_id": thread.workspace_id,
             "source_ids": source_ids,

@@ -10,6 +10,10 @@ from paperbase.db.models import ResearchAgentRun
 from paperbase.db.repositories import ResearchAgentRunRepository, ResearchRepository
 from paperbase.research.context_builder import PaperbaseResearchContextBuilder
 from paperbase.research.harness import validate_research_output
+from paperbase.research.planner_router import (
+    build_planner_router_metadata,
+    skill_selection_source_for_payload,
+)
 from paperbase.research.skill_policies import ResearchSkillPolicy, policy_for_skill
 from paperbase.research.skills import (
     ResearchSkillContext,
@@ -24,8 +28,20 @@ TERMINAL_RUN_STATUSES = {"completed", "blocked"}
 class PaperbaseResearchAgentRuntime:
     """Execute one research-agent run with context, synthesis, and validation traces."""
 
-    def __init__(self, *, model_client: object | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        model_client: object | None = None,
+        search_backend: object | None = None,
+        embedding_provider: object | None = None,
+        project_id: str | None = None,
+        backend_retrieval_enabled: bool = False,
+    ) -> None:
         self.model_client = model_client
+        self.search_backend = search_backend
+        self.embedding_provider = embedding_provider
+        self.project_id = project_id
+        self.backend_retrieval_enabled = backend_retrieval_enabled
 
     def execute(self, session: Session, payload: dict[str, Any]) -> dict[str, Any]:
         research_repository = ResearchRepository(session)
@@ -43,6 +59,11 @@ class PaperbaseResearchAgentRuntime:
                 artifact_type=str(payload["artifact_type"]) if payload.get("artifact_type") else None,
             )
         )
+        skill_selection_source = skill_selection_source_for_payload(payload)
+        runtime_payload = {
+            **payload,
+            "skill_selection_source": skill_selection_source,
+        }
         try:
             policy = policy_for_skill(skill_id)
         except UnsupportedResearchSkillError as exc:
@@ -55,7 +76,7 @@ class PaperbaseResearchAgentRuntime:
             raise
         run = self._ensure_run(
             run_repository,
-            payload=payload,
+            payload=runtime_payload,
             policy=policy,
             artifact_type=str(payload.get("artifact_type") or policy.artifact_type),
         )
@@ -68,7 +89,13 @@ class PaperbaseResearchAgentRuntime:
             )
         run_repository.mark_running(run.id)
 
-        context_pack = PaperbaseResearchContextBuilder(session).build(
+        context_pack = PaperbaseResearchContextBuilder(
+            session,
+            search_backend=self.search_backend,
+            embedding_provider=self.embedding_provider,
+            project_id=self.project_id,
+            backend_retrieval_enabled=self.backend_retrieval_enabled,
+        ).build(
             collection_id=str(payload["collection_id"]),
             task_type=skill_id,
             message=str(payload.get("user_message") or ""),
@@ -86,6 +113,23 @@ class PaperbaseResearchAgentRuntime:
             readiness_warnings=context_pack.readiness_warnings,
             cache_key=context_pack.cache_key,
         )
+        intelligence_layers_summary = self._intelligence_layers_summary(
+            context=context_pack.context,
+            selected_item_counts=context_pack.selected_item_counts,
+        )
+        selected_context_summary = self._selected_context_summary(
+            context=context_pack.context,
+            selected_item_counts=context_pack.selected_item_counts,
+            intelligence_layers_summary=intelligence_layers_summary,
+        )
+        planner_router_metadata = build_planner_router_metadata(
+            skill_id=skill_id,
+            policy=policy,
+            payload=runtime_payload,
+            selected_context_summary=selected_context_summary,
+            selected_item_counts=context_pack.selected_item_counts,
+            readiness_warnings=context_pack.readiness_warnings,
+        )
         run_repository.append_step(
             run_id=run.id,
             step_type="context",
@@ -93,6 +137,43 @@ class PaperbaseResearchAgentRuntime:
             output_json={
                 "selected_item_counts": context_pack.selected_item_counts,
                 "readiness_warnings": context_pack.readiness_warnings,
+                "intelligence_layers": intelligence_layers_summary,
+            },
+        )
+        run_repository.append_step(
+            run_id=run.id,
+            step_type="plan",
+            label="Plan research synthesis",
+            input_json={
+                "skill_id": skill_id,
+                "artifact_type": policy.artifact_type,
+                "model_policy": policy.model_policy,
+                "planner_router": planner_router_metadata,
+            },
+            output_json={
+                "planned_action": "synthesize_research_artifact",
+                "selected_context": selected_context_summary,
+                "missing_prerequisites": list(context_pack.readiness_warnings),
+                "planner_router": planner_router_metadata,
+            },
+        )
+        run_repository.append_step(
+            run_id=run.id,
+            step_type="tool_call",
+            label="Prepare synthesis inputs",
+            input_json={
+                "tool_name": "research_synthesis",
+                "skill_id": skill_id,
+                "artifact_type": policy.artifact_type,
+                "model_policy": policy.model_policy,
+                "planner_router": planner_router_metadata,
+            },
+            output_json={
+                "tool_name": "research_synthesis",
+                "selected_context": selected_context_summary,
+                "missing_prerequisites": list(context_pack.readiness_warnings),
+                "autonomous_retry": False,
+                "planner_router": planner_router_metadata,
             },
         )
 
@@ -144,6 +225,8 @@ class PaperbaseResearchAgentRuntime:
             context=context_pack.context,
             output_payload=output_payload,
             readiness_warnings=context_pack.readiness_warnings,
+            context_selection_counts=context_pack.selected_item_counts,
+            planner_router_metadata=planner_router_metadata,
             forced_status=run_status if run_status == "blocked" else None,
         )
         run_repository.create_validation_report(
@@ -248,6 +331,101 @@ class PaperbaseResearchAgentRuntime:
             ),
         }
 
+    def _selected_context_summary(
+        self,
+        *,
+        context: dict[str, Any],
+        selected_item_counts: dict[str, int],
+        intelligence_layers_summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "papers": self._summary_count(
+                selected_item_counts,
+                "papers",
+                self._dict_list_count(context.get("papers")),
+            ),
+            "sources": self._summary_count(
+                selected_item_counts,
+                "sources",
+                self._dict_list_count(context.get("sources")),
+            ),
+            "sections": self._summary_count(selected_item_counts, "sections", 0),
+            "structured_evidence": self._summary_count(
+                selected_item_counts,
+                "structured_evidence",
+                0,
+            ),
+            "intelligence_layers": intelligence_layers_summary,
+        }
+
+    def _intelligence_layers_summary(
+        self,
+        *,
+        context: dict[str, Any],
+        selected_item_counts: dict[str, int],
+    ) -> dict[str, Any]:
+        layers = context.get("intelligence_layers")
+        if not isinstance(layers, dict):
+            layers = {}
+        field_graph = layers.get("field_graph")
+        if not isinstance(field_graph, dict):
+            field_graph = {}
+        study_brief = layers.get("study_brief")
+        study_brief_version = (
+            study_brief.get("version")
+            if isinstance(study_brief, dict)
+            else None
+        )
+        study_brief_count = self._summary_count(
+            selected_item_counts,
+            "study_brief",
+            1 if isinstance(study_brief, dict) else 0,
+        )
+        return {
+            "evidence_memory": self._summary_count(
+                selected_item_counts,
+                "evidence_memory",
+                self._dict_list_count(layers.get("evidence_memory")),
+            ),
+            "pattern_memory": self._summary_count(
+                selected_item_counts,
+                "pattern_memory",
+                self._dict_list_count(layers.get("pattern_memory")),
+            ),
+            "field_graph": {
+                "nodes": self._summary_count(
+                    selected_item_counts,
+                    "graph_nodes",
+                    self._dict_list_count(field_graph.get("nodes")),
+                ),
+                "edges": self._summary_count(
+                    selected_item_counts,
+                    "graph_edges",
+                    self._dict_list_count(field_graph.get("edges")),
+                ),
+            },
+            "study_brief": {
+                "included": study_brief_count > 0,
+                "version": study_brief_version,
+            },
+        }
+
+    def _summary_count(
+        self,
+        selected_item_counts: dict[str, int],
+        key: str,
+        fallback: int,
+    ) -> int:
+        value = selected_item_counts.get(key)
+        if isinstance(value, int):
+            return value
+        return fallback
+
+    def _dict_list_count(self, value: Any) -> int:
+        if not isinstance(value, list):
+            return 0
+        return len([item for item in value if isinstance(item, dict)])
+
     def _ensure_run(
         self,
         run_repository: ResearchAgentRunRepository,
@@ -273,6 +451,7 @@ class PaperbaseResearchAgentRuntime:
                 "message": payload.get("user_message"),
                 "selected_paper_ids": list(payload.get("selected_paper_ids") or []),
                 "source_ids": list(payload.get("source_ids") or []),
+                "skill_selection_source": payload.get("skill_selection_source"),
             },
         )
 

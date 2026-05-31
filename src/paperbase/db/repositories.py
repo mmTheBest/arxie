@@ -25,9 +25,13 @@ from paperbase.db.models import (
     ResearchAgentRun,
     ResearchAgentStep,
     ResearchArtifact,
+    ResearchGraphEdge,
+    ResearchGraphNode,
+    ResearchMemoryRecord,
     ResearchMessage,
     ResearchThread,
     ResearchValidationReport,
+    StudyBrief,
     StudyContextPack,
     StudySource,
     Tag,
@@ -614,6 +618,317 @@ class WorkspaceRepository:
         self.session.delete(source)
         self.session.commit()
         return True
+
+
+class ResearchIntelligenceRepository:
+    """Persistence helpers for explicit derived research intelligence memory."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_study_brief(self, workspace_id: str) -> StudyBrief | None:
+        statement = select(StudyBrief).where(StudyBrief.workspace_id == workspace_id)
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def upsert_study_brief(
+        self,
+        *,
+        workspace_id: str,
+        brief: dict[str, Any],
+        updated_by: str = "agent",
+    ) -> StudyBrief:
+        study_brief = self.get_study_brief(workspace_id)
+        if study_brief is None:
+            study_brief = StudyBrief(
+                workspace_id=workspace_id,
+                brief_json=dict(brief),
+                version=1,
+                updated_by=updated_by,
+            )
+            self.session.add(study_brief)
+        else:
+            study_brief.brief_json = dict(brief)
+            study_brief.version += 1
+            study_brief.updated_by = updated_by
+
+        self.session.commit()
+        self.session.refresh(study_brief)
+        return study_brief
+
+    def upsert_memory_record(
+        self,
+        *,
+        collection_id: str,
+        memory_type: str,
+        version_key: str,
+        title: str,
+        summary: str,
+        workspace_id: str | None = None,
+        paper_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+        source_refs: Sequence[dict[str, Any]] | None = None,
+        confidence: float | None = None,
+        commit: bool = True,
+    ) -> ResearchMemoryRecord:
+        record = self._get_memory_record(
+            collection_id=collection_id,
+            workspace_id=workspace_id,
+            memory_type=memory_type,
+            version_key=version_key,
+        )
+        if record is None:
+            record = ResearchMemoryRecord(
+                collection_id=collection_id,
+                workspace_id=workspace_id,
+                paper_id=paper_id,
+                memory_type=memory_type,
+                title=title,
+                summary=summary,
+                payload_json=dict(payload or {}),
+                source_refs_json=list(source_refs or []),
+                confidence=confidence,
+                version_key=version_key,
+            )
+            self.session.add(record)
+        else:
+            record.workspace_id = workspace_id
+            record.paper_id = paper_id
+            record.title = title
+            record.summary = summary
+            record.payload_json = dict(payload or {})
+            record.source_refs_json = list(source_refs or [])
+            record.confidence = confidence
+
+        return self._finish_upsert(record, commit=commit)
+
+    def list_memory_records(
+        self,
+        *,
+        collection_id: str,
+        workspace_id: str | None = None,
+        memory_types: Sequence[str] | None = None,
+        limit: int = 100,
+    ) -> Sequence[ResearchMemoryRecord]:
+        if memory_types is not None and not memory_types:
+            return []
+
+        statement = select(ResearchMemoryRecord).where(
+            ResearchMemoryRecord.collection_id == collection_id
+        )
+        if workspace_id is None:
+            statement = statement.where(ResearchMemoryRecord.workspace_id.is_(None))
+        else:
+            statement = statement.where(ResearchMemoryRecord.workspace_id == workspace_id)
+        if memory_types is not None:
+            statement = statement.where(ResearchMemoryRecord.memory_type.in_(memory_types))
+        statement = (
+            statement.order_by(
+                ResearchMemoryRecord.memory_type.asc(),
+                ResearchMemoryRecord.title.asc(),
+                ResearchMemoryRecord.created_at.asc(),
+            )
+            .limit(max(1, limit))
+        )
+        return self.session.execute(statement).scalars().all()
+
+    def upsert_graph_node(
+        self,
+        *,
+        collection_id: str,
+        node_type: str,
+        stable_key: str,
+        label: str,
+        workspace_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+        commit: bool = True,
+    ) -> ResearchGraphNode:
+        node = self._get_graph_node(
+            collection_id=collection_id,
+            workspace_id=workspace_id,
+            node_type=node_type,
+            stable_key=stable_key,
+        )
+        if node is None:
+            node = ResearchGraphNode(
+                collection_id=collection_id,
+                workspace_id=workspace_id,
+                node_type=node_type,
+                stable_key=stable_key,
+                label=label,
+                payload_json=dict(payload or {}),
+            )
+            self.session.add(node)
+        else:
+            node.label = label
+            node.payload_json = dict(payload or {})
+
+        return self._finish_upsert(node, commit=commit)
+
+    def list_graph_nodes(
+        self,
+        *,
+        collection_id: str,
+        workspace_id: str | None = None,
+        node_types: Sequence[str] | None = None,
+        limit: int = 100,
+    ) -> Sequence[ResearchGraphNode]:
+        if node_types is not None and not node_types:
+            return []
+
+        statement = select(ResearchGraphNode).where(
+            ResearchGraphNode.collection_id == collection_id
+        )
+        if workspace_id is None:
+            statement = statement.where(ResearchGraphNode.workspace_id.is_(None))
+        else:
+            statement = statement.where(ResearchGraphNode.workspace_id == workspace_id)
+        if node_types is not None:
+            statement = statement.where(ResearchGraphNode.node_type.in_(node_types))
+        statement = (
+            statement.order_by(
+                ResearchGraphNode.node_type.asc(),
+                ResearchGraphNode.label.asc(),
+                ResearchGraphNode.stable_key.asc(),
+            )
+            .limit(max(1, limit))
+        )
+        return self.session.execute(statement).scalars().all()
+
+    def upsert_graph_edge(
+        self,
+        *,
+        collection_id: str,
+        source_node_id: str,
+        target_node_id: str,
+        edge_type: str,
+        workspace_id: str | None = None,
+        evidence_refs: Sequence[dict[str, Any]] | None = None,
+        weight: float = 1.0,
+        payload: dict[str, Any] | None = None,
+        commit: bool = True,
+    ) -> ResearchGraphEdge:
+        edge = self._get_graph_edge(
+            collection_id=collection_id,
+            workspace_id=workspace_id,
+            source_node_id=source_node_id,
+            target_node_id=target_node_id,
+            edge_type=edge_type,
+        )
+        if edge is None:
+            edge = ResearchGraphEdge(
+                collection_id=collection_id,
+                workspace_id=workspace_id,
+                source_node_id=source_node_id,
+                target_node_id=target_node_id,
+                edge_type=edge_type,
+                evidence_refs_json=list(evidence_refs or []),
+                weight=weight,
+                payload_json=dict(payload or {}),
+            )
+            self.session.add(edge)
+        else:
+            edge.evidence_refs_json = list(evidence_refs or [])
+            edge.weight = weight
+            edge.payload_json = dict(payload or {})
+
+        return self._finish_upsert(edge, commit=commit)
+
+    def list_graph_edges(
+        self,
+        *,
+        collection_id: str,
+        workspace_id: str | None = None,
+        edge_types: Sequence[str] | None = None,
+        limit: int = 100,
+    ) -> Sequence[ResearchGraphEdge]:
+        if edge_types is not None and not edge_types:
+            return []
+
+        statement = select(ResearchGraphEdge).where(
+            ResearchGraphEdge.collection_id == collection_id
+        )
+        if workspace_id is None:
+            statement = statement.where(ResearchGraphEdge.workspace_id.is_(None))
+        else:
+            statement = statement.where(ResearchGraphEdge.workspace_id == workspace_id)
+        if edge_types is not None:
+            statement = statement.where(ResearchGraphEdge.edge_type.in_(edge_types))
+        statement = (
+            statement.order_by(
+                ResearchGraphEdge.edge_type.asc(),
+                ResearchGraphEdge.source_node_id.asc(),
+                ResearchGraphEdge.target_node_id.asc(),
+            )
+            .limit(max(1, limit))
+        )
+        return self.session.execute(statement).scalars().all()
+
+    def _get_memory_record(
+        self,
+        *,
+        collection_id: str,
+        workspace_id: str | None,
+        memory_type: str,
+        version_key: str,
+    ) -> ResearchMemoryRecord | None:
+        statement = select(ResearchMemoryRecord).where(
+            ResearchMemoryRecord.collection_id == collection_id,
+            ResearchMemoryRecord.memory_type == memory_type,
+            ResearchMemoryRecord.version_key == version_key,
+        )
+        if workspace_id is None:
+            statement = statement.where(ResearchMemoryRecord.workspace_id.is_(None))
+        else:
+            statement = statement.where(ResearchMemoryRecord.workspace_id == workspace_id)
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def _get_graph_node(
+        self,
+        *,
+        collection_id: str,
+        workspace_id: str | None,
+        node_type: str,
+        stable_key: str,
+    ) -> ResearchGraphNode | None:
+        statement = select(ResearchGraphNode).where(
+            ResearchGraphNode.collection_id == collection_id,
+            ResearchGraphNode.node_type == node_type,
+            ResearchGraphNode.stable_key == stable_key,
+        )
+        if workspace_id is None:
+            statement = statement.where(ResearchGraphNode.workspace_id.is_(None))
+        else:
+            statement = statement.where(ResearchGraphNode.workspace_id == workspace_id)
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def _get_graph_edge(
+        self,
+        *,
+        collection_id: str,
+        workspace_id: str | None,
+        source_node_id: str,
+        target_node_id: str,
+        edge_type: str,
+    ) -> ResearchGraphEdge | None:
+        statement = select(ResearchGraphEdge).where(
+            ResearchGraphEdge.collection_id == collection_id,
+            ResearchGraphEdge.source_node_id == source_node_id,
+            ResearchGraphEdge.target_node_id == target_node_id,
+            ResearchGraphEdge.edge_type == edge_type,
+        )
+        if workspace_id is None:
+            statement = statement.where(ResearchGraphEdge.workspace_id.is_(None))
+        else:
+            statement = statement.where(ResearchGraphEdge.workspace_id == workspace_id)
+        return self.session.execute(statement).scalar_one_or_none()
+
+    def _finish_upsert(self, row: Any, *, commit: bool) -> Any:
+        if commit:
+            self.session.commit()
+            self.session.refresh(row)
+        else:
+            self.session.flush()
+        return row
 
 
 class ResearchRepository:

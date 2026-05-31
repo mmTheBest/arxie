@@ -1,24 +1,21 @@
 # Arxie
 
-*An AI research agent that learns from your paper corpus and helps refine your
-research work with field-aware evidence.*
+*A self-hostable AI research agent that learns from your paper corpus.*
 
-Arxie is built for researchers who want more than citation lookup. Give it a
-curated corpus of papers, and Arxie parses the sources, extracts structured
-evidence, learns the field's methods and standards, and uses that knowledge to
-support the work you are doing now.
+Arxie helps researchers turn a curated folder of papers into a field-aware
+working context. It parses and extracts evidence from full papers, learns
+recurring methods, datasets, metrics, result patterns, limitations, and
+validation norms, then uses that corpus model to support literature comparison,
+benchmark planning, experiment design, draft critique, proposal refinement, and
+idea review.
 
-Use Arxie to review drafts, compare literature, design experiments, plan
-benchmarks, refine proposals, and critique new ideas against the patterns,
-validation practices, and evidence inside your own sources.
-
-Under the hood, Arxie is a self-hostable research system that combines:
+The system combines:
 
 - a canonical paper database named Paperbase
 - structured extraction over full papers
+- derived research memory and field-graph records
 - hybrid search and comparison surfaces
-- a study-aware research assistant that reasons over paper evidence plus
-  user-provided work context
+- a study-aware research assistant that reasons over paper evidence plus user-provided work context
 
 This repository now ships the `v0.2.0` product surface described in the April 14 PRD:
 persistent corpora, saved studies, structured evidence, provider-backed ingest, and a
@@ -47,7 +44,15 @@ browser study workspace at `/app`.
 
 `v0.2.0` is production-ready for a **single-user, self-hosted** deployment.
 
-It is not a multi-tenant SaaS product. The code keeps ownership boundaries so the system can grow later, but the supported deployment model today is one operator running one server stack.
+The current release is optimized for local and self-hosted research workflows:
+import a corpus, process it, add explicit study context, and ask Arxie to
+generate evidence-grounded research artifacts. Advanced field modeling, richer
+source parsing, stronger model-output contracts, and broader evaluation gates
+are active development areas.
+
+The code keeps ownership boundaries so the system can grow toward hosted use
+later, but the supported deployment model today is one operator running one
+server stack.
 
 ## Quick Start
 

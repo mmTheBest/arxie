@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +18,7 @@ class PaperbaseConfig:
     worker_project_id: str | None = None
     worker_retry_limit: int = 3
     worker_stale_job_seconds: float = 900.0
+    agent_context_backend_retrieval: bool = False
     hosted_mode: bool = False
     local_path_import_allowed_roots: tuple[str, ...] = ()
     object_store_endpoint: str = "http://localhost:9000"
@@ -48,6 +49,9 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         resolved_env.get("PAPERBASE_REQUIRE_SEARCH_BACKEND") or "false"
     ).strip().lower()
     hosted_mode_raw = (resolved_env.get("PAPERBASE_HOSTED_MODE") or "false").strip().lower()
+    agent_context_backend_retrieval_raw = (
+        resolved_env.get("PAPERBASE_AGENT_CONTEXT_BACKEND_RETRIEVAL") or "false"
+    ).strip().lower()
     allowed_roots = tuple(
         item.strip()
         for item in (
@@ -78,6 +82,8 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         worker_stale_job_seconds=float(
             (resolved_env.get("PAPERBASE_WORKER_STALE_JOB_SECONDS") or "900").strip()
         ),
+        agent_context_backend_retrieval=agent_context_backend_retrieval_raw
+        in {"1", "true", "yes", "on"},
         hosted_mode=hosted_mode_raw in {"1", "true", "yes", "on"},
         local_path_import_allowed_roots=allowed_roots,
         object_store_endpoint=(

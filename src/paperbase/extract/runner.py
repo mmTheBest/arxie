@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.models import CollectionPaper, ExtractionRun, Section
 from paperbase.extract.pipeline import ExtractionClient, PaperExtractionPipeline
+from paperbase.extract.readiness import (
+    current_paper_source_content_hash,
+    evaluate_extraction_run_compatibility,
+)
 from paperbase.parsing.pipeline import PaperParsePipeline
 
 
@@ -57,7 +61,12 @@ class CollectionExtractionRunner:
         skipped: list[str] = []
 
         for paper_id in target_paper_ids:
-            if self._has_completed_extraction(paper_id):
+            if self._has_current_completed_extraction(
+                paper_id=paper_id,
+                extraction_profile_id=extraction_profile_id,
+                prompt_version=prompt_version,
+                schema_version=schema_version,
+            ):
                 skipped.append(paper_id)
                 continue
 
@@ -109,14 +118,33 @@ class CollectionExtractionRunner:
             statement = select(Section.id).where(Section.paper_id == paper_id).limit(1)
             return session.execute(statement).scalar_one_or_none() is not None
 
-    def _has_completed_extraction(self, paper_id: str) -> bool:
+    def _has_current_completed_extraction(
+        self,
+        *,
+        paper_id: str,
+        extraction_profile_id: str | None,
+        prompt_version: str,
+        schema_version: str,
+    ) -> bool:
         with self.session_factory() as session:
             statement = (
-                select(ExtractionRun.id)
+                select(ExtractionRun)
                 .where(
                     ExtractionRun.paper_id == paper_id,
                     ExtractionRun.status == "completed",
                 )
-                .limit(1)
+                .order_by(ExtractionRun.updated_at.desc(), ExtractionRun.created_at.desc())
             )
-            return session.execute(statement).scalar_one_or_none() is not None
+            runs = session.execute(statement).scalars().all()
+            if not runs:
+                return False
+
+            source_content_hash = current_paper_source_content_hash(session, paper_id=paper_id)
+            latest_run = runs[0]
+            return evaluate_extraction_run_compatibility(
+                latest_run,
+                extraction_profile_id=extraction_profile_id,
+                prompt_version=prompt_version,
+                schema_version=schema_version,
+                source_content_hash=source_content_hash,
+            ).is_current

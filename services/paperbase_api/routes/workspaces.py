@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path as FilePath
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
-from paperbase.db.repositories import CollectionRepository, PaperRepository, WorkspaceRepository
+from paperbase.db.models import StudyBrief
+from paperbase.db.repositories import (
+    CollectionRepository,
+    PaperRepository,
+    ResearchIntelligenceRepository,
+    WorkspaceRepository,
+)
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.dependencies import get_session
 from services.paperbase_api.errors import PaperbaseAPIError
 from services.paperbase_api.models import (
     CollectionSummaryResponse,
     PaperSummaryResponse,
+    SingleStudyBriefResponse,
     SingleStudySourceResponse,
     SingleWorkspaceResponse,
+    StudyBriefResponse,
+    StudyBriefUpsertRequest,
     StudySourceCreateRequest,
     StudySourceResponse,
     StudySourcesResponse,
@@ -95,6 +105,40 @@ def _source_to_response(source) -> StudySourceResponse:  # noqa: ANN001
     )
 
 
+def _serialize_timestamp(value) -> str | None:  # noqa: ANN001
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    else:
+        value = value.astimezone(UTC)
+    return value.isoformat()
+
+
+def _empty_study_brief_response(workspace_id: str) -> StudyBriefResponse:
+    return StudyBriefResponse(
+        id=None,
+        workspace_id=workspace_id,
+        brief={},
+        version=0,
+        updated_by=None,
+        created_at=None,
+        updated_at=None,
+    )
+
+
+def _study_brief_to_response(study_brief: StudyBrief) -> StudyBriefResponse:
+    return StudyBriefResponse(
+        id=study_brief.id,
+        workspace_id=study_brief.workspace_id,
+        brief=dict(study_brief.brief_json or {}),
+        version=study_brief.version,
+        updated_by=study_brief.updated_by,
+        created_at=_serialize_timestamp(study_brief.created_at),
+        updated_at=_serialize_timestamp(study_brief.updated_at),
+    )
+
+
 def _summarize_source_text(text: str) -> str:
     cleaned = " ".join(text.strip().split())
     if len(cleaned) <= SOURCE_SUMMARY_LIMIT:
@@ -156,6 +200,18 @@ def _resolve_pinned_papers(
             )
         )
     return pinned_papers
+
+
+def _ensure_workspace(repository: WorkspaceRepository, workspace_id: str):  # noqa: ANN001
+    safe_workspace_id = sanitize_identifier(workspace_id, field_name="workspace_id", max_length=36)
+    workspace = repository.get_by_id(safe_workspace_id)
+    if workspace is None:
+        raise PaperbaseAPIError(
+            status_code=404,
+            error="workspace_not_found",
+            message=f"No workspace found for id: {safe_workspace_id}",
+        )
+    return workspace
 
 
 @router.get("/api/v1/workspaces", response_model=WorkspacesResponse)
@@ -366,16 +422,43 @@ def list_study_sources(
     session: Session = Depends(get_session),
 ) -> StudySourcesResponse:
     repository = WorkspaceRepository(session)
-    safe_workspace_id = sanitize_identifier(workspace_id, field_name="workspace_id", max_length=36)
-    if repository.get_by_id(safe_workspace_id) is None:
-        raise PaperbaseAPIError(
-            status_code=404,
-            error="workspace_not_found",
-            message=f"No workspace found for id: {safe_workspace_id}",
-        )
+    workspace = _ensure_workspace(repository, workspace_id)
     return StudySourcesResponse(
-        data=[_source_to_response(source) for source in repository.list_sources(workspace_id=safe_workspace_id)]
+        data=[_source_to_response(source) for source in repository.list_sources(workspace_id=workspace.id)]
     )
+
+
+@router.get("/api/v1/workspaces/{workspace_id}/study-brief", response_model=SingleStudyBriefResponse)
+@router.get("/api/v1/studies/{workspace_id}/brief", response_model=SingleStudyBriefResponse)
+def fetch_study_brief(
+    workspace_id: str = Path(..., min_length=1, max_length=36),
+    session: Session = Depends(get_session),
+) -> SingleStudyBriefResponse:
+    workspace = _ensure_workspace(WorkspaceRepository(session), workspace_id)
+    study_brief = ResearchIntelligenceRepository(session).get_study_brief(workspace.id)
+    return SingleStudyBriefResponse(
+        data=(
+            _study_brief_to_response(study_brief)
+            if study_brief is not None
+            else _empty_study_brief_response(workspace.id)
+        )
+    )
+
+
+@router.put("/api/v1/workspaces/{workspace_id}/study-brief", response_model=SingleStudyBriefResponse)
+@router.put("/api/v1/studies/{workspace_id}/brief", response_model=SingleStudyBriefResponse)
+def upsert_study_brief(
+    payload: StudyBriefUpsertRequest,
+    workspace_id: str = Path(..., min_length=1, max_length=36),
+    session: Session = Depends(get_session),
+) -> SingleStudyBriefResponse:
+    workspace = _ensure_workspace(WorkspaceRepository(session), workspace_id)
+    study_brief = ResearchIntelligenceRepository(session).upsert_study_brief(
+        workspace_id=workspace.id,
+        brief=dict(payload.brief),
+        updated_by=sanitize_user_text(payload.updated_by, field_name="updated_by", max_length=128),
+    )
+    return SingleStudyBriefResponse(data=_study_brief_to_response(study_brief))
 
 
 @router.post(

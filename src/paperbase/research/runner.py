@@ -31,11 +31,19 @@ class PaperbaseResearchAgentRunner:
         model_name: str = "local-research-agent",
         prompt_version: str = "research-agent-v1",
         model_client: object | None = None,
+        search_backend: object | None = None,
+        embedding_provider: object | None = None,
+        project_id: str | None = None,
+        backend_retrieval_enabled: bool = False,
     ) -> None:
         self.session_factory = session_factory
         self.model_name = model_name
         self.prompt_version = prompt_version
         self.model_client = model_client
+        self.search_backend = search_backend
+        self.embedding_provider = embedding_provider
+        self.project_id = project_id
+        self.backend_retrieval_enabled = backend_retrieval_enabled
 
     def run(self, payload: dict[str, Any]) -> ResearchAgentRunResult:
         with self.session_factory() as session:
@@ -43,10 +51,13 @@ class PaperbaseResearchAgentRunner:
                 **payload,
                 "prompt_version": payload.get("prompt_version") or self.prompt_version,
             }
-            runtime_result = PaperbaseResearchAgentRuntime(model_client=self.model_client).execute(
-                session,
-                runtime_payload,
-            )
+            runtime_result = PaperbaseResearchAgentRuntime(
+                model_client=self.model_client,
+                search_backend=self.search_backend,
+                embedding_provider=self.embedding_provider,
+                project_id=self.project_id,
+                backend_retrieval_enabled=self.backend_retrieval_enabled,
+            ).execute(session, runtime_payload)
 
         return ResearchAgentRunResult(
             collection_id=str(payload["collection_id"]),

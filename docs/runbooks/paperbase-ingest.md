@@ -3,12 +3,52 @@
 ## Purpose
 
 Use this runbook to turn a local folder of PDFs into a Paperbase collection that
-Arxie can search, inspect, and extract from.
+Arxie can search, inspect, extract from, and use as field-aware Study context.
 
 For a normal single-user local workflow, prefer the browser workspace at `/app`
 first: use **Upload PDF Folder**, then **Queue Parse**, then **Queue Extraction**.
 Use the scripted steps below when you need operator control, debugging, or batch
 automation.
+
+## Canonical Local Test Corpus
+
+When the user asks to open Arxie for local product testing without naming a
+different corpus, use this source folder:
+
+```text
+/Users/mm/school/scRegNet/SamplePapers
+```
+
+This is the recurring scRegNet knowledge source for testing Library ingest,
+parse, extraction, Study chat, and research-intelligence behavior. Treat it as a
+source folder, not as parsed state. The parsed database may live elsewhere
+depending on the active Paperbase DB URL or opened project, so verify the
+runtime database before assuming the corpus is already processed.
+
+Current maintained expectation, as of 2026-05-30:
+
+- default local verification DB: `sqlite:///data/paperbase.db`
+- imported PDFs: `12`
+- parsed papers: `12`
+- parsed sections: `50`
+- persisted chunks: `1112`
+- figures: `85`
+- tables: `20`
+- latest extraction status: `completed` for all `12` papers
+- extracted structured evidence: `30` datasets, `31` methods, `24` metrics,
+  `35` result rows, `3` findings, `0` limitations, and `41` research-design
+  elements
+- deterministic Study-style `benchmark_planning` smoke: completed with
+  validation passing across source-library, structured-evidence,
+  evidence-memory, pattern-memory, field-graph, and study-brief layers
+
+Historical failed extraction rows can remain in the local database after failed
+network or sandbox attempts. Verify latest extraction state per paper before
+deciding whether the corpus needs to be reprocessed.
+
+When this corpus is re-imported, re-parsed, re-extracted, or used as new
+release/test evidence, update this runbook and
+`docs/architecture/03-ingest-and-extraction.md` in the same change.
 
 ## Prerequisites
 
@@ -172,6 +212,16 @@ Check the DB directly if results look wrong:
 - parsed sections in `sections`
 - extraction metadata in `extraction_runs`
 
+For a product-level smoke test, open `/app`, create or select a Study linked to
+the collection, add one explicit source if relevant, and ask for a benchmark or
+experiment plan. A useful run should show:
+
+- collection papers selected into the context pack
+- structured evidence or readiness warnings
+- evidence-memory, pattern-memory, and field-graph counts when extraction has
+  completed
+- validation status and evidence-reference counts in the artifact trace
+
 ## Troubleshooting
 
 - No sections after parse:
@@ -181,3 +231,8 @@ Check the DB directly if results look wrong:
   check whether parse output exists and whether the paper has a registered PDF.
 - Arxie still falls back to live providers:
   confirm the collection papers were imported into the same DB URL the runtime is using.
+- Browser upload is rejected:
+  check `PAPERBASE_UPLOAD_MAX_FILE_COUNT`,
+  `PAPERBASE_UPLOAD_MAX_SINGLE_FILE_BYTES`, and
+  `PAPERBASE_UPLOAD_MAX_TOTAL_BYTES`; non-PDF multipart file parts still count
+  toward configured upload limits even though only PDFs are staged for ingest.

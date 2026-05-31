@@ -22,6 +22,52 @@ For current product examples, start the Paperbase API and worker and open:
 http://localhost:8080/app
 ```
 
+## Current Study/Library workflow
+
+Use this workflow for the release-facing Arxie product:
+
+1. Open `/app`.
+2. In **Library**, upload a folder of PDFs or use the advanced local-path import
+   form when running the API and worker directly on the host.
+3. Queue parsing so papers become sections, chunks, figures, and tables.
+4. Queue extraction so Arxie can persist methods, datasets, metrics, result
+   rows, findings, limitations, and research-design elements.
+5. In **Study**, save a study linked to the prepared collection.
+6. Pin important papers or label exemplars/baselines.
+7. Add explicit user sources such as a draft summary, code summary, result
+   summary, or text note. Arxie treats these as user-provided context, separate
+   from paper evidence.
+8. Ask Study chat for a research artifact, inspect the run trace and validation
+   status, then save or export useful outputs.
+
+Good first prompts:
+
+```text
+What baselines, datasets, and metrics recur across this collection?
+```
+
+```text
+Design a benchmark plan for my current idea using the collection's validation norms.
+```
+
+```text
+Critique my draft claims against the selected papers and tell me which claims need stronger evidence.
+```
+
+```text
+Map the assumptions behind my method and suggest one falsification experiment for each assumption.
+```
+
+```text
+Compare the strongest methods in this collection and identify missing ablations for my study.
+```
+
+Current artifact types include experiment plans, benchmark plans, revision
+plans, hypotheses, assumption maps, field patterns, comparisons, literature
+reviews, and critiques. Stronger artifacts depend on prepared paper text,
+completed structured extraction, and explicit user sources for draft/code/result
+context.
+
 ## Documentation cross-reference by completed feature
 
 | Priority | Usage section in this file | API docs | Migration notes |

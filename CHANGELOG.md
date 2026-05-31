@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Clarified the release-facing product story: Arxie learns from a user-provided
+  paper corpus and uses that corpus to support field-aware research work.
+- Added Paperbase Study-agent foundation improvements: task-aware context
+  diagnostics, derived evidence/pattern memory, field-graph context,
+  Study Brief API support, and report-only artifact-evaluation diagnostics.
 - Hardened local-library upload limits, hosted path policy, and symlink checks.
 - Isolated project-bound search indexes and search backend filters.
 - Fixed research-agent retry handling for failed model-backed runs.

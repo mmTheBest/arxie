@@ -158,6 +158,8 @@ revalidates each discovered PDF path so symlinks cannot escape configured roots.
 | `POST` | `/api/v1/workspaces`, `/api/v1/studies` | Create a saved Study workspace |
 | `GET` | `/api/v1/workspaces/{workspace_id}`, `/api/v1/studies/{workspace_id}` | Fetch saved Study context |
 | `PATCH` | `/api/v1/workspaces/{workspace_id}`, `/api/v1/studies/{workspace_id}` | Update title, linked collection, filters, focus note, or pinned papers |
+| `GET` | `/api/v1/workspaces/{workspace_id}/study-brief`, `/api/v1/studies/{workspace_id}/brief` | Fetch an empty or stored versioned Study Brief |
+| `PUT` | `/api/v1/workspaces/{workspace_id}/study-brief`, `/api/v1/studies/{workspace_id}/brief` | Replace the Study Brief JSON document and increment its version |
 | `GET` | `/api/v1/studies/{workspace_id}/sources` | List explicit user sources for a Study |
 | `POST` | `/api/v1/studies/{workspace_id}/sources` | Attach text, note, draft, code-summary, or result-summary context |
 | `DELETE` | `/api/v1/studies/{workspace_id}/sources/{source_id}` | Remove one explicit Study source |
@@ -179,6 +181,16 @@ collection-neutral or belongs to the requested `collection_id`. Artifact patch
 requests are limited to `title`, `is_saved`, `saved_format`, and `saved_title`;
 artifact `status` is server-owned and changes only through agent or worker
 execution.
+
+Study Brief payloads are bounded JSON objects. The API validates string length,
+list length, object field count, key length, nesting depth, and finite numeric
+values before storage. Validation responses omit raw input echoes so malformed
+payloads cannot break JSON response serialization.
+
+Research run responses include persisted trace steps, context-pack counts,
+bounded `context_diagnostics`, and validation reports. Context diagnostics show
+selected paper/source/memory/graph roles, ranking reasons, scores, and features
+for debugging why a Study-agent artifact used a given context item.
 
 ### Proposal workflow (Priority 8)
 

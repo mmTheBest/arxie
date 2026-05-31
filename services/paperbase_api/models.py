@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 from paperbase.version import get_version
 
@@ -522,6 +524,101 @@ class StudySourcesResponse(BaseModel):
     data: list[StudySourceResponse]
 
 
+STUDY_BRIEF_MAX_STRING_LENGTH = 4000
+STUDY_BRIEF_MAX_LIST_ITEMS = 64
+STUDY_BRIEF_MAX_DICT_FIELDS = 32
+STUDY_BRIEF_MAX_DEPTH = 6
+STUDY_BRIEF_MAX_KEY_LENGTH = 128
+
+
+def _study_brief_validation_error(message: str) -> PydanticCustomError:
+    return PydanticCustomError("study_brief_payload_invalid", message)
+
+
+def _validate_study_brief_value(
+    value: Any,
+    *,
+    depth: int,
+) -> None:
+    if depth > STUDY_BRIEF_MAX_DEPTH:
+        raise _study_brief_validation_error(
+            f"Study Brief payload exceeds maximum nesting depth of {STUDY_BRIEF_MAX_DEPTH}."
+        )
+    if value is None or isinstance(value, bool | int):
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise _study_brief_validation_error("Study Brief number values must be finite.")
+        return
+    if isinstance(value, str):
+        if len(value) > STUDY_BRIEF_MAX_STRING_LENGTH:
+            raise _study_brief_validation_error(
+                "Study Brief string values must be "
+                f"{STUDY_BRIEF_MAX_STRING_LENGTH} characters or fewer."
+            )
+        return
+    if isinstance(value, list):
+        if len(value) > STUDY_BRIEF_MAX_LIST_ITEMS:
+            raise _study_brief_validation_error(
+                "Study Brief lists must contain "
+                f"{STUDY_BRIEF_MAX_LIST_ITEMS} items or fewer."
+            )
+        for item in value:
+            _validate_study_brief_value(item, depth=depth + 1)
+        return
+    if isinstance(value, dict):
+        if len(value) > STUDY_BRIEF_MAX_DICT_FIELDS:
+            raise _study_brief_validation_error(
+                "Study Brief objects must contain "
+                f"{STUDY_BRIEF_MAX_DICT_FIELDS} fields or fewer."
+            )
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise _study_brief_validation_error("Study Brief object keys must be strings.")
+            if not key or len(key) > STUDY_BRIEF_MAX_KEY_LENGTH:
+                raise _study_brief_validation_error(
+                    "Study Brief object keys must be between 1 and "
+                    f"{STUDY_BRIEF_MAX_KEY_LENGTH} characters."
+                )
+            _validate_study_brief_value(item, depth=depth + 1)
+        return
+    raise _study_brief_validation_error(
+        "Study Brief values must be JSON-compatible scalars, lists, or objects."
+    )
+
+
+class StudyBriefUpsertRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    brief: dict[str, Any] = Field(default_factory=dict)
+    updated_by: str = Field(
+        default="local-user",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F]+$",
+    )
+
+    @field_validator("brief")
+    @classmethod
+    def _validate_brief(cls, value: dict[str, Any]) -> dict[str, Any]:
+        _validate_study_brief_value(value, depth=0)
+        return value
+
+
+class StudyBriefResponse(BaseModel):
+    id: str | None = None
+    workspace_id: str
+    brief: dict[str, Any] = Field(default_factory=dict)
+    version: int
+    updated_by: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class SingleStudyBriefResponse(BaseModel):
+    data: StudyBriefResponse
+
+
 ResearchArtifactType = Literal[
     "field_patterns",
     "hypotheses",
@@ -656,6 +753,8 @@ class StudyContextPackResponse(BaseModel):
     task_type: str
     cache_key: str | None = None
     context_summary: dict[str, Any] = Field(default_factory=dict)
+    intelligence_layers_summary: dict[str, Any] = Field(default_factory=dict)
+    context_diagnostics: dict[str, Any] = Field(default_factory=dict)
     selected_item_counts: dict[str, Any] = Field(default_factory=dict)
     readiness_warnings: list[str] = Field(default_factory=list)
 
@@ -668,6 +767,7 @@ class ResearchValidationReportResponse(BaseModel):
     missing_evidence: list[str] = Field(default_factory=list)
     unsupported_claims: list[str] = Field(default_factory=list)
     readiness_blockers: list[str] = Field(default_factory=list)
+    support_label_counts: dict[str, Any] = Field(default_factory=dict)
     report: dict[str, Any] = Field(default_factory=dict)
 
 

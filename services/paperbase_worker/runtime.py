@@ -43,6 +43,7 @@ class PaperbaseWorker:
         download_cache_ttl_seconds: int = 86400,
         stale_running_seconds: float = 900.0,
         project_id: str | None = None,
+        backend_retrieval_enabled: bool = False,
     ) -> None:
         self.session_factory = session_factory
         self.search_backend = search_backend
@@ -59,6 +60,7 @@ class PaperbaseWorker:
         self.download_cache_ttl_seconds = download_cache_ttl_seconds
         self.stale_running_seconds = stale_running_seconds
         self.project_id = project_id
+        self.backend_retrieval_enabled = backend_retrieval_enabled
 
     def process_next_job(self) -> str | None:
         self.recover_stale_running_jobs()
@@ -270,6 +272,10 @@ class PaperbaseWorker:
                 if self.research_model_client_factory is not None
                 else None
             ),
+            search_backend=self.search_backend,
+            embedding_provider=self.embedding_provider,
+            project_id=self.project_id,
+            backend_retrieval_enabled=self.backend_retrieval_enabled,
         ).run(payload)
         return {
             "run_id": result.run_id,

@@ -35,6 +35,24 @@ class ResearchSkillResult:
 
 
 SkillHandler = Callable[[ResearchSkillContext], dict[str, Any]]
+SUGGESTION_SKILL_MAP = {
+    "literature_review_synthesis": "literature_review",
+    "evidence_quality_check": "quality_harness",
+    "benchmark_ablation_plan": "benchmark_planning",
+    "revision_plan": "revision_planning",
+}
+ARTIFACT_SKILL_MAP = {
+    "literature_review": "literature_review",
+    "comparison": "comparison",
+    "critique": "quality_harness",
+    "benchmark_plan": "benchmark_planning",
+    "revision_plan": "revision_planning",
+    "experiment_plan": "experiment_planning",
+    "experiment_backlog": "experiment_backlog",
+    "hypotheses": "hypothesis_generation",
+    "field_patterns": "field_pattern_analysis",
+    "assumption_map": "assumption_mapping",
+}
 
 
 class ResearchSkillRegistry:
@@ -158,30 +176,31 @@ def select_research_skill(
     suggestion_id: str | None = None,
     artifact_type: str | None = None,
 ) -> str:
-    suggestion_map = {
-        "literature_review_synthesis": "literature_review",
-        "evidence_quality_check": "quality_harness",
-        "benchmark_ablation_plan": "benchmark_planning",
-        "revision_plan": "revision_planning",
-    }
-    if suggestion_id in suggestion_map:
-        return suggestion_map[str(suggestion_id)]
+    skill_id, _source = select_research_skill_with_source(
+        message,
+        suggestion_id=suggestion_id,
+        artifact_type=artifact_type,
+    )
+    return skill_id
 
-    artifact_map = {
-        "literature_review": "literature_review",
-        "comparison": "comparison",
-        "critique": "quality_harness",
-        "benchmark_plan": "benchmark_planning",
-        "revision_plan": "revision_planning",
-        "experiment_plan": "experiment_planning",
-        "experiment_backlog": "experiment_backlog",
-        "hypotheses": "hypothesis_generation",
-        "field_patterns": "field_pattern_analysis",
-        "assumption_map": "assumption_mapping",
-    }
-    if artifact_type in artifact_map:
-        return artifact_map[str(artifact_type)]
 
+def select_research_skill_with_source(
+    message: str,
+    *,
+    suggestion_id: str | None = None,
+    artifact_type: str | None = None,
+    inferred_artifact_type: str | None = None,
+) -> tuple[str, str]:
+    if suggestion_id in SUGGESTION_SKILL_MAP:
+        return SUGGESTION_SKILL_MAP[str(suggestion_id)], "suggestion"
+    if artifact_type in ARTIFACT_SKILL_MAP:
+        return ARTIFACT_SKILL_MAP[str(artifact_type)], "artifact_type"
+    if inferred_artifact_type in ARTIFACT_SKILL_MAP:
+        return ARTIFACT_SKILL_MAP[str(inferred_artifact_type)], "message"
+    return _select_research_skill_from_message(message), "message"
+
+
+def _select_research_skill_from_message(message: str) -> str:
     normalized = message.casefold()
     if "hypothes" in normalized:
         return "hypothesis_generation"
@@ -349,6 +368,11 @@ def _benchmark_planning(context: ResearchSkillContext) -> dict[str, Any]:
     metrics = _unique(item for paper in papers for item in paper.get("metrics", []))
     methods = _unique(item for paper in papers for item in paper.get("methods", []))
     structured_evidence_ready = bool(datasets or metrics or methods or any(paper.get("results") for paper in papers))
+    recommendation_texts = [
+        "Reuse the most common dataset and metric from the collection as the primary comparison.",
+        "Add one stress test that targets an extracted limitation or user-source concern.",
+        "Report matched baselines under identical splits before adding new model variants.",
+    ]
     return {
         **common,
         "structured_evidence_ready": structured_evidence_ready,
@@ -356,11 +380,8 @@ def _benchmark_planning(context: ResearchSkillContext) -> dict[str, Any]:
         "next_actions": []
         if structured_evidence_ready
         else ["Run extraction in Library for the selected papers."],
-        "benchmark_recommendations": [
-            "Reuse the most common dataset and metric from the collection as the primary comparison.",
-            "Add one stress test that targets an extracted limitation or user-source concern.",
-            "Report matched baselines under identical splits before adding new model variants.",
-        ],
+        "benchmark_recommendations": recommendation_texts,
+        "recommendations": _support_labeled_recommendations(context, recommendation_texts),
         "datasets": datasets[:8],
         "metrics_or_result_logic": metrics[:8] or ["Define a metric for each claim before running."],
         "candidate_baselines": methods[:8] or ["Use the strongest method reported by exemplar papers."],
@@ -560,14 +581,22 @@ def _research_gaps(limitations: list[str], context: ResearchSkillContext) -> lis
 
 def _common_payload(context: ResearchSkillContext, *, artifact_type: str, title: str) -> dict[str, Any]:
     papers = _papers(context)
+    evidence_references = _evidence_references(context)
     return {
         "artifact_type": artifact_type,
         "title": title,
         "request": context.message,
         "paper_count": len(papers),
         "evidence_basis": _paper_titles(papers),
-        "evidence_references": _evidence_references(context),
+        "evidence_references": evidence_references,
         "source_context": _source_context(context),
+        "recommendations": _support_labeled_recommendations(
+            context,
+            [
+                "Tie each recommendation to paper evidence, user context, or an explicit inference.",
+                "Check that each planned claim has a dataset, metric, and failure mode.",
+            ],
+        ),
         "general_methodology": [
             "Separate claims, experimental variables, and evaluation criteria before writing new experiments.",
             "Use paper-level evidence as constraints, then identify where a new study can challenge one assumption.",
@@ -589,6 +618,48 @@ def _source_context(context: ResearchSkillContext) -> list[dict[str, str]]:
         }
         for source in sources
     ]
+
+
+def _support_labeled_recommendations(
+    context: ResearchSkillContext,
+    recommendation_texts: list[str],
+) -> list[dict[str, Any]]:
+    evidence_references = _evidence_references(context)
+    supporting_layers = _supporting_layers(context)
+    support_status = "supported" if evidence_references else "speculative"
+    return [
+        {
+            "title": text,
+            "detail": text,
+            "support_status": support_status,
+            "supporting_layers": supporting_layers,
+            "evidence_references": evidence_references,
+        }
+        for text in recommendation_texts
+    ]
+
+
+def _supporting_layers(context: ResearchSkillContext) -> list[str]:
+    layers: list[str] = []
+    evidence_payload = context.evidence_payload
+    if _papers(context) or any(isinstance(source, dict) for source in evidence_payload.get("sources", [])):
+        layers.append("source_library")
+
+    intelligence_layers = evidence_payload.get("intelligence_layers")
+    if isinstance(intelligence_layers, dict):
+        if any(isinstance(item, dict) for item in intelligence_layers.get("evidence_memory", [])):
+            layers.append("evidence_memory")
+        if any(isinstance(item, dict) for item in intelligence_layers.get("pattern_memory", [])):
+            layers.append("pattern_memory")
+        field_graph = intelligence_layers.get("field_graph")
+        if isinstance(field_graph, dict) and (
+            any(isinstance(item, dict) for item in field_graph.get("nodes", []))
+            or any(isinstance(item, dict) for item in field_graph.get("edges", []))
+        ):
+            layers.append("field_graph")
+        if isinstance(intelligence_layers.get("study_brief"), dict):
+            layers.append("study_brief")
+    return _unique(layers)
 
 
 def _papers(context: ResearchSkillContext) -> list[dict[str, Any]]:
@@ -623,6 +694,49 @@ def _evidence_references(context: ResearchSkillContext) -> list[dict[str, str]]:
                 "reference_type": "study_source",
                 "source_id": source_id,
                 "label": str(source.get("title") or "Study source"),
+            }
+        )
+    references.extend(_intelligence_layer_references(context))
+    return references
+
+
+def _intelligence_layer_references(context: ResearchSkillContext) -> list[dict[str, str]]:
+    intelligence_layers = context.evidence_payload.get("intelligence_layers")
+    if not isinstance(intelligence_layers, dict):
+        return []
+    references: list[dict[str, str]] = []
+    for layer_name in ("evidence_memory", "pattern_memory"):
+        for item in intelligence_layers.get(layer_name, [])[:8]:
+            if not isinstance(item, dict) or not item.get("memory_record_id"):
+                continue
+            references.append(
+                {
+                    "reference_type": "research_memory",
+                    "memory_record_id": str(item["memory_record_id"]),
+                    "label": str(item.get("title") or item.get("summary") or layer_name),
+                }
+            )
+    field_graph = intelligence_layers.get("field_graph")
+    if not isinstance(field_graph, dict):
+        return references
+    for node in field_graph.get("nodes", [])[:8]:
+        if not isinstance(node, dict) or not node.get("graph_node_id"):
+            continue
+        references.append(
+            {
+                "reference_type": "field_graph_node",
+                "graph_node_id": str(node["graph_node_id"]),
+                "label": str(node.get("label") or node.get("node_type") or "Field graph node"),
+            }
+        )
+    for edge in field_graph.get("edges", [])[:8]:
+        if not isinstance(edge, dict) or not edge.get("graph_edge_id"):
+            continue
+        references.append(
+            {
+                "reference_type": "field_graph_edge",
+                "graph_edge_id": str(edge["graph_edge_id"]),
+                "label": str(edge.get("edge_type") or "Field graph edge"),
             }
         )
     return references
