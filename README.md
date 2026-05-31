@@ -1,13 +1,24 @@
 # Arxie
 
-*An AI research workspace backed by a persistent paper database.*
+*An AI research agent that learns from your paper corpus and helps refine your
+research work with field-aware evidence.*
 
-Arxie is a self-hostable research system for serious literature work. It combines:
+Arxie is built for researchers who want more than citation lookup. Give it a
+curated corpus of papers, and Arxie parses the sources, extracts structured
+evidence, learns the field's methods and standards, and uses that knowledge to
+support the work you are doing now.
+
+Use Arxie to review drafts, compare literature, design experiments, plan
+benchmarks, refine proposals, and critique new ideas against the patterns,
+validation practices, and evidence inside your own sources.
+
+Under the hood, Arxie is a self-hostable research system that combines:
 
 - a canonical paper database named Paperbase
 - structured extraction over full papers
 - hybrid search and comparison surfaces
-- a study-aware research assistant that reasons over paper evidence plus user-provided work context
+- a study-aware research assistant that reasons over paper evidence plus
+  user-provided work context
 
 This repository now ships the `v0.2.0` product surface described in the April 14 PRD:
 persistent corpora, saved studies, structured evidence, provider-backed ingest, and a
