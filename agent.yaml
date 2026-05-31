@@ -1,0 +1,40 @@
+spec_version: "0.1.0"
+name: arxie
+version: 1.0.0
+description: >
+  Arxie is a self-hostable AI research agent that turns a curated folder of academic
+  papers into a field-aware working context. It parses full-text PDFs, extracts
+  structured evidence (datasets, methods, metrics, findings, limitations), and
+  uses a hybrid retrieval system to support literature comparison, benchmark
+  planning, experiment design, draft critique, proposal refinement, and hypothesis
+  generation — all grounded in cited paper evidence rather than prior knowledge alone.
+license: MIT
+model:
+  preferred: "openai:gpt-4o-mini"
+  fallback: "openai:gpt-4o"
+skills:
+  - name: search-papers
+    description: Search academic papers via Semantic Scholar and arXiv
+  - name: get-paper-details
+    description: Retrieve full metadata and details for a specific paper
+  - name: read-paper-fulltext
+    description: Read the full text of a paper for methods, results, and conclusions
+  - name: get-paper-structured-data
+    description: Retrieve extracted datasets, metrics, figures, and tables from Paperbase
+  - name: get-paper-citations
+    description: Forward citation chasing to find follow-up and validation work
+  - name: literature-review
+    description: Generate a literature review grounded in the paper corpus
+  - name: hypothesis-generation
+    description: Generate research hypotheses from the paper collection
+  - name: experiment-plan
+    description: Design experiment plans based on field evidence
+runtime:
+  max_turns: 30
+  environment:
+    - OPENAI_API_KEY
+    - SEMANTIC_SCHOLAR_API_KEY
+compliance:
+  risk_tier: standard
+  supervision:
+    human_in_the_loop: none
