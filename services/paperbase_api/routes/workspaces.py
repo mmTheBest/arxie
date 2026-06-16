@@ -256,7 +256,7 @@ def _validated_study_brief_payload(
                 status_code=422,
                 error="validation_error",
                 message=str(exc),
-                details=[{"field": "linked_source_ids", "source_id": source_id}],
+                details=[{"field": "linked_source_ids", "error": "invalid_identifier"}],
             ) from exc
 
     owned_source_ids = {
@@ -270,10 +270,7 @@ def _validated_study_brief_payload(
             status_code=400,
             error="invalid_study_brief_sources",
             message="Study Brief linked sources must belong to the target Study.",
-            details=[
-                {"field": "linked_source_ids", "source_id": source_id}
-                for source_id in invalid_source_ids
-            ],
+            details=[{"field": "linked_source_ids", "error": "not_owned"}],
         )
 
     brief_json["linked_source_ids"] = linked_source_ids
