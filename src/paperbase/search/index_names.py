@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 
 _INDEX_SEGMENT_RE = re.compile(r"[^a-z0-9_-]+")
-_SEARCH_INDEX_KINDS = frozenset({"papers", "chunks", "figures", "tables"})
+_SEARCH_INDEX_KINDS = frozenset(
+    {"papers", "chunks", "figures", "tables", "structured-entities", "result-rows"}
+)
 
 
 def search_index_prefix(

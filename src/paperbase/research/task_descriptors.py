@@ -26,6 +26,7 @@ _COMMON_TOOLS = frozenset(
         "read_research_memory",
         "read_field_graph",
         "read_study_brief",
+        "read_study_sources",
     }
 )
 
@@ -54,6 +55,7 @@ TASK_DESCRIPTORS: Mapping[str, ResearchTaskDescriptor] = MappingProxyType(
                 {
                     "selected": 4.0,
                     "pinned": 3.5,
+                    "retrieval_match": 1.75,
                     "methods": 3.0,
                     "datasets": 2.25,
                     "metrics": 2.25,
@@ -79,6 +81,7 @@ TASK_DESCRIPTORS: Mapping[str, ResearchTaskDescriptor] = MappingProxyType(
                 {
                     "selected": 2.5,
                     "pinned": 2.5,
+                    "retrieval_match": 1.75,
                     "results": 5.0,
                     "metrics": 4.0,
                     "datasets": 3.5,
@@ -86,6 +89,139 @@ TASK_DESCRIPTORS: Mapping[str, ResearchTaskDescriptor] = MappingProxyType(
                     "benchmark_signal": 3.0,
                     "comparison_sections": 3.0,
                     "methods": 2.0,
+                    "direct_evidence": 1.0,
+                }
+            ),
+        ),
+        "comparison": ResearchTaskDescriptor(
+            task_type="comparison",
+            required_context_types=frozenset(
+                {"methods", "datasets", "metrics", "results", "comparison_sections"}
+            ),
+            readiness_requirements=frozenset({"parsed_text", "structured_extraction"}),
+            required_output_fields=frozenset(
+                {"comparison_rows", "summary", "recommendations", "evidence_references"}
+            ),
+            allowed_internal_tools=_COMMON_TOOLS,
+            context_feature_weights=MappingProxyType(
+                {
+                    "selected": 3.0,
+                    "pinned": 3.0,
+                    "retrieval_match": 1.75,
+                    "results": 4.5,
+                    "metrics": 3.5,
+                    "methods": 3.25,
+                    "datasets": 2.5,
+                    "comparison_sections": 3.0,
+                    "baselines": 2.25,
+                    "direct_evidence": 1.0,
+                }
+            ),
+        ),
+        "field_pattern_analysis": ResearchTaskDescriptor(
+            task_type="field_pattern_analysis",
+            required_context_types=frozenset(
+                {"methods", "datasets", "metrics", "limitations", "findings", "themes"}
+            ),
+            readiness_requirements=frozenset({"parsed_text", "structured_extraction"}),
+            required_output_fields=frozenset(
+                {
+                    "patterns",
+                    "method_patterns",
+                    "dataset_patterns",
+                    "metric_patterns",
+                    "limitation_patterns",
+                }
+            ),
+            allowed_internal_tools=_COMMON_TOOLS,
+            context_feature_weights=MappingProxyType(
+                {
+                    "selected": 2.5,
+                    "pinned": 2.25,
+                    "retrieval_match": 1.5,
+                    "methods": 3.0,
+                    "datasets": 2.5,
+                    "metrics": 2.5,
+                    "limitations": 3.25,
+                    "findings": 2.75,
+                    "themes": 2.25,
+                    "broad_evidence": 2.0,
+                    "direct_evidence": 1.0,
+                }
+            ),
+        ),
+        "experiment_backlog": ResearchTaskDescriptor(
+            task_type="experiment_backlog",
+            required_context_types=frozenset(
+                {"methods", "datasets", "metrics", "results", "ablations", "limitations"}
+            ),
+            readiness_requirements=frozenset({"parsed_text", "structured_extraction"}),
+            required_output_fields=frozenset(
+                {"backlog_items", "prioritization_rule", "next_actions", "evidence_references"}
+            ),
+            allowed_internal_tools=_COMMON_TOOLS,
+            context_feature_weights=MappingProxyType(
+                {
+                    "selected": 3.25,
+                    "pinned": 3.0,
+                    "retrieval_match": 1.5,
+                    "ablations": 4.0,
+                    "results": 3.5,
+                    "metrics": 3.0,
+                    "methods": 2.75,
+                    "datasets": 2.5,
+                    "limitations": 2.5,
+                    "baselines": 2.0,
+                    "direct_evidence": 1.0,
+                }
+            ),
+        ),
+        "assumption_mapping": ResearchTaskDescriptor(
+            task_type="assumption_mapping",
+            required_context_types=frozenset(
+                {"methods", "limitations", "contradictions", "source_claims", "study_brief"}
+            ),
+            readiness_requirements=frozenset({"parsed_text"}),
+            required_output_fields=frozenset(
+                {"assumptions_to_challenge", "challenge_tests", "evidence_gaps"}
+            ),
+            allowed_internal_tools=_COMMON_TOOLS,
+            context_feature_weights=MappingProxyType(
+                {
+                    "selected": 3.0,
+                    "pinned": 2.75,
+                    "retrieval_match": 1.5,
+                    "methods": 3.25,
+                    "limitations": 4.0,
+                    "contradictions": 3.5,
+                    "source_claims": 2.75,
+                    "findings": 2.0,
+                    "direct_evidence": 1.0,
+                }
+            ),
+        ),
+        "hypothesis_generation": ResearchTaskDescriptor(
+            task_type="hypothesis_generation",
+            required_context_types=frozenset(
+                {"methods", "datasets", "metrics", "results", "findings", "limitations"}
+            ),
+            readiness_requirements=frozenset({"parsed_text", "structured_extraction"}),
+            required_output_fields=frozenset(
+                {"hypotheses", "validation_plan", "evidence_references"}
+            ),
+            allowed_internal_tools=_COMMON_TOOLS,
+            context_feature_weights=MappingProxyType(
+                {
+                    "selected": 3.25,
+                    "pinned": 3.0,
+                    "retrieval_match": 1.75,
+                    "methods": 3.5,
+                    "datasets": 3.0,
+                    "metrics": 3.0,
+                    "results": 4.0,
+                    "findings": 3.0,
+                    "limitations": 2.75,
+                    "ablations": 2.25,
                     "direct_evidence": 1.0,
                 }
             ),
@@ -111,6 +247,7 @@ TASK_DESCRIPTORS: Mapping[str, ResearchTaskDescriptor] = MappingProxyType(
                     "draft_source": 6.0,
                     "selected": 4.0,
                     "pinned": 4.0,
+                    "retrieval_match": 1.5,
                     "limitations": 3.5,
                     "contradictions": 3.0,
                     "evidence_references": 2.5,
@@ -134,6 +271,7 @@ TASK_DESCRIPTORS: Mapping[str, ResearchTaskDescriptor] = MappingProxyType(
                 {
                     "selected": 2.0,
                     "pinned": 2.0,
+                    "retrieval_match": 1.25,
                     "findings": 4.0,
                     "limitations": 3.0,
                     "sections": 2.0,
@@ -162,6 +300,7 @@ TASK_DESCRIPTORS: Mapping[str, ResearchTaskDescriptor] = MappingProxyType(
                 {
                     "selected": 2.5,
                     "pinned": 2.5,
+                    "retrieval_match": 1.5,
                     "direct_evidence": 4.0,
                     "evidence_references": 3.5,
                     "source_claims": 3.0,

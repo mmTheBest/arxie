@@ -13,21 +13,23 @@
         <div class="brand-copy">
           <p class="eyebrow">Arxie</p>
           <h1>Arxie Study</h1>
-          <p class="hero-text">
-            Work from one research study: connect a paper collection, add your own draft or code
-            context, inspect evidence, compare methods, and ask Arxie what to test next.
-          </p>
         </div>
-        <div class="header-status">
-          <p class="status-label">Current system status</p>
-          <p id="status-banner" class="status-banner">Loading study state…</p>
-          <p id="current-project-summary" class="project-summary">Default local library</p>
+        <div class="product-status-strip" aria-label="Workspace status">
+          <div class="status-chip-block">
+            <p class="status-label">Project</p>
+            <p id="current-project-summary" class="project-summary">Default local library</p>
+          </div>
+          <div class="status-chip-block">
+            <p class="status-label">System</p>
+            <p id="status-banner" class="status-banner">Loading study state...</p>
+          </div>
         </div>
       </header>
 
       <nav id="app-nav" class="app-nav" aria-label="Primary navigation">
         <button type="button" class="nav-tab" data-view="study">Study</button>
         <button type="button" class="nav-tab" data-view="library">Library</button>
+        <button type="button" class="nav-tab" data-view="settings">Settings</button>
       </nav>
 
       <div class="app-body">
@@ -108,6 +110,24 @@
                 </button>
               </form>
               <div id="recent-projects-list" class="stacked-list recent-projects-list"></div>
+            </section>
+
+            <section class="panel library-readiness-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="panel-kicker">Evidence readiness</p>
+                  <h3>Selected collection papers</h3>
+                </div>
+                <div id="library-prep-toolbar" class="library-prep-toolbar">
+                  <button id="library-table-select-all" class="selection-button" type="button">
+                    Select all
+                  </button>
+                  <button id="library-table-select-unextracted" class="selection-button" type="button">
+                    Select unextracted
+                  </button>
+                </div>
+              </div>
+              <div id="library-paper-table" class="library-readiness-table"></div>
             </section>
 
             <div class="library-grid">
@@ -257,6 +277,13 @@
                   </button>
                 </div>
                 <div id="research-readiness-banner" class="readiness-banner"></div>
+                <div id="study-workflow-strip" class="study-workflow-strip" aria-label="Study workflow">
+                  <span class="workflow-step">Define goal</span>
+                  <span class="workflow-step">Select corpus</span>
+                  <span class="workflow-step">Run agent</span>
+                  <span class="workflow-step">Inspect evidence</span>
+                  <span class="workflow-step">Refine output</span>
+                </div>
                 <div id="research-thread-list" class="research-thread-list"></div>
                 <div id="research-chat-log" class="research-chat-log"></div>
                 <form id="research-message-form" class="research-message-form">
@@ -282,7 +309,7 @@
               <aside id="studio-panel" class="notebook-rail studio-rail">
                 <div class="rail-header">
                   <p class="panel-kicker">Studio</p>
-                  <h2>Work and outputs</h2>
+                  <h2>Evidence Inspector</h2>
                 </div>
                 <section class="studio-section">
                   <h3>Study setup</h3>
@@ -332,7 +359,7 @@
                   <div id="research-artifact-list" class="stacked-list"></div>
                 </section>
 
-                <section class="studio-section">
+                <section id="evidence-inspector-panel" class="studio-section">
                   <h3>Grounding</h3>
                   <div id="research-evidence-drawer" class="research-evidence-drawer"></div>
                   <div id="paper-detail"></div>
@@ -340,6 +367,63 @@
                 </section>
               </aside>
             </div>
+          </section>
+
+          <section id="settings-view" class="module-view" data-view="settings">
+            <div class="module-header">
+              <div>
+                <p class="panel-kicker">Settings</p>
+                <h2>Local runtime</h2>
+              </div>
+              <div class="module-meta">
+                <span class="pill">Read-only setup</span>
+              </div>
+            </div>
+
+            <div class="settings-grid">
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Workspace</p>
+                    <h3>Current context</h3>
+                  </div>
+                </div>
+                <div id="settings-summary" class="settings-summary"></div>
+              </section>
+
+              <section id="runtime-panel" class="panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Runtime</p>
+                    <h3>System readiness</h3>
+                  </div>
+                </div>
+                <div id="settings-runtime-summary" class="settings-summary"></div>
+              </section>
+            </div>
+
+            <section class="panel settings-provider-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="panel-kicker">Model provider</p>
+                  <h3>Subscription setup</h3>
+                </div>
+              </div>
+              <div id="settings-provider-guidance" class="provider-guidance-grid">
+                <div class="provider-guidance-item">
+                  <strong>OpenAI API</strong>
+                  <span>Set OPENAI_API_KEY and keep PAPERBASE_MODEL_PROVIDER=openai.</span>
+                </div>
+                <div class="provider-guidance-item">
+                  <strong>Claude Code subscription</strong>
+                  <span>Run claude setup-token, then set PAPERBASE_MODEL_PROVIDER=claude_cli.</span>
+                </div>
+                <div class="provider-guidance-item">
+                  <strong>Codex subscription</strong>
+                  <span>Run codex login and use codex login status before enabling codex_cli.</span>
+                </div>
+              </div>
+            </section>
           </section>
         </main>
       </div>

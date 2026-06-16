@@ -166,6 +166,7 @@ import {
     state.research.selectedThread = null;
     state.research.messages = [];
     renderSidebarPapers();
+    renderLibraryPaperTable();
     renderPaperSources();
     renderResearchWorkspace();
     updateActionButtons();
@@ -369,6 +370,7 @@ import {
         }
         state.research.selectedThread = null;
         state.research.messages = [];
+        renderLibraryPaperTable();
         renderPaperSources();
         renderResearchWorkspace();
         updateActionButtons();
@@ -380,6 +382,132 @@ import {
         try {
           const paperId = button.getAttribute("data-sidebar-paper-id");
           const action = button.getAttribute("data-sidebar-paper-action");
+          if (!paperId) {
+            return;
+          }
+          if (action === "parse") {
+            await queueParse([paperId]);
+          }
+          if (action === "extract") {
+            await queueExtraction([paperId]);
+          }
+        } catch (error) {
+          setStatus(error.message);
+        }
+      });
+    });
+  }
+
+  function paperAuthorLine(paper) {
+    if (Array.isArray(paper.authors) && paper.authors.length > 0) {
+      return paper.authors.slice(0, 3).join(", ");
+    }
+    if (typeof paper.authors === "string" && paper.authors.trim()) {
+      return paper.authors;
+    }
+    return "Unknown authors";
+  }
+
+  function paperYear(paper) {
+    return paper.publication_year || paper.year || "n.d.";
+  }
+
+  function renderLibraryPaperTable() {
+    if (!elements.libraryPaperTable) {
+      return;
+    }
+    if (!state.selectedCollection) {
+      elements.libraryPaperTable.innerHTML = '<div class="list-card muted">Select a collection.</div>';
+      return;
+    }
+    if (state.papers.length === 0) {
+      elements.libraryPaperTable.innerHTML = '<div class="list-card muted">No papers in this collection.</div>';
+      return;
+    }
+
+    elements.libraryPaperTable.innerHTML = `
+      <div class="library-table-header" role="row">
+        <span>Use</span>
+        <span>Paper</span>
+        <span>Text</span>
+        <span>Evidence</span>
+        <span>Next</span>
+      </div>
+      ${state.papers.map((membership) => {
+        const paper = membership.paper;
+        const processing = paperProcessingState(membership);
+        const checked = state.selectedPaperIds.has(paper.id);
+        return `
+          <div class="library-table-row" data-status="${escapeHtml(processing.status)}" role="row">
+            <label class="table-checkbox-cell">
+              <input
+                type="checkbox"
+                data-library-table-checkbox="${paper.id}"
+                aria-label="Use ${escapeHtml(paper.title)} in Study context"
+                ${checked ? "checked" : ""}
+              />
+            </label>
+            <button type="button" class="library-paper-title-cell" data-paper-source-id="${paper.id}">
+              <span class="list-title">${escapeHtml(paper.title)}</span>
+              <span class="muted">${escapeHtml(paperAuthorLine(paper))} · ${escapeHtml(String(paperYear(paper)))}</span>
+            </button>
+            <span class="job-status" data-status="${membership.is_parsed ? "completed" : "pending"}">
+              ${membership.is_parsed ? "Parsed" : "Needs parse"}
+            </span>
+            <span class="job-status" data-status="${membership.is_extracted ? "completed" : "pending"}">
+              ${membership.is_extracted ? "Evidence ready" : "Needs evidence"}
+            </span>
+            <button
+              type="button"
+              class="action-button paper-row-action"
+              data-library-paper-action="${escapeHtml(processing.action)}"
+              data-library-paper-id="${paper.id}"
+              ${processing.actionDisabled ? "disabled" : ""}
+            >
+              ${escapeHtml(processing.actionLabel)}
+            </button>
+          </div>
+        `;
+      }).join("")}
+    `;
+
+    elements.libraryPaperTable.querySelectorAll("[data-library-table-checkbox]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        const paperId = checkbox.getAttribute("data-library-table-checkbox");
+        if (!paperId) {
+          return;
+        }
+        if (checkbox.checked) {
+          state.selectedPaperIds.add(paperId);
+        } else {
+          state.selectedPaperIds.delete(paperId);
+        }
+        state.research.selectedThread = null;
+        state.research.messages = [];
+        renderSidebarPapers();
+        renderPaperSources();
+        renderResearchWorkspace();
+        updateActionButtons();
+      });
+    });
+
+    elements.libraryPaperTable.querySelectorAll("[data-paper-source-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const paperId = button.getAttribute("data-paper-source-id");
+        if (!paperId) {
+          return;
+        }
+        await loadPaperDetail(paperId);
+        activateView("study");
+        setStatus(`Opened ${(state.selectedPaper && state.selectedPaper.title) || "paper"} in Evidence Inspector.`);
+      });
+    });
+
+    elements.libraryPaperTable.querySelectorAll("[data-library-paper-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          const paperId = button.getAttribute("data-library-paper-id");
+          const action = button.getAttribute("data-library-paper-action");
           if (!paperId) {
             return;
           }
@@ -1523,9 +1651,11 @@ import {
     renderProjects();
     renderCollectionsSidebar();
     renderSidebarPapers();
+    renderLibraryPaperTable();
     renderWorkspacesSidebar();
     renderLibraryLogs();
     renderStudyWorkspace();
+    renderSettings();
     updateActionButtons();
   }
 
@@ -1545,6 +1675,12 @@ import {
     }
     if (elements.selectUnextractedPapersButton) {
       elements.selectUnextractedPapersButton.disabled = !collectionSelected || extractablePaperIds().length === 0;
+    }
+    if (elements.libraryTableSelectAll) {
+      elements.libraryTableSelectAll.disabled = !collectionSelected || state.papers.length === 0;
+    }
+    if (elements.libraryTableSelectUnextracted) {
+      elements.libraryTableSelectUnextracted.disabled = !collectionSelected || extractablePaperIds().length === 0;
     }
     if (elements.clearSelectedPapersButton) {
       elements.clearSelectedPapersButton.disabled = !collectionSelected || state.selectedPaperIds.size === 0;
@@ -2479,6 +2615,20 @@ import {
     selectPaperIds(extractablePaperIds());
     setStatus("Selected papers that still need evidence extraction.");
   });
+
+  if (elements.libraryTableSelectAll) {
+    elements.libraryTableSelectAll.addEventListener("click", () => {
+      selectPaperIds(state.papers.map((membership) => membership.paper.id));
+      setStatus("Selected all papers in this collection.");
+    });
+  }
+
+  if (elements.libraryTableSelectUnextracted) {
+    elements.libraryTableSelectUnextracted.addEventListener("click", () => {
+      selectPaperIds(extractablePaperIds());
+      setStatus("Selected papers that still need evidence extraction.");
+    });
+  }
 
   elements.clearSelectedPapersButton.addEventListener("click", () => {
     selectPaperIds([]);

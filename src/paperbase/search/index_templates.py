@@ -93,3 +93,57 @@ def table_index_template() -> dict[str, object]:
             }
         },
     }
+
+
+def structured_entity_index_template() -> dict[str, object]:
+    return {
+        "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+        "mappings": {
+            "properties": {
+                "entity_id": {"type": "keyword"},
+                "entity_type": {"type": "keyword"},
+                "paper_id": {"type": "keyword"},
+                "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "normalized_name": {
+                    "type": "text",
+                    "fields": {"keyword": {"type": "keyword"}},
+                },
+                "display_name": {
+                    "type": "text",
+                    "fields": {"keyword": {"type": "keyword"}},
+                },
+                "metadata": {"type": "object", "enabled": False},
+                "metadata_text": {"type": "text"},
+                "collection_ids": {"type": "keyword"},
+                "project_id": {"type": "keyword"},
+                "embedding": _dense_vector_property(),
+            }
+        },
+    }
+
+
+def result_row_index_template() -> dict[str, object]:
+    return {
+        "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+        "mappings": {
+            "properties": {
+                "result_row_id": {"type": "keyword"},
+                "paper_id": {"type": "keyword"},
+                "title": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "dataset_id": {"type": "keyword"},
+                "dataset": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "method_id": {"type": "keyword"},
+                "method": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "metric_id": {"type": "keyword"},
+                "metric": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "split_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                "value_numeric": {"type": "float"},
+                "value_text": {"type": "text"},
+                "comparator_text": {"type": "text"},
+                "notes": {"type": "text"},
+                "collection_ids": {"type": "keyword"},
+                "project_id": {"type": "keyword"},
+                "embedding": _dense_vector_property(),
+            }
+        },
+    }

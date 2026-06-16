@@ -49,7 +49,8 @@ def build_worker() -> PaperbaseWorker:
         download_cache_dir=Path(config.download_cache_dir),
         download_cache_ttl_seconds=config.download_cache_ttl_seconds,
         stale_running_seconds=config.worker_stale_job_seconds,
-        backend_retrieval_enabled=config.agent_context_backend_retrieval,
+        worker_id=config.worker_id,
+        queue_name=config.worker_queue_name,
     )
 
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-import logging
 from pathlib import Path
 
 from sqlalchemy import exists, select
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from paperbase.db.models import Section
 from paperbase.db.repositories import CollectionRepository
 from paperbase.figures.pipeline import FigureExtractionPipeline
+from paperbase.parsing.files import load_active_pdf_file
 from paperbase.parsing.pipeline import PaperParsePipeline
 from paperbase.storage import StorageResolver
 from paperbase.tables.pipeline import TableExtractionPipeline
@@ -63,7 +64,7 @@ class CollectionParseRunner:
             for membership in memberships:
                 if paper_ids is not None and membership.paper_id not in selected_paper_ids:
                     continue
-                if self._has_parsed_sections(session, membership.paper_id):
+                if self._has_current_parse(session, membership.paper_id):
                     continue
                 pending_memberships.append(membership)
                 if limit is not None and len(pending_memberships) >= limit:
@@ -124,7 +125,11 @@ class CollectionParseRunner:
             table_count=table_count,
         )
 
-    def _has_parsed_sections(self, session: Session, paper_id: str) -> bool:
+    def _has_current_parse(self, session: Session, paper_id: str) -> bool:
+        file_record = load_active_pdf_file(session, paper_id=paper_id)
+        if file_record is None or file_record.parser_status != "parsed":
+            return False
+
         return bool(
             session.execute(
                 select(exists().where(Section.paper_id == paper_id))

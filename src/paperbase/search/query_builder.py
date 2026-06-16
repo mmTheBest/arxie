@@ -4,12 +4,39 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+DEFAULT_SEARCH_TEXT_FIELDS: tuple[str, ...] = (
+    "title^3",
+    "abstract^2",
+    "section_title^2",
+    "text",
+    "figure_label^2",
+    "table_label^2",
+    "caption",
+    "entity_type^2",
+    "display_name^3",
+    "normalized_name^2",
+    "metadata_text",
+    "authors",
+    "tags",
+)
+RESULT_ROW_SEARCH_TEXT_FIELDS: tuple[str, ...] = (
+    "title^2",
+    "dataset^3",
+    "method^3",
+    "metric^3",
+    "split_name^2",
+    "value_text^2",
+    "comparator_text",
+    "notes",
+)
+
 
 def build_search_query(
     *,
     query_text: str | None = None,
     filters: dict[str, object] | None = None,
     embedding_vector: Sequence[float] | None = None,
+    text_fields: Sequence[str] | None = None,
     k: int = 10,
 ) -> dict[str, object]:
     bool_query: dict[str, list[dict[str, object]]] = {"must": [], "filter": []}
@@ -19,17 +46,7 @@ def build_search_query(
             {
                 "multi_match": {
                     "query": query_text,
-                    "fields": [
-                        "title^3",
-                        "abstract^2",
-                        "section_title^2",
-                        "text",
-                        "figure_label^2",
-                        "table_label^2",
-                        "caption",
-                        "authors",
-                        "tags",
-                    ],
+                    "fields": list(text_fields or DEFAULT_SEARCH_TEXT_FIELDS),
                 }
             }
         )

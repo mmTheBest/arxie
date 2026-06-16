@@ -8,11 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.models import PaperFile
-from paperbase.db.repositories import PaperFileRepository
 from paperbase.parsing.chunker import SimpleSectionChunker
+from paperbase.parsing.files import load_active_pdf_file
 from paperbase.parsing.store import ParsedPaperStore
 from paperbase.storage import StorageResolver
-from ra.parsing.pdf_parser import PDFParser, Section as ParsedSection
+from ra.parsing.pdf_parser import PDFParser
+from ra.parsing.pdf_parser import Section as ParsedSection
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +67,12 @@ class PaperParsePipeline:
             chunk_count=chunk_count,
         )
 
-    def _get_pdf_file(self, session: Session, paper_id: str, paper_file_id: str | None) -> PaperFile:
+    def _get_pdf_file(
+        self,
+        session: Session,
+        paper_id: str,
+        paper_file_id: str | None,
+    ) -> PaperFile:
         if paper_file_id is not None:
             statement = select(PaperFile).where(
                 PaperFile.id == paper_file_id,
@@ -74,13 +80,16 @@ class PaperParsePipeline:
             )
             file_record = session.execute(statement).scalar_one_or_none()
             if file_record is None:
-                raise ValueError(f"No PDF file found for paper_id={paper_id} and paper_file_id={paper_file_id}")
+                raise ValueError(
+                    f"No PDF file found for paper_id={paper_id} "
+                    f"and paper_file_id={paper_file_id}"
+                )
             return file_record
 
-        file_records = PaperFileRepository(session).list_for_paper(paper_id=paper_id, file_kind="pdf")
-        if not file_records:
+        file_record = load_active_pdf_file(session, paper_id=paper_id)
+        if file_record is None:
             raise ValueError(f"No PDF file registered for paper_id={paper_id}")
-        return file_records[0]
+        return file_record
 
 
 def _sanitize_sections(sections: list[ParsedSection]) -> list[ParsedSection]:

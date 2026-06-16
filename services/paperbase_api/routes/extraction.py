@@ -11,7 +11,7 @@ from paperbase.db.repositories import (
     CollectionRepository,
     ExtractionProfileRepository,
 )
-from paperbase.extract.client import OpenAIExtractionClient
+from paperbase.extract.client import default_extraction_client
 from paperbase.profiles import get_profile_preset, list_profile_presets
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.background_jobs import create_background_job
@@ -188,7 +188,11 @@ def extract_collection(
     collection_repository = CollectionRepository(session)
     extraction_profile_repository = ExtractionProfileRepository(session)
 
-    safe_collection_id = sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+    safe_collection_id = sanitize_identifier(
+        collection_id,
+        field_name="collection_id",
+        max_length=36,
+    )
     collection = collection_repository.get_by_id(safe_collection_id)
     if collection is None:
         raise PaperbaseAPIError(
@@ -198,10 +202,16 @@ def extract_collection(
         )
 
     schema_payload = dict(payload.schema_payload)
+    default_profile_id = (
+        collection.extraction_profile_id
+        if payload.extraction_profile_id is None and not schema_payload
+        else None
+    )
+    requested_profile_id = payload.extraction_profile_id or default_profile_id
     extraction_profile_id = None
-    if payload.extraction_profile_id is not None:
+    if requested_profile_id is not None:
         extraction_profile_id = sanitize_identifier(
-            payload.extraction_profile_id,
+            requested_profile_id,
             field_name="extraction_profile_id",
             max_length=36,
         )
@@ -260,4 +270,4 @@ def extract_collection(
 
 
 def default_extraction_client_factory() -> object:
-    return OpenAIExtractionClient()
+    return default_extraction_client()

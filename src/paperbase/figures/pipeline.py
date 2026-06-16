@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-import re
 from urllib.parse import urlparse
 
 import fitz
@@ -13,8 +13,8 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.models import Figure, PaperFile
-from paperbase.db.repositories import PaperFileRepository
 from paperbase.figures.models import FigureCandidate
+from paperbase.parsing.files import load_active_pdf_file
 from paperbase.storage import StorageResolver
 
 FigureExtractor = Callable[[Path], Sequence[FigureCandidate]]
@@ -124,10 +124,10 @@ class FigureExtractionPipeline:
         return FigureExtractionResult(paper_id=paper_id, figure_count=len(candidates))
 
     def _get_primary_pdf_file(self, session: Session, paper_id: str) -> PaperFile:
-        file_records = PaperFileRepository(session).list_for_paper(paper_id=paper_id, file_kind="pdf")
-        if not file_records:
+        file_record = load_active_pdf_file(session, paper_id=paper_id)
+        if file_record is None:
             raise ValueError(f"No PDF file registered for paper_id={paper_id}")
-        return file_records[0]
+        return file_record
 
 
 def _artifact_storage_uri(

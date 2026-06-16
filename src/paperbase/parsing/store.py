@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from paperbase.db.models import Chunk, PaperFile, Section
+from paperbase.db.models import Chunk, EvidenceSpan, PaperFile, Section
 from paperbase.parsing.chunker import ChunkDraft
 from ra.parsing.pdf_parser import Section as ParsedSection
 
@@ -26,6 +26,11 @@ class ParsedPaperStore:
         chunks: Sequence[ChunkDraft],
         paper_file_id: str,
     ) -> tuple[int, int]:
+        self.session.execute(
+            update(EvidenceSpan)
+            .where(EvidenceSpan.paper_id == paper_id)
+            .values(section_id=None, chunk_id=None)
+        )
         self.session.execute(delete(Chunk).where(Chunk.paper_id == paper_id))
         self.session.execute(delete(Section).where(Section.paper_id == paper_id))
 

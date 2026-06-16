@@ -16,10 +16,15 @@ class PaperbaseConfig:
     worker_queue_backend: str = "db"
     worker_queue_name: str = "paperbase:jobs"
     worker_project_id: str | None = None
+    worker_id: str | None = None
     worker_retry_limit: int = 3
     worker_stale_job_seconds: float = 900.0
-    agent_context_backend_retrieval: bool = False
+    worker_heartbeat_stale_seconds: float = 900.0
     hosted_mode: bool = False
+    hosted_api_token: str | None = None
+    hosted_api_keys_json: str | None = None
+    hosted_rate_limit_window_seconds: float = 60.0
+    hosted_rate_limit_max_requests: int = 60
     local_path_import_allowed_roots: tuple[str, ...] = ()
     object_store_endpoint: str = "http://localhost:9000"
     object_store_backend: str = "filesystem"
@@ -49,9 +54,6 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         resolved_env.get("PAPERBASE_REQUIRE_SEARCH_BACKEND") or "false"
     ).strip().lower()
     hosted_mode_raw = (resolved_env.get("PAPERBASE_HOSTED_MODE") or "false").strip().lower()
-    agent_context_backend_retrieval_raw = (
-        resolved_env.get("PAPERBASE_AGENT_CONTEXT_BACKEND_RETRIEVAL") or "false"
-    ).strip().lower()
     allowed_roots = tuple(
         item.strip()
         for item in (
@@ -78,13 +80,27 @@ def load_paperbase_config(env: Mapping[str, str] | None = None) -> PaperbaseConf
         worker_project_id=(
             (resolved_env.get("PAPERBASE_WORKER_PROJECT_ID") or "").strip() or None
         ),
+        worker_id=((resolved_env.get("PAPERBASE_WORKER_ID") or "").strip() or None),
         worker_retry_limit=int((resolved_env.get("PAPERBASE_WORKER_RETRY_LIMIT") or "3").strip()),
         worker_stale_job_seconds=float(
             (resolved_env.get("PAPERBASE_WORKER_STALE_JOB_SECONDS") or "900").strip()
         ),
-        agent_context_backend_retrieval=agent_context_backend_retrieval_raw
-        in {"1", "true", "yes", "on"},
+        worker_heartbeat_stale_seconds=float(
+            (resolved_env.get("PAPERBASE_WORKER_HEARTBEAT_STALE_SECONDS") or "900").strip()
+        ),
         hosted_mode=hosted_mode_raw in {"1", "true", "yes", "on"},
+        hosted_api_token=(
+            (resolved_env.get("PAPERBASE_HOSTED_API_TOKEN") or "").strip() or None
+        ),
+        hosted_api_keys_json=(
+            (resolved_env.get("PAPERBASE_HOSTED_API_KEYS") or "").strip() or None
+        ),
+        hosted_rate_limit_window_seconds=float(
+            (resolved_env.get("PAPERBASE_HOSTED_RATE_LIMIT_WINDOW_SECONDS") or "60").strip()
+        ),
+        hosted_rate_limit_max_requests=int(
+            (resolved_env.get("PAPERBASE_HOSTED_RATE_LIMIT_MAX_REQUESTS") or "60").strip()
+        ),
         local_path_import_allowed_roots=allowed_roots,
         object_store_endpoint=(
             resolved_env.get("PAPERBASE_OBJECT_STORE_ENDPOINT") or "http://localhost:9000"

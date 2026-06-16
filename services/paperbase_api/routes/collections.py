@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from fastapi import APIRouter, Depends, Path, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,6 +13,7 @@ from paperbase.db.models import (
     CollectionPaper,
     Dataset,
     EngineeringTrick,
+    ExtractionProfile,
     ExtractionRun,
     Figure,
     GlossaryTerm,
@@ -28,6 +31,10 @@ from paperbase.db.repositories import (
     CollectionRepository,
     PaperRepository,
 )
+from paperbase.extract.quality import (
+    build_collection_extraction_quality,
+    build_extraction_recovery_actions,
+)
 from ra.utils.security import sanitize_identifier, sanitize_user_text
 from services.paperbase_api.background_jobs import create_background_job
 from services.paperbase_api.dependencies import get_project_id, get_session, get_session_factory
@@ -37,9 +44,12 @@ from services.paperbase_api.models import (
     AnnotationResponse,
     AnnotationsResponse,
     CollectionCreateRequest,
+    CollectionExtractionQualityResponse,
+    CollectionExtractionRecoveryActionResponse,
     CollectionPaperCreateRequest,
     CollectionPaperMembershipResponse,
     CollectionPapersResponse,
+    CollectionsResponse,
     CollectionStructuredSummaryResponse,
     CollectionStructuredSummaryResponseData,
     CollectionSummaryEngineeringTrickResponse,
@@ -48,10 +58,9 @@ from services.paperbase_api.models import (
     CollectionSummaryLimitationResponse,
     CollectionSummaryNamedArtifactResponse,
     CollectionSummaryResearchDesignElementResponse,
+    CollectionSummaryResponse,
     CollectionSummaryResultRowResponse,
     CollectionSummaryTableResponse,
-    CollectionsResponse,
-    CollectionSummaryResponse,
     PaperSummaryResponse,
     RunCollectionParseRequest,
     SingleAnnotationResponse,
@@ -59,11 +68,11 @@ from services.paperbase_api.models import (
     SingleCollectionPaperResponse,
     SingleCollectionResponse,
 )
-from services.paperbase_api.routes.jobs import background_job_to_response
 from services.paperbase_api.normalization import (
     canonicalize_metric_display_name,
     normalize_summary_key,
 )
+from services.paperbase_api.routes.jobs import background_job_to_response
 
 router = APIRouter(tags=["collections"])
 ACTIVE_JOB_STATUSES = {"pending", "queued", "running"}
@@ -75,10 +84,17 @@ def _canonicalize_artifact_display_name(value: str, *, artifact_type: str) -> st
     return value.strip()
 
 
-def _build_named_artifact_summary(items, *, artifact_type: str) -> list[CollectionSummaryNamedArtifactResponse]:  # noqa: ANN001
+def _build_named_artifact_summary(
+    items,  # noqa: ANN001
+    *,
+    artifact_type: str,
+) -> list[CollectionSummaryNamedArtifactResponse]:
     summarized: dict[str, CollectionSummaryNamedArtifactResponse] = {}
     for item in items:
-        display_name = _canonicalize_artifact_display_name(item.display_name, artifact_type=artifact_type)
+        display_name = _canonicalize_artifact_display_name(
+            item.display_name,
+            artifact_type=artifact_type,
+        )
         key = normalize_summary_key(display_name)
         summarized.setdefault(
             key,
@@ -122,10 +138,17 @@ def _find_matching_active_collection_job(
     return None
 
 
-def _collection_readiness_inputs(session: Session, collection_id: str) -> dict[str, int | str | None]:
-    member_paper_ids = select(CollectionPaper.paper_id).where(CollectionPaper.collection_id == collection_id)
+def _collection_readiness_inputs(
+    session: Session,
+    collection_id: str,
+) -> dict[str, int | str | None]:
+    member_paper_ids = select(CollectionPaper.paper_id).where(
+        CollectionPaper.collection_id == collection_id
+    )
     paper_count = session.execute(
-        select(func.count()).select_from(CollectionPaper).where(CollectionPaper.collection_id == collection_id)
+        select(func.count())
+        .select_from(CollectionPaper)
+        .where(CollectionPaper.collection_id == collection_id)
     ).scalar_one()
     parsed_paper_count = session.execute(
         select(func.count(func.distinct(Section.paper_id))).where(Section.paper_id.in_(member_paper_ids))
@@ -152,9 +175,15 @@ def _collection_readiness_inputs(session: Session, collection_id: str) -> dict[s
             continue
         if _active_status_wins(latest_job_status, job.status):
             latest_job_status = job.status
-        if job.job_type == "collection_parse" and _active_status_wins(latest_parse_job_status, job.status):
+        if job.job_type == "collection_parse" and _active_status_wins(
+            latest_parse_job_status,
+            job.status,
+        ):
             latest_parse_job_status = job.status
-        if job.job_type == "collection_extract" and _active_status_wins(latest_extraction_job_status, job.status):
+        if job.job_type == "collection_extract" and _active_status_wins(
+            latest_extraction_job_status,
+            job.status,
+        ):
             latest_extraction_job_status = job.status
         if job.status == "failed":
             failed_job_count += 1
@@ -322,7 +351,9 @@ def list_collections(
         else None
     )
     collections = repository.list_collections(owner_id=safe_owner_id)
-    return CollectionsResponse(data=[_collection_to_response(collection, session) for collection in collections])
+    return CollectionsResponse(
+        data=[_collection_to_response(collection, session) for collection in collections]
+    )
 
 
 @router.post(
@@ -362,7 +393,11 @@ def fetch_collection(
     session: Session = Depends(get_session),
 ) -> SingleCollectionResponse:
     repository = CollectionRepository(session)
-    safe_collection_id = sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+    safe_collection_id = sanitize_identifier(
+        collection_id,
+        field_name="collection_id",
+        max_length=36,
+    )
     collection = repository.get_by_id(safe_collection_id)
     if collection is None:
         raise PaperbaseAPIError(
@@ -385,7 +420,11 @@ def add_collection_paper(
  ) -> SingleCollectionPaperResponse:
     collection_repository = CollectionRepository(session)
     paper_repository = PaperRepository(session)
-    safe_collection_id = sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+    safe_collection_id = sanitize_identifier(
+        collection_id,
+        field_name="collection_id",
+        max_length=36,
+    )
     safe_paper_id = sanitize_identifier(payload.paper_id, field_name="paper_id", max_length=36)
 
     collection = collection_repository.get_by_id(safe_collection_id)
@@ -430,7 +469,11 @@ def list_collection_papers(
 ) -> CollectionPapersResponse:
     collection_repository = CollectionRepository(session)
     paper_repository = PaperRepository(session)
-    safe_collection_id = sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+    safe_collection_id = sanitize_identifier(
+        collection_id,
+        field_name="collection_id",
+        max_length=36,
+    )
     collection = collection_repository.get_by_id(safe_collection_id)
     if collection is None:
         raise PaperbaseAPIError(
@@ -469,7 +512,9 @@ def list_collection_papers(
         if paper is None:
             continue
         parsed_section_count = int(section_counts.get(paper.id, 0) or 0)
-        completed_extraction_count = int(completed_extraction_counts.get(paper.id, 0) or 0)
+        completed_extraction_count = int(
+            completed_extraction_counts.get(paper.id, 0) or 0
+        )
         job_state = job_state_by_paper_id.get(paper.id, {})
         data.append(
             CollectionPaperMembershipResponse(
@@ -504,7 +549,11 @@ def fetch_collection_structured_summary(
     session: Session = Depends(get_session),
 ) -> CollectionStructuredSummaryResponse:
     collection_repository = CollectionRepository(session)
-    safe_collection_id = sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+    safe_collection_id = sanitize_identifier(
+        collection_id,
+        field_name="collection_id",
+        max_length=36,
+    )
     collection = collection_repository.get_by_id(safe_collection_id)
     if collection is None:
         raise PaperbaseAPIError(
@@ -513,7 +562,9 @@ def fetch_collection_structured_summary(
             message=f"No collection found for id: {safe_collection_id}",
         )
 
-    member_paper_ids = select(CollectionPaper.paper_id).where(CollectionPaper.collection_id == safe_collection_id)
+    member_paper_ids = select(CollectionPaper.paper_id).where(
+        CollectionPaper.collection_id == safe_collection_id
+    )
 
     readiness = _collection_readiness_inputs(session, safe_collection_id)
 
@@ -575,6 +626,28 @@ def fetch_collection_structured_summary(
         .order_by(ResultRow.value_numeric.desc().nullslast(), ResultRow.created_at.asc())
         .limit(10)
     ).all()
+    collection_schema_payload = None
+    if collection.extraction_profile_id is not None:
+        profile = session.get(ExtractionProfile, collection.extraction_profile_id)
+        if profile is not None:
+            collection_schema_payload = dict(profile.schema_payload or {})
+    extraction_quality = build_collection_extraction_quality(
+        session,
+        collection_id=safe_collection_id,
+        collection_extraction_profile_id=collection.extraction_profile_id,
+        collection_schema_payload=collection_schema_payload,
+    )
+    parsed_paper_ids = set(
+        session.execute(
+            select(Section.paper_id)
+            .where(Section.paper_id.in_(member_paper_ids))
+            .group_by(Section.paper_id)
+        ).scalars()
+    )
+    recovery_actions = build_extraction_recovery_actions(
+        extraction_quality,
+        parsed_paper_ids=parsed_paper_ids,
+    )
 
     return CollectionStructuredSummaryResponse(
         data=CollectionStructuredSummaryResponseData(
@@ -658,6 +731,13 @@ def fetch_collection_structured_summary(
                 )
                 for result_row, paper, dataset, method, metric in result_rows
             ],
+            extraction_quality=CollectionExtractionQualityResponse(
+                **asdict(extraction_quality)
+            ),
+            extraction_recovery_actions=[
+                CollectionExtractionRecoveryActionResponse(**asdict(action))
+                for action in recovery_actions
+            ],
         )
     )
 
@@ -674,7 +754,11 @@ def parse_collection(
     session: Session = Depends(get_session),
 ) -> SingleBackgroundJobResponse:
     collection_repository = CollectionRepository(session)
-    safe_collection_id = sanitize_identifier(collection_id, field_name="collection_id", max_length=36)
+    safe_collection_id = sanitize_identifier(
+        collection_id,
+        field_name="collection_id",
+        max_length=36,
+    )
     collection = collection_repository.get_by_id(safe_collection_id)
     if collection is None:
         raise PaperbaseAPIError(
@@ -768,4 +852,6 @@ def list_annotations(
         target_type=sanitize_user_text(target_type, field_name="target_type", max_length=64),
         target_id=sanitize_identifier(target_id, field_name="target_id", max_length=36),
     )
-    return AnnotationsResponse(data=[_annotation_to_response(annotation) for annotation in annotations])
+    return AnnotationsResponse(
+        data=[_annotation_to_response(annotation) for annotation in annotations]
+    )

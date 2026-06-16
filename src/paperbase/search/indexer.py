@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 
 def build_paper_document(
     *,
@@ -117,6 +119,84 @@ def build_table_document(
         "table_label": table_label or "",
         "caption": caption or "",
         "structured_payload": structured_payload or {},
+        "collection_ids": collection_ids or [],
+        "embedding": embedding_vector or [],
+    }
+    if project_id is not None:
+        document["project_id"] = project_id
+    return document
+
+
+def build_structured_entity_document(
+    *,
+    entity_id: str,
+    entity_type: str,
+    paper_id: str,
+    title: str,
+    normalized_name: str | None,
+    display_name: str | None,
+    metadata: dict[str, object] | None = None,
+    collection_ids: list[str] | None = None,
+    project_id: str | None = None,
+    embedding_vector: list[float] | None = None,
+) -> dict[str, object]:
+    metadata_payload = metadata or {}
+    document: dict[str, object] = {
+        "entity_id": entity_id,
+        "entity_type": entity_type,
+        "paper_id": paper_id,
+        "title": title,
+        "normalized_name": normalized_name or "",
+        "display_name": display_name or normalized_name or "",
+        "metadata": metadata_payload,
+        "metadata_text": json.dumps(
+            metadata_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        "collection_ids": collection_ids or [],
+        "embedding": embedding_vector or [],
+    }
+    if project_id is not None:
+        document["project_id"] = project_id
+    return document
+
+
+def build_result_row_document(
+    *,
+    result_row_id: str,
+    paper_id: str,
+    title: str,
+    dataset_id: str | None = None,
+    dataset: str | None = None,
+    method_id: str | None = None,
+    method: str | None = None,
+    metric_id: str | None = None,
+    metric: str | None = None,
+    split_name: str | None = None,
+    value_numeric: float | None = None,
+    value_text: str | None = None,
+    comparator_text: str | None = None,
+    notes: str | None = None,
+    collection_ids: list[str] | None = None,
+    project_id: str | None = None,
+    embedding_vector: list[float] | None = None,
+) -> dict[str, object]:
+    document: dict[str, object] = {
+        "result_row_id": result_row_id,
+        "paper_id": paper_id,
+        "title": title,
+        "dataset_id": dataset_id or "",
+        "dataset": dataset or "",
+        "method_id": method_id or "",
+        "method": method or "",
+        "metric_id": metric_id or "",
+        "metric": metric or "",
+        "split_name": split_name or "",
+        "value_numeric": value_numeric,
+        "value_text": value_text or "",
+        "comparator_text": comparator_text or "",
+        "notes": notes or "",
         "collection_ids": collection_ids or [],
         "embedding": embedding_vector or [],
     }

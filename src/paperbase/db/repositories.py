@@ -6,7 +6,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Select, delete, select, update
+from sqlalchemy import Select, delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from paperbase.db.models import (
@@ -36,7 +37,12 @@ from paperbase.db.models import (
     StudySource,
     Tag,
     Venue,
+    WorkerHeartbeat,
     Workspace,
+)
+from paperbase.research.output_contracts import (
+    redact_private_trace_text,
+    strip_private_trace_fields,
 )
 
 
@@ -584,6 +590,8 @@ class WorkspaceRepository:
         summary: str | None = None,
         read_status: str = "ready",
         error_message: str | None = None,
+        source_size_bytes: int | None = None,
+        source_mtime_ns: int | None = None,
     ) -> StudySource:
         source = StudySource(
             workspace_id=workspace_id,
@@ -594,6 +602,8 @@ class WorkspaceRepository:
             summary=summary,
             read_status=read_status,
             error_message=error_message,
+            source_size_bytes=source_size_bytes,
+            source_mtime_ns=source_mtime_ns,
         )
         self.session.add(source)
         self.session.commit()
@@ -654,6 +664,50 @@ class ResearchIntelligenceRepository:
         self.session.commit()
         self.session.refresh(study_brief)
         return study_brief
+
+    def save_study_brief_if_version(
+        self,
+        *,
+        workspace_id: str,
+        brief: dict[str, Any],
+        expected_version: int,
+        updated_by: str = "agent",
+    ) -> StudyBrief | None:
+        if expected_version == 0:
+            study_brief = StudyBrief(
+                workspace_id=workspace_id,
+                brief_json=dict(brief),
+                version=1,
+                updated_by=updated_by,
+            )
+            self.session.add(study_brief)
+            try:
+                self.session.commit()
+            except IntegrityError:
+                self.session.rollback()
+                return None
+            self.session.refresh(study_brief)
+            return study_brief
+
+        result = self.session.execute(
+            update(StudyBrief)
+            .where(
+                StudyBrief.workspace_id == workspace_id,
+                StudyBrief.version == expected_version,
+            )
+            .values(
+                brief_json=dict(brief),
+                version=StudyBrief.version + 1,
+                updated_by=updated_by,
+                updated_at=_utc_now(),
+            )
+        )
+        if result.rowcount != 1:
+            self.session.rollback()
+            return None
+
+        self.session.commit()
+        return self.get_study_brief(workspace_id)
 
     def upsert_memory_record(
         self,
@@ -1025,7 +1079,7 @@ class ResearchRepository:
             evidence_payload_json=evidence_payload or {},
             model_name=model_name,
             prompt_version=prompt_version,
-            error_message=error_message,
+            error_message=redact_private_trace_text(error_message),
         )
         self.session.add(artifact)
         self.session.commit()
@@ -1070,7 +1124,7 @@ class ResearchRepository:
             artifact.model_name = model_name
         if prompt_version is not None:
             artifact.prompt_version = prompt_version
-        artifact.error_message = error_message
+        artifact.error_message = redact_private_trace_text(error_message)
 
         self.session.commit()
         self.session.refresh(artifact)
@@ -1262,6 +1316,60 @@ class BackgroundJobRepository:
         return self.session.execute(statement).scalars().all()
 
 
+class WorkerHeartbeatRepository:
+    """Persistence helpers for live worker heartbeat diagnostics."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def record(
+        self,
+        *,
+        worker_id: str,
+        project_id: str | None,
+        queue_name: str | None,
+        status: str = "polling",
+    ) -> WorkerHeartbeat:
+        heartbeat = self.session.get(WorkerHeartbeat, worker_id)
+        now = _utc_now()
+        if heartbeat is None:
+            heartbeat = WorkerHeartbeat(
+                worker_id=worker_id,
+                project_id=project_id,
+                queue_name=queue_name,
+                status=status,
+                last_seen_at=now,
+            )
+            self.session.add(heartbeat)
+        else:
+            heartbeat.project_id = project_id
+            heartbeat.queue_name = queue_name
+            heartbeat.status = status
+            heartbeat.last_seen_at = now
+        self.session.commit()
+        self.session.refresh(heartbeat)
+        return heartbeat
+
+    def list_recent(
+        self,
+        *,
+        project_id: str | None,
+        stale_after_seconds: float,
+        limit: int = 20,
+    ) -> Sequence[WorkerHeartbeat]:
+        del stale_after_seconds
+        statement: Select[tuple[WorkerHeartbeat]] = (
+            select(WorkerHeartbeat)
+            .order_by(WorkerHeartbeat.last_seen_at.desc())
+            .limit(max(1, limit))
+        )
+        if project_id is None:
+            statement = statement.where(WorkerHeartbeat.project_id.is_(None))
+        else:
+            statement = statement.where(WorkerHeartbeat.project_id == project_id)
+        return self.session.execute(statement).scalars().all()
+
+
 class ResearchAgentRunRepository:
     """Persistence helpers for traceable Paperbase research-agent runs."""
 
@@ -1289,7 +1397,7 @@ class ResearchAgentRunRepository:
             artifact_type=artifact_type,
             model_policy=model_policy,
             status="pending",
-            input_json=input_json or {},
+            input_json=strip_private_trace_fields(input_json or {}),
         )
         self.session.add(run)
         self.session.commit()
@@ -1330,7 +1438,7 @@ class ResearchAgentRunRepository:
         run.status = status
         if model_name is not None:
             run.model_name = model_name
-        run.error_message = error_message
+        run.error_message = redact_private_trace_text(error_message)
         run.finished_at = _utc_now()
         self.session.commit()
         self.session.refresh(run)
@@ -1340,6 +1448,7 @@ class ResearchAgentRunRepository:
         self,
         *,
         run_id: str,
+        attempt_number: int = 1,
         step_type: str,
         label: str,
         status: str = "completed",
@@ -1350,13 +1459,14 @@ class ResearchAgentRunRepository:
         ordinal = self._next_step_ordinal(run_id)
         step = ResearchAgentStep(
             run_id=run_id,
+            attempt_number=attempt_number,
             ordinal=ordinal,
             step_type=step_type,
             label=label,
             status=status,
-            input_json=input_json or {},
-            output_json=output_json or {},
-            error_message=error_message,
+            input_json=strip_private_trace_fields(input_json or {}),
+            output_json=strip_private_trace_fields(output_json or {}),
+            error_message=redact_private_trace_text(error_message),
         )
         self.session.add(step)
         self.session.commit()
@@ -1375,6 +1485,7 @@ class ResearchAgentRunRepository:
         self,
         *,
         run_id: str,
+        attempt_number: int = 1,
         collection_id: str,
         workspace_id: str | None,
         task_type: str,
@@ -1385,6 +1496,7 @@ class ResearchAgentRunRepository:
     ) -> StudyContextPack:
         context_pack = StudyContextPack(
             run_id=run_id,
+            attempt_number=attempt_number,
             collection_id=collection_id,
             workspace_id=workspace_id,
             task_type=task_type,
@@ -1407,10 +1519,42 @@ class ResearchAgentRunRepository:
         )
         return self.session.execute(statement).scalar_one_or_none()
 
+    def get_latest_context_pack_by_cache_key(
+        self,
+        *,
+        collection_id: str,
+        workspace_id: str | None,
+        task_type: str,
+        cache_key: str,
+    ) -> StudyContextPack | None:
+        statement = (
+            select(StudyContextPack)
+            .join(ResearchAgentRun, ResearchAgentRun.id == StudyContextPack.run_id)
+            .where(
+                StudyContextPack.collection_id == collection_id,
+                StudyContextPack.task_type == task_type,
+                StudyContextPack.cache_key == cache_key,
+                ResearchAgentRun.status.in_(("completed", "blocked")),
+            )
+        )
+        if workspace_id is None:
+            statement = statement.where(StudyContextPack.workspace_id.is_(None))
+        else:
+            statement = statement.where(StudyContextPack.workspace_id == workspace_id)
+        statement = (
+            statement.order_by(
+                StudyContextPack.created_at.desc(),
+                StudyContextPack.id.desc(),
+            )
+            .limit(1)
+        )
+        return self.session.execute(statement).scalar_one_or_none()
+
     def create_validation_report(
         self,
         *,
         run_id: str,
+        attempt_number: int = 1,
         artifact_id: str,
         harness_status: str,
         missing_evidence: list[str],
@@ -1420,6 +1564,7 @@ class ResearchAgentRunRepository:
     ) -> ResearchValidationReport:
         report = ResearchValidationReport(
             run_id=run_id,
+            attempt_number=attempt_number,
             artifact_id=artifact_id,
             harness_status=harness_status,
             missing_evidence_json=missing_evidence,
@@ -1440,6 +1585,31 @@ class ResearchAgentRunRepository:
             .limit(1)
         )
         return self.session.execute(statement).scalar_one_or_none()
+
+    def next_attempt_number(self, *, run_id: str) -> int:
+        self._require_run(run_id)
+        max_attempts = [
+            self.session.execute(
+                select(func.max(ResearchAgentStep.attempt_number)).where(
+                    ResearchAgentStep.run_id == run_id
+                )
+            ).scalar_one(),
+            self.session.execute(
+                select(func.max(StudyContextPack.attempt_number)).where(
+                    StudyContextPack.run_id == run_id
+                )
+            ).scalar_one(),
+            self.session.execute(
+                select(func.max(ResearchValidationReport.attempt_number)).where(
+                    ResearchValidationReport.run_id == run_id
+                )
+            ).scalar_one(),
+        ]
+        max_attempt_number = max(
+            (int(attempt) for attempt in max_attempts if attempt is not None),
+            default=0,
+        )
+        return max_attempt_number + 1 if max_attempt_number else 1
 
     def _require_run(self, run_id: str) -> ResearchAgentRun:
         run = self.get_run(run_id)

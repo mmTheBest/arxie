@@ -19,6 +19,7 @@ from paperbase.db.models import (
     Method,
     Metric,
     Paper,
+    ResultRow,
     Section,
     TableArtifact,
 )
@@ -29,12 +30,16 @@ from paperbase.search.index_templates import (
     chunk_index_template,
     figure_index_template,
     paper_index_template,
+    result_row_index_template,
+    structured_entity_index_template,
     table_index_template,
 )
 from paperbase.search.indexer import (
     build_chunk_document,
     build_figure_document,
     build_paper_document,
+    build_result_row_document,
+    build_structured_entity_document,
     build_table_document,
 )
 
@@ -121,28 +126,56 @@ class PaperbaseSearchReindexer:
         self.chunk_index_name = search_index_name("chunks", index_prefix=resolved_index_prefix)
         self.figure_index_name = search_index_name("figures", index_prefix=resolved_index_prefix)
         self.table_index_name = search_index_name("tables", index_prefix=resolved_index_prefix)
+        self.structured_entity_index_name = search_index_name(
+            "structured-entities",
+            index_prefix=resolved_index_prefix,
+        )
+        self.result_row_index_name = search_index_name(
+            "result-rows",
+            index_prefix=resolved_index_prefix,
+        )
 
     def reindex_all(self) -> dict[str, int]:
         paper_documents = self._build_paper_documents()
         chunk_documents = self._build_chunk_documents()
         figure_documents = self._build_figure_documents()
         table_documents = self._build_table_documents()
+        structured_entity_documents = self._build_structured_entity_documents()
+        result_row_documents = self._build_result_row_documents()
 
         self.backend.ensure_index(self.paper_index_name, paper_index_template())
         self.backend.ensure_index(self.chunk_index_name, chunk_index_template())
         self.backend.ensure_index(self.figure_index_name, figure_index_template())
         self.backend.ensure_index(self.table_index_name, table_index_template())
+        self.backend.ensure_index(
+            self.structured_entity_index_name,
+            structured_entity_index_template(),
+        )
+        self.backend.ensure_index(
+            self.result_row_index_name,
+            result_row_index_template(),
+        )
 
         self.backend.bulk_index(self.paper_index_name, paper_documents)
         self.backend.bulk_index(self.chunk_index_name, chunk_documents)
         self.backend.bulk_index(self.figure_index_name, figure_documents)
         self.backend.bulk_index(self.table_index_name, table_documents)
+        self.backend.bulk_index(
+            self.structured_entity_index_name,
+            structured_entity_documents,
+        )
+        self.backend.bulk_index(
+            self.result_row_index_name,
+            result_row_documents,
+        )
 
         return {
             "papers": len(paper_documents),
             "chunks": len(chunk_documents),
             "figures": len(figure_documents),
             "tables": len(table_documents),
+            "structured_entities": len(structured_entity_documents),
+            "result_rows": len(result_row_documents),
         }
 
     def _build_paper_documents(self) -> list[dict[str, object]]:
@@ -298,6 +331,117 @@ class PaperbaseSearchReindexer:
                 ),
             )
             for table, paper in rows
+        ]
+
+    def _build_structured_entity_documents(self) -> list[dict[str, object]]:
+        entity_rows: list[tuple[str, Dataset | Method | Metric, Paper]] = []
+        with self.session_factory() as session:
+            for entity_type, model in (
+                ("dataset", Dataset),
+                ("method", Method),
+                ("metric", Metric),
+            ):
+                rows = session.execute(
+                    select(model, Paper)
+                    .join(Paper, Paper.id == model.paper_id)
+                    .order_by(model.created_at.asc(), model.id.asc())
+                ).all()
+                entity_rows.extend(
+                    (entity_type, entity, paper)
+                    for entity, paper in rows
+                )
+            paper_ids = [paper.id for _, _, paper in entity_rows]
+            collection_ids_by_paper_id = self._load_collection_ids_by_paper_id(
+                session,
+                paper_ids,
+            )
+
+        return [
+            build_structured_entity_document(
+                entity_id=entity.id,
+                entity_type=entity_type,
+                paper_id=paper.id,
+                title=paper.canonical_title,
+                normalized_name=entity.normalized_name,
+                display_name=entity.display_name,
+                metadata=dict(entity.metadata_json or {}),
+                collection_ids=collection_ids_by_paper_id.get(paper.id, []),
+                project_id=self.project_id,
+                embedding_vector=self._embed_text(
+                    " ".join(
+                        filter(
+                            None,
+                            [
+                                paper.canonical_title,
+                                entity_type,
+                                entity.normalized_name,
+                                entity.display_name,
+                                json.dumps(
+                                    entity.metadata_json or {},
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                ),
+                            ],
+                        )
+                    )
+                ),
+            )
+            for entity_type, entity, paper in entity_rows
+        ]
+
+    def _build_result_row_documents(self) -> list[dict[str, object]]:
+        with self.session_factory() as session:
+            rows = session.execute(
+                select(ResultRow, Paper, Dataset, Method, Metric)
+                .join(Paper, Paper.id == ResultRow.paper_id)
+                .outerjoin(Dataset, Dataset.id == ResultRow.dataset_id)
+                .outerjoin(Method, Method.id == ResultRow.method_id)
+                .outerjoin(Metric, Metric.id == ResultRow.metric_id)
+                .order_by(ResultRow.created_at.asc(), ResultRow.id.asc())
+            ).all()
+            paper_ids = [paper.id for _, paper, *_entities in rows]
+            collection_ids_by_paper_id = self._load_collection_ids_by_paper_id(
+                session,
+                paper_ids,
+            )
+
+        return [
+            build_result_row_document(
+                result_row_id=result.id,
+                paper_id=paper.id,
+                title=paper.canonical_title,
+                dataset_id=result.dataset_id,
+                dataset=dataset.display_name if dataset is not None else None,
+                method_id=result.method_id,
+                method=method.display_name if method is not None else None,
+                metric_id=result.metric_id,
+                metric=metric.display_name if metric is not None else None,
+                split_name=result.split_name,
+                value_numeric=result.value_numeric,
+                value_text=result.value_text,
+                comparator_text=result.comparator_text,
+                notes=result.notes,
+                collection_ids=collection_ids_by_paper_id.get(paper.id, []),
+                project_id=self.project_id,
+                embedding_vector=self._embed_text(
+                    " ".join(
+                        filter(
+                            None,
+                            [
+                                paper.canonical_title,
+                                dataset.display_name if dataset is not None else "",
+                                method.display_name if method is not None else "",
+                                metric.display_name if metric is not None else "",
+                                result.split_name or "",
+                                result.value_text or "",
+                                result.comparator_text or "",
+                                result.notes or "",
+                            ],
+                        )
+                    )
+                ),
+            )
+            for result, paper, dataset, method, metric in rows
         ]
 
     def _embed_text(self, text: str) -> list[float] | None:

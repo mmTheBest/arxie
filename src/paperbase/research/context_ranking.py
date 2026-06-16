@@ -7,12 +7,6 @@ from typing import Any
 
 from paperbase.research.task_descriptors import ResearchTaskDescriptor, task_descriptor_for
 
-_CONTEXT_ROLE_SORT_PRIORITY = {
-    "selected": 0,
-    "pinned_context": 1,
-    "backend_retrieved": 2,
-}
-
 
 def rank_context_papers(
     task_type: str,
@@ -65,11 +59,7 @@ def _rank_annotated_items(
 ) -> list[dict[str, Any]]:
     ranked = sorted(
         enumerate(items),
-        key=lambda item: (
-            _context_role_sort_priority(item[1]),
-            -float(item[1]["selection_score"]),
-            item[0],
-        ),
+        key=lambda item: (-float(item[1]["selection_score"]), item[0]),
     )
     ordered = [item for _index, item in ranked]
     if limit is None or len(ordered) <= limit:
@@ -89,11 +79,6 @@ def _rank_annotated_items(
         selected[replacement_index] = protected
         selected_ids.add(protected_id)
     return sorted(selected, key=lambda item: ordered_index[_item_identity(item)])
-
-
-def _context_role_sort_priority(item: dict[str, Any]) -> int:
-    role = item.get("context_role")
-    return _CONTEXT_ROLE_SORT_PRIORITY.get(role, 3) if isinstance(role, str) else 3
 
 
 def _annotate_item(
@@ -144,10 +129,10 @@ def _paper_features(paper: dict[str, Any]) -> dict[str, Any]:
     limitations = _list_value(paper.get("limitations"))
     findings = _list_value(paper.get("findings"))
     evidence_references = _list_value(paper.get("evidence_references"))
-    retrieved_chunks = _list_value(paper.get("retrieved_chunks"))
+    context_role = str(paper.get("context_role") or "")
     return {
+        "retrieval_match": context_role == "retrieval_match",
         "sections": len(sections),
-        "retrieved_chunks": len(retrieved_chunks),
         "methods": len(methods),
         "datasets": len(datasets),
         "metrics": len(metrics),
@@ -168,7 +153,6 @@ def _paper_features(paper: dict[str, Any]) -> dict[str, Any]:
         ),
         "direct_evidence": _direct_evidence_count(
             sections=sections,
-            retrieved_chunks=retrieved_chunks,
             results=results,
             evidence_references=evidence_references,
         ),
@@ -212,7 +196,7 @@ def _context_reason(
     role_reason = {
         "selected": "The user selected this item for the research thread.",
         "pinned_context": "The item is pinned in the active Study.",
-        "backend_retrieved": "The paper was retrieved by backend-assisted context search.",
+        "retrieval_match": "The item matched backend retrieval for the current request.",
         "collection_default": "The item was included from the active collection scope.",
         "study_source": "The item is an explicit source in the active Study.",
         "user_draft": "The item is a user draft or work source in the active Study.",
@@ -221,7 +205,8 @@ def _context_reason(
     if not signals:
         return role_reason
     return (
-        f"{role_reason} Prioritized for {descriptor.task_type} because it has {', '.join(signals)}."
+        f"{role_reason} Prioritized for {descriptor.task_type} "
+        f"because it has {', '.join(signals)}."
     )
 
 
@@ -275,11 +260,6 @@ def _item_text(item: dict[str, Any]) -> str:
             parts.extend(
                 str(section.get(key) or "") for key in ("title", "text") if section.get(key)
             )
-    for chunk in _list_value(item.get("retrieved_chunks")):
-        if isinstance(chunk, dict):
-            parts.extend(
-                str(chunk.get(key) or "") for key in ("section_title", "text") if chunk.get(key)
-            )
     return " ".join(parts).lower()
 
 
@@ -328,12 +308,10 @@ def _broad_evidence_count(groups: list[list[Any]]) -> int:
 def _direct_evidence_count(
     *,
     sections: list[Any],
-    retrieved_chunks: list[Any],
     results: list[Any],
     evidence_references: list[Any],
 ) -> int:
-    chunk_count = len(retrieved_chunks)
-    return min(6, len(sections) + chunk_count + len(results) + len(evidence_references))
+    return min(6, len(sections) + len(results) + len(evidence_references))
 
 
 def _is_draft_source(source: dict[str, Any]) -> bool:

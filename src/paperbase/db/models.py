@@ -374,6 +374,8 @@ class StudySource(Base, TimestampMixin):
     summary: Mapped[str | None] = mapped_column(Text)
     read_status: Mapped[str] = mapped_column(String(64), nullable=False, default="ready")
     error_message: Mapped[str | None] = mapped_column(Text)
+    source_size_bytes: Mapped[int | None] = mapped_column(Integer)
+    source_mtime_ns: Mapped[int | None] = mapped_column(Integer)
 
 
 class StudyBrief(Base, TimestampMixin):
@@ -451,6 +453,7 @@ class ResearchAgentStep(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     run_id: Mapped[str] = mapped_column(ForeignKey("research_agent_runs.id"), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     step_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     label: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -465,6 +468,7 @@ class StudyContextPack(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     run_id: Mapped[str] = mapped_column(ForeignKey("research_agent_runs.id"), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     collection_id: Mapped[str] = mapped_column(ForeignKey("collections.id"), nullable=False, index=True)
     workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"), index=True)
     task_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
@@ -589,6 +593,7 @@ class ResearchValidationReport(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
     run_id: Mapped[str] = mapped_column(ForeignKey("research_agent_runs.id"), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     artifact_id: Mapped[str] = mapped_column(ForeignKey("research_artifacts.id"), nullable=False, index=True)
     harness_status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     missing_evidence_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
@@ -637,3 +642,18 @@ class BackgroundJob(Base, TimestampMixin):
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class WorkerHeartbeat(Base, TimestampMixin):
+    __tablename__ = "worker_heartbeats"
+
+    worker_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    project_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    queue_name: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="polling")
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=_utc_now,
+        nullable=False,
+        index=True,
+    )

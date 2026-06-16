@@ -172,17 +172,20 @@ h4 {
   line-height: 1.55;
 }
 
-.header-status {
+.product-status-strip {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-end;
-  gap: 0.45rem;
-  min-width: 15.5rem;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 0.55rem;
+  min-width: min(36rem, 100%);
+}
+
+.status-chip-block {
+  min-width: 11rem;
   border: 1px solid #e6e8ec;
   border-radius: 8px;
   background: #fbfcfe;
-  padding: 0.7rem 0.85rem;
+  padding: 0.65rem 0.8rem;
 }
 
 .status-banner {
@@ -246,7 +249,12 @@ h4 {
   grid-template-columns: 1fr;
 }
 
-.app-shell[data-active-view="study"] .app-sidebar {
+.app-shell[data-active-view="settings"] .app-body {
+  grid-template-columns: 1fr;
+}
+
+.app-shell[data-active-view="study"] .app-sidebar,
+.app-shell[data-active-view="settings"] .app-sidebar {
   display: none;
 }
 
@@ -358,6 +366,67 @@ h4 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.library-readiness-panel {
+  margin-bottom: 1rem;
+}
+
+.library-prep-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.library-readiness-table {
+  display: grid;
+  gap: 0.4rem;
+  overflow-x: auto;
+}
+
+.library-table-header,
+.library-table-row {
+  display: grid;
+  grid-template-columns: 4rem minmax(18rem, 1fr) 7.5rem 9rem 7rem;
+  gap: 0.65rem;
+  align-items: center;
+  min-width: 48rem;
+}
+
+.library-table-header {
+  color: var(--paperbase-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.library-table-row {
+  border: 1px solid var(--paperbase-line);
+  border-radius: 8px;
+  background: var(--paperbase-panel-soft);
+  padding: 0.65rem;
+}
+
+.library-table-row[data-status="needs_attention"] {
+  border-color: rgba(255, 77, 79, 0.38);
+  background: #fff7f7;
+}
+
+.table-checkbox-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.library-paper-title-cell {
+  display: grid;
+  gap: 0.25rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .project-open-panel {
@@ -753,7 +822,7 @@ select:focus {
 
 .notebook-chat-panel {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   gap: 0.85rem;
 }
 
@@ -768,6 +837,22 @@ select:focus {
 .source-search-form {
   display: grid;
   gap: 0.55rem;
+}
+
+.study-workflow-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.workflow-step {
+  border: 1px solid #d7e3f4;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #344054;
+  padding: 0.42rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .paper-source-list,
@@ -937,6 +1022,35 @@ select:focus {
   margin-top: 0.9rem;
 }
 
+.settings-summary {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.settings-provider-panel {
+  margin-top: 1rem;
+}
+
+.provider-guidance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.provider-guidance-item {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid var(--paperbase-line);
+  border-radius: 8px;
+  background: var(--paperbase-panel-soft);
+  padding: 0.85rem;
+  color: var(--paperbase-muted);
+}
+
+.provider-guidance-item strong {
+  color: var(--paperbase-ink);
+}
+
 .pill-row {
   display: flex;
   flex-wrap: wrap;
@@ -1050,7 +1164,8 @@ select:focus {
   }
 
   .app-shell[data-active-view="library"] .app-body,
-  .app-shell[data-active-view="study"] .app-body {
+  .app-shell[data-active-view="study"] .app-body,
+  .app-shell[data-active-view="settings"] .app-body {
     grid-template-columns: 1fr;
   }
 
@@ -1071,6 +1186,7 @@ select:focus {
   .research-layout,
   .library-grid,
   .settings-grid,
+  .provider-guidance-grid,
   .card-grid,
   .collection-card-actions {
     grid-template-columns: 1fr;
@@ -1090,8 +1206,13 @@ select:focus {
     gap: 1rem;
   }
 
-  .header-status {
-    align-items: flex-start;
+  .product-status-strip {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  .status-chip-block {
     min-width: 0;
   }
 

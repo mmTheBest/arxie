@@ -46,15 +46,6 @@ def _error_response(
     )
 
 
-def _validation_error_details(exc: RequestValidationError) -> list[dict[str, Any]]:
-    details: list[dict[str, Any]] = []
-    for item in exc.errors():
-        detail = dict(item)
-        detail.pop("input", None)
-        details.append(detail)
-    return details
-
-
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PaperbaseAPIError)
     async def _paperbase_api_error_handler(  # noqa: ANN202
@@ -79,7 +70,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=422,
             error="validation_error",
             message="Invalid request payload.",
-            details=_validation_error_details(exc),
+            details=[_redact_validation_error(item) for item in exc.errors()],
         )
 
     @app.exception_handler(Exception)
@@ -93,3 +84,15 @@ def register_exception_handlers(app: FastAPI) -> None:
             error="internal_error",
             message="Internal server error.",
         )
+
+
+def _redact_validation_error(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _redact_validation_error(item)
+            for key, item in value.items()
+            if key != "input"
+        }
+    if isinstance(value, list):
+        return [_redact_validation_error(item) for item in value]
+    return value

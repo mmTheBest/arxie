@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from paperbase.db.repositories import BackgroundJobRepository
+from paperbase.db.repositories import BackgroundJobRepository, WorkerHeartbeatRepository
 from paperbase.extract.runner import CollectionExtractionRunner
 from paperbase.ingest.local_library import import_local_pdf_directory
 from paperbase.ingest.provider_identifiers import (
@@ -43,7 +44,8 @@ class PaperbaseWorker:
         download_cache_ttl_seconds: int = 86400,
         stale_running_seconds: float = 900.0,
         project_id: str | None = None,
-        backend_retrieval_enabled: bool = False,
+        worker_id: str | None = None,
+        queue_name: str | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.search_backend = search_backend
@@ -60,9 +62,14 @@ class PaperbaseWorker:
         self.download_cache_ttl_seconds = download_cache_ttl_seconds
         self.stale_running_seconds = stale_running_seconds
         self.project_id = project_id
-        self.backend_retrieval_enabled = backend_retrieval_enabled
+        self.worker_id = worker_id or f"worker-{uuid4()}"
+        self.queue_name = queue_name
 
     def process_next_job(self) -> str | None:
+        self._record_heartbeat(status="polling")
+        return self._process_next_database_job()
+
+    def _process_next_database_job(self) -> str | None:
         self.recover_stale_running_jobs()
         with self.session_factory() as session:
             repository = BackgroundJobRepository(session)
@@ -72,9 +79,10 @@ class PaperbaseWorker:
         return self._execute_claimed_job(job)
 
     def process_next_dispatched_job(self, timeout_seconds: float | None = None) -> str | None:
+        self._record_heartbeat(status="polling")
         self.recover_stale_running_jobs()
         if self.job_consumer is None:
-            return self.process_next_job()
+            return self._process_next_database_job()
         job_id = self.job_consumer.receive(timeout_seconds)
         if job_id is None:
             return None
@@ -84,6 +92,15 @@ class PaperbaseWorker:
             if job is None:
                 return None
         return self._execute_claimed_job(job)
+
+    def _record_heartbeat(self, *, status: str) -> None:
+        with self.session_factory() as session:
+            WorkerHeartbeatRepository(session).record(
+                worker_id=self.worker_id,
+                project_id=self.project_id,
+                queue_name=self.queue_name,
+                status=status,
+            )
 
     def recover_stale_running_jobs(self) -> list[str]:
         with self.session_factory() as session:
@@ -103,6 +120,7 @@ class PaperbaseWorker:
         return recovered_ids
 
     def _execute_claimed_job(self, job) -> str:  # noqa: ANN001
+        self._record_heartbeat(status="running")
         job_id = job.id
         job_type = job.job_type
         payload = dict(job.payload_json or {})
@@ -115,12 +133,18 @@ class PaperbaseWorker:
                     artifact_id=str(payload["artifact_id"]),
                     error_message=str(exc),
                 )
-            self._handle_failed_job(job_id=job_id, attempt_count=job.attempt_count, error_message=str(exc))
+            self._handle_failed_job(
+                job_id=job_id,
+                attempt_count=job.attempt_count,
+                error_message=str(exc),
+            )
+            self._record_heartbeat(status="polling")
             return job_id
 
         with self.session_factory() as session:
             repository = BackgroundJobRepository(session)
             repository.mark_completed(job_id, result_json=result_json)
+        self._record_heartbeat(status="polling")
         return job_id
 
     def _handle_failed_job(self, *, job_id: str, attempt_count: int, error_message: str) -> None:
@@ -275,7 +299,6 @@ class PaperbaseWorker:
             search_backend=self.search_backend,
             embedding_provider=self.embedding_provider,
             project_id=self.project_id,
-            backend_retrieval_enabled=self.backend_retrieval_enabled,
         ).run(payload)
         return {
             "run_id": result.run_id,

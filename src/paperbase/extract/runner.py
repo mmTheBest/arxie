@@ -8,11 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from paperbase.db.models import CollectionPaper, ExtractionRun, Section
-from paperbase.extract.pipeline import ExtractionClient, PaperExtractionPipeline
-from paperbase.extract.readiness import (
-    current_paper_source_content_hash,
-    evaluate_extraction_run_compatibility,
+from paperbase.extract.freshness import (
+    ExtractionFreshness,
+    build_extraction_freshness,
+    extraction_run_matches_freshness,
 )
+from paperbase.extract.pipeline import ExtractionClient, PaperExtractionPipeline
+from paperbase.parsing.files import load_active_pdf_file
 from paperbase.parsing.pipeline import PaperParsePipeline
 
 
@@ -61,17 +63,28 @@ class CollectionExtractionRunner:
         skipped: list[str] = []
 
         for paper_id in target_paper_ids:
-            if self._has_current_completed_extraction(
-                paper_id=paper_id,
-                extraction_profile_id=extraction_profile_id,
-                prompt_version=prompt_version,
-                schema_version=schema_version,
-            ):
+            try:
+                if not self._has_current_parse(paper_id):
+                    self.parse_pipeline.parse_paper(paper_id)
+
+                freshness = self._build_freshness(
+                    paper_id=paper_id,
+                    schema_payload=schema_payload,
+                )
+            except ValueError:
                 skipped.append(paper_id)
                 continue
 
-            if not self._has_parsed_sections(paper_id):
-                self.parse_pipeline.parse_paper(paper_id)
+            if self._has_completed_extraction(
+                paper_id,
+                extraction_profile_id=extraction_profile_id,
+                model_name=self._model_name(),
+                prompt_version=prompt_version,
+                schema_version=schema_version,
+                freshness=freshness,
+            ):
+                skipped.append(paper_id)
+                continue
 
             try:
                 result = self.pipeline.extract_paper(
@@ -113,18 +126,39 @@ class CollectionExtractionRunner:
         with self.session_factory() as session:
             return list(session.execute(statement).scalars().all())
 
-    def _has_parsed_sections(self, paper_id: str) -> bool:
+    def _has_current_parse(self, paper_id: str) -> bool:
         with self.session_factory() as session:
-            statement = select(Section.id).where(Section.paper_id == paper_id).limit(1)
-            return session.execute(statement).scalar_one_or_none() is not None
+            file_record = load_active_pdf_file(session, paper_id=paper_id)
+            if file_record is None or file_record.parser_status != "parsed":
+                return False
 
-    def _has_current_completed_extraction(
+            section_id = session.execute(
+                select(Section.id).where(Section.paper_id == paper_id).limit(1)
+            ).scalar_one_or_none()
+            return section_id is not None
+
+    def _build_freshness(
         self,
         *,
         paper_id: str,
+        schema_payload: dict[str, object],
+    ) -> ExtractionFreshness:
+        with self.session_factory() as session:
+            return build_extraction_freshness(
+                session,
+                paper_id=paper_id,
+                schema_payload=schema_payload,
+            )
+
+    def _has_completed_extraction(
+        self,
+        paper_id: str,
+        *,
         extraction_profile_id: str | None,
+        model_name: str,
         prompt_version: str,
         schema_version: str,
+        freshness: ExtractionFreshness,
     ) -> bool:
         with self.session_factory() as session:
             statement = (
@@ -132,19 +166,22 @@ class CollectionExtractionRunner:
                 .where(
                     ExtractionRun.paper_id == paper_id,
                     ExtractionRun.status == "completed",
+                    ExtractionRun.model_name == model_name,
+                    ExtractionRun.prompt_version == prompt_version,
+                    ExtractionRun.schema_version == schema_version,
                 )
-                .order_by(ExtractionRun.updated_at.desc(), ExtractionRun.created_at.desc())
             )
+            if extraction_profile_id is None:
+                statement = statement.where(ExtractionRun.extraction_profile_id.is_(None))
+            else:
+                statement = statement.where(
+                    ExtractionRun.extraction_profile_id == extraction_profile_id
+                )
             runs = session.execute(statement).scalars().all()
-            if not runs:
-                return False
+            return any(
+                extraction_run_matches_freshness(run, freshness=freshness)
+                for run in runs
+            )
 
-            source_content_hash = current_paper_source_content_hash(session, paper_id=paper_id)
-            latest_run = runs[0]
-            return evaluate_extraction_run_compatibility(
-                latest_run,
-                extraction_profile_id=extraction_profile_id,
-                prompt_version=prompt_version,
-                schema_version=schema_version,
-                source_content_hash=source_content_hash,
-            ).is_current
+    def _model_name(self) -> str:
+        return getattr(self.pipeline.client, "model_name", self.pipeline.client.__class__.__name__)

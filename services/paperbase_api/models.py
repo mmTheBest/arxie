@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import math
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, ConfigDict, Field
 
 from paperbase.version import get_version
 
@@ -35,6 +33,97 @@ class ReadinessResponse(BaseModel):
     service: str = "paperbase-api"
     version: str = Field(default_factory=get_version)
     dependencies: list[DependencyStatusResponse] = Field(default_factory=list)
+
+
+class ModelProviderStatusResponse(BaseModel):
+    provider: str
+    model_name: str | None = None
+    configured: bool
+    usable: bool
+    missing_setup: list[str] = Field(default_factory=list)
+    setup_hints: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    command: str | None = None
+    command_available: bool | None = None
+    allow_agentic_cli: bool = False
+    login_status: str = "not_applicable"
+    login_status_checked: bool = False
+    login_status_command: str | None = None
+
+
+class WorkerModelProviderStatusResponse(BaseModel):
+    provider: str | None = None
+    matches_api_provider: bool | None = None
+    source: str
+    setup_hints: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WorkerHeartbeatStatusResponse(BaseModel):
+    heartbeat_status: Literal["online", "stale", "unavailable", "unknown_project"]
+    expected_runtime_scope: Literal["default", "project", "unknown_project"]
+    active_worker_count: int = 0
+    stale_worker_count: int = 0
+    latest_seen_seconds_ago: int | None = None
+    heartbeat_stale_after_seconds: int
+    setup_hints: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ProjectDataPathStatusResponse(BaseModel):
+    runtime_data_scope: Literal["default", "project", "unknown_project"]
+    project_id_present: bool
+    project_found: bool | None = None
+    registry_available: bool
+    registry_file_exists: bool
+    registered_project_count: int = 0
+    database_backend: str
+    hosted_mode: bool
+    host_path_import_policy: Literal[
+        "local_unrestricted",
+        "hosted_allowlisted",
+        "hosted_disabled",
+    ]
+    allowed_root_count: int = 0
+    setup_hints: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class RuntimeStatusResponseData(BaseModel):
+    service: str = "paperbase-api"
+    version: str = Field(default_factory=get_version)
+    model_provider: ModelProviderStatusResponse
+    worker_model_provider: WorkerModelProviderStatusResponse
+    worker_heartbeat: WorkerHeartbeatStatusResponse
+    project_data_paths: ProjectDataPathStatusResponse
+
+
+class RuntimeStatusResponse(BaseModel):
+    data: RuntimeStatusResponseData
+
+
+class RuntimeModelProviderSmokeResponseData(BaseModel):
+    status: Literal["success", "not_configured", "failed"]
+    grade: Literal[
+        "passed",
+        "missing_setup",
+        "provider_disabled",
+        "client_factory_missing",
+        "client_factory_failed",
+        "provider_call_failed",
+    ]
+    grade_label: str
+    provider: str
+    model_name: str | None = None
+    message: str
+    next_actions: list[str] = Field(default_factory=list)
+    missing_setup: list[str] = Field(default_factory=list)
+    setup_hints: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class RuntimeModelProviderSmokeResponse(BaseModel):
+    data: RuntimeModelProviderSmokeResponseData
 
 
 class ProjectOpenRequest(BaseModel):
@@ -492,6 +581,81 @@ class WorkspacesResponse(BaseModel):
     data: list[WorkspaceSummaryResponse]
 
 
+class StudyBriefItemRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str = Field(..., min_length=1, max_length=255)
+    text: str = Field(..., min_length=1, max_length=5000)
+
+
+StudyBriefSourceId = Annotated[str, Field(min_length=1, max_length=36)]
+
+
+class StudyBriefPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    aim: str = Field(default="", max_length=10000)
+    hypothesis: str = Field(default="", max_length=10000)
+    constraints: list[StudyBriefItemRequest] = Field(default_factory=list, max_length=50)
+    confirmed_decisions: list[StudyBriefItemRequest] = Field(default_factory=list, max_length=50)
+    open_risks: list[StudyBriefItemRequest] = Field(default_factory=list, max_length=50)
+    linked_source_ids: list[StudyBriefSourceId] = Field(default_factory=list, max_length=200)
+
+
+class StudyBriefUpdateRequest(BaseModel):
+    expected_version: int = Field(..., ge=0)
+    brief: StudyBriefPayload
+
+
+class StudyBriefProposalChange(BaseModel):
+    field: Literal[
+        "aim",
+        "hypothesis",
+        "constraints",
+        "confirmed_decisions",
+        "open_risks",
+        "linked_source_ids",
+    ]
+    before: Any
+    after: Any
+
+
+class StudyBriefProposalResponse(BaseModel):
+    workspace_id: str
+    artifact_id: str
+    artifact_type: str
+    artifact_title: str
+    current_version: int
+    proposed_brief: StudyBriefPayload
+    changes: list[StudyBriefProposalChange] = Field(default_factory=list)
+
+
+class SingleStudyBriefProposalResponse(BaseModel):
+    data: StudyBriefProposalResponse
+
+
+class StudyBriefProposalAcceptRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    artifact_id: str = Field(..., min_length=1, max_length=36)
+    expected_version: int = Field(..., ge=0)
+    brief: StudyBriefPayload
+
+
+class StudyBriefResponse(BaseModel):
+    id: str | None = None
+    workspace_id: str
+    brief: StudyBriefPayload
+    version: int
+    updated_by: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class SingleStudyBriefResponse(BaseModel):
+    data: StudyBriefResponse
+
+
 StudySourceType = Literal["text", "code_path", "draft_path", "results_path"]
 
 
@@ -501,7 +665,30 @@ class StudySourceCreateRequest(BaseModel):
     source_type: StudySourceType
     title: str = Field(..., min_length=1, max_length=255)
     path: str | None = Field(None, min_length=1, max_length=2000)
-    content: str | None = Field(None, min_length=1, max_length=20000)
+    content: str | None = Field(None, min_length=1)
+
+
+class ArtifactFileEntryResponse(BaseModel):
+    name: str
+    relative_path: str
+    path: str
+    entry_type: Literal["directory", "file"]
+    source_type: StudySourceType | None = None
+    size_bytes: int | None = None
+    source_mtime_ns: int | None = None
+    selectable: bool = False
+
+
+class ArtifactFolderListingResponse(BaseModel):
+    root_path: str
+    relative_path: str
+    entries: list[ArtifactFileEntryResponse] = Field(default_factory=list)
+    truncated: bool = False
+    ignored_count: int = 0
+
+
+class SingleArtifactFolderListingResponse(BaseModel):
+    data: ArtifactFolderListingResponse
 
 
 class StudySourceResponse(BaseModel):
@@ -514,6 +701,9 @@ class StudySourceResponse(BaseModel):
     summary: str | None = None
     read_status: str
     error_message: str | None = None
+    source_size_bytes: int | None = None
+    source_mtime_ns: int | None = None
+    is_stale: bool = False
 
 
 class SingleStudySourceResponse(BaseModel):
@@ -522,101 +712,6 @@ class SingleStudySourceResponse(BaseModel):
 
 class StudySourcesResponse(BaseModel):
     data: list[StudySourceResponse]
-
-
-STUDY_BRIEF_MAX_STRING_LENGTH = 4000
-STUDY_BRIEF_MAX_LIST_ITEMS = 64
-STUDY_BRIEF_MAX_DICT_FIELDS = 32
-STUDY_BRIEF_MAX_DEPTH = 6
-STUDY_BRIEF_MAX_KEY_LENGTH = 128
-
-
-def _study_brief_validation_error(message: str) -> PydanticCustomError:
-    return PydanticCustomError("study_brief_payload_invalid", message)
-
-
-def _validate_study_brief_value(
-    value: Any,
-    *,
-    depth: int,
-) -> None:
-    if depth > STUDY_BRIEF_MAX_DEPTH:
-        raise _study_brief_validation_error(
-            f"Study Brief payload exceeds maximum nesting depth of {STUDY_BRIEF_MAX_DEPTH}."
-        )
-    if value is None or isinstance(value, bool | int):
-        return
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise _study_brief_validation_error("Study Brief number values must be finite.")
-        return
-    if isinstance(value, str):
-        if len(value) > STUDY_BRIEF_MAX_STRING_LENGTH:
-            raise _study_brief_validation_error(
-                "Study Brief string values must be "
-                f"{STUDY_BRIEF_MAX_STRING_LENGTH} characters or fewer."
-            )
-        return
-    if isinstance(value, list):
-        if len(value) > STUDY_BRIEF_MAX_LIST_ITEMS:
-            raise _study_brief_validation_error(
-                "Study Brief lists must contain "
-                f"{STUDY_BRIEF_MAX_LIST_ITEMS} items or fewer."
-            )
-        for item in value:
-            _validate_study_brief_value(item, depth=depth + 1)
-        return
-    if isinstance(value, dict):
-        if len(value) > STUDY_BRIEF_MAX_DICT_FIELDS:
-            raise _study_brief_validation_error(
-                "Study Brief objects must contain "
-                f"{STUDY_BRIEF_MAX_DICT_FIELDS} fields or fewer."
-            )
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise _study_brief_validation_error("Study Brief object keys must be strings.")
-            if not key or len(key) > STUDY_BRIEF_MAX_KEY_LENGTH:
-                raise _study_brief_validation_error(
-                    "Study Brief object keys must be between 1 and "
-                    f"{STUDY_BRIEF_MAX_KEY_LENGTH} characters."
-                )
-            _validate_study_brief_value(item, depth=depth + 1)
-        return
-    raise _study_brief_validation_error(
-        "Study Brief values must be JSON-compatible scalars, lists, or objects."
-    )
-
-
-class StudyBriefUpsertRequest(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-
-    brief: dict[str, Any] = Field(default_factory=dict)
-    updated_by: str = Field(
-        default="local-user",
-        min_length=1,
-        max_length=128,
-        pattern=r"^[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F]+$",
-    )
-
-    @field_validator("brief")
-    @classmethod
-    def _validate_brief(cls, value: dict[str, Any]) -> dict[str, Any]:
-        _validate_study_brief_value(value, depth=0)
-        return value
-
-
-class StudyBriefResponse(BaseModel):
-    id: str | None = None
-    workspace_id: str
-    brief: dict[str, Any] = Field(default_factory=dict)
-    version: int
-    updated_by: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
-
-
-class SingleStudyBriefResponse(BaseModel):
-    data: StudyBriefResponse
 
 
 ResearchArtifactType = Literal[
@@ -736,6 +831,7 @@ class ResearchArtifactsResponse(BaseModel):
 class ResearchAgentStepResponse(BaseModel):
     id: str
     run_id: str
+    attempt_number: int = 1
     ordinal: int
     step_type: str
     label: str
@@ -748,13 +844,16 @@ class ResearchAgentStepResponse(BaseModel):
 class StudyContextPackResponse(BaseModel):
     id: str
     run_id: str
+    attempt_number: int = 1
     collection_id: str
     workspace_id: str | None = None
     task_type: str
     cache_key: str | None = None
     context_summary: dict[str, Any] = Field(default_factory=dict)
     intelligence_layers_summary: dict[str, Any] = Field(default_factory=dict)
-    context_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    retrieval_summary: dict[str, Any] = Field(default_factory=dict)
+    context_materialization_summary: dict[str, Any] = Field(default_factory=dict)
+    selection_diagnostics: dict[str, Any] = Field(default_factory=dict)
     selected_item_counts: dict[str, Any] = Field(default_factory=dict)
     readiness_warnings: list[str] = Field(default_factory=list)
 
@@ -762,12 +861,20 @@ class StudyContextPackResponse(BaseModel):
 class ResearchValidationReportResponse(BaseModel):
     id: str
     run_id: str
+    attempt_number: int = 1
     artifact_id: str
     harness_status: str
     missing_evidence: list[str] = Field(default_factory=list)
     unsupported_claims: list[str] = Field(default_factory=list)
     readiness_blockers: list[str] = Field(default_factory=list)
+    validation_issues: list[dict[str, Any]] = Field(default_factory=list)
+    validation_issue_counts: dict[str, Any] = Field(default_factory=dict)
     support_label_counts: dict[str, Any] = Field(default_factory=dict)
+    recommendation_health: dict[str, Any] = Field(default_factory=dict)
+    reference_integrity: dict[str, int] = Field(default_factory=dict)
+    support_screening: dict[str, Any] = Field(default_factory=dict)
+    task_evidence_roles: dict[str, list[str]] = Field(default_factory=dict)
+    task_quality: dict[str, Any] = Field(default_factory=dict)
     report: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -930,6 +1037,55 @@ class CollectionSummaryResultRowResponse(BaseModel):
     value_text: str | None = None
 
 
+class PaperExtractionQualityResponse(BaseModel):
+    paper_id: str
+    paper_title: str
+    structured_entity_count: int
+    entity_counts: dict[str, int] = Field(default_factory=dict)
+    evidence_span_count: int
+    anchored_evidence_span_count: int
+    unresolved_evidence_span_count: int
+    evidence_span_anchor_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    latest_completed_extraction_run_id: str | None = None
+    extraction_profile_id: str | None = None
+    model_name: str | None = None
+    prompt_version: str | None = None
+    schema_version: str | None = None
+    freshness_status: str
+    stale_reasons: list[str] = Field(default_factory=list)
+    missing_structured_evidence: list[str] = Field(default_factory=list)
+
+
+class CollectionExtractionQualityResponse(BaseModel):
+    paper_count: int
+    papers_with_completed_extraction_count: int
+    fresh_paper_count: int
+    stale_paper_count: int
+    missing_extraction_paper_count: int
+    total_structured_entity_count: int
+    total_evidence_span_count: int
+    anchored_evidence_span_count: int
+    unresolved_evidence_span_count: int
+    missing_structured_evidence: list[str] = Field(default_factory=list)
+    papers: list[PaperExtractionQualityResponse] = Field(default_factory=list)
+
+
+class CollectionExtractionRecoveryActionResponse(BaseModel):
+    action_id: str
+    action_type: Literal["parse", "extract", "review_evidence"]
+    can_queue_job: bool
+    priority: int
+    label: str
+    description: str
+    paper_count: int
+    paper_ids: list[str] = Field(default_factory=list)
+    truncated: bool = False
+    stale_reasons: list[str] = Field(default_factory=list)
+    missing_structured_evidence: list[str] = Field(default_factory=list)
+    unresolved_evidence_span_count: int = 0
+    unresolved_evidence_span_samples: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class CollectionStructuredSummaryResponseData(BaseModel):
     collection_id: str
     paper_count: int
@@ -949,6 +1105,10 @@ class CollectionStructuredSummaryResponseData(BaseModel):
     engineering_tricks: list[CollectionSummaryEngineeringTrickResponse]
     research_design_elements: list[CollectionSummaryResearchDesignElementResponse]
     top_result_rows: list[CollectionSummaryResultRowResponse]
+    extraction_quality: CollectionExtractionQualityResponse
+    extraction_recovery_actions: list[CollectionExtractionRecoveryActionResponse] = (
+        Field(default_factory=list)
+    )
 
 
 class CollectionStructuredSummaryResponse(BaseModel):

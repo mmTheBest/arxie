@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,7 +35,7 @@ class PaperbaseResearchAgentRunner:
         search_backend: object | None = None,
         embedding_provider: object | None = None,
         project_id: str | None = None,
-        backend_retrieval_enabled: bool = False,
+        entailment_grader: Callable[..., Any] | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.model_name = model_name
@@ -43,7 +44,7 @@ class PaperbaseResearchAgentRunner:
         self.search_backend = search_backend
         self.embedding_provider = embedding_provider
         self.project_id = project_id
-        self.backend_retrieval_enabled = backend_retrieval_enabled
+        self.entailment_grader = entailment_grader
 
     def run(self, payload: dict[str, Any]) -> ResearchAgentRunResult:
         with self.session_factory() as session:
@@ -56,7 +57,7 @@ class PaperbaseResearchAgentRunner:
                 search_backend=self.search_backend,
                 embedding_provider=self.embedding_provider,
                 project_id=self.project_id,
-                backend_retrieval_enabled=self.backend_retrieval_enabled,
+                entailment_grader=self.entailment_grader,
             ).execute(session, runtime_payload)
 
         return ResearchAgentRunResult(
