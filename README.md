@@ -156,19 +156,19 @@ Readiness: http://localhost:8080/readyz
 Start infrastructure:
 
 ```bash
-docker compose -f infra/docker-compose.paperbase.yml up -d postgres elasticsearch minio redis
+docker compose -f infra/docker-compose.paperbase.yml up -d arxie-postgres arxie-elasticsearch arxie-minio arxie-redis
 ```
 
 Apply schema migrations:
 
 ```bash
-docker compose -f infra/docker-compose.paperbase.yml run --rm paperbase-migrate
+docker compose -f infra/docker-compose.paperbase.yml run --rm arxie-migrate
 ```
 
 Start the API and worker:
 
 ```bash
-docker compose -f infra/docker-compose.paperbase.yml up -d paperbase-api paperbase-worker
+docker compose -f infra/docker-compose.paperbase.yml up -d arxie-api arxie-worker
 ```
 
 Open:

@@ -1,8 +1,8 @@
-# Paperbase Reindex Runbook
+# Arxie Reindex Runbook
 
 ## Purpose
 
-Use this runbook to rebuild or validate the Paperbase search/read-model contract.
+Use this runbook to rebuild or validate the Arxie search/read-model contract.
 
 Important current-state note: reindexing is now worker-backed. The API should
 enqueue a search job, and the worker should execute the actual index rebuild.

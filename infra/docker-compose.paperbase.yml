@@ -1,26 +1,26 @@
-name: paperbase-local
+name: arxie-local
 
 services:
-  paperbase-migrate:
+  arxie-migrate:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: paperbase-migrate
+    container_name: arxie-migrate
     env_file:
       - env/paperbase.env
     depends_on:
-      postgres:
+      arxie-postgres:
         condition: service_healthy
-    command: ["paperbase-db", "upgrade"]
+    command: ["arxie-db", "upgrade"]
     volumes:
       - ../src:/app/src:ro
       - ../services:/app/services:ro
 
-  paperbase-api:
+  arxie-api:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: paperbase-api
+    container_name: arxie-api
     env_file:
       - env/paperbase.env
     environment:
@@ -35,27 +35,27 @@ services:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       CODEX_HOME: ${CODEX_HOME:-}
     depends_on:
-      paperbase-migrate:
+      arxie-migrate:
         condition: service_completed_successfully
-      postgres:
+      arxie-postgres:
         condition: service_healthy
-      minio:
+      arxie-minio:
         condition: service_started
-      redis:
+      arxie-redis:
         condition: service_started
-    command: ["paperbase-api"]
+    command: ["arxie-api"]
     ports:
       - "8080:8080"
     volumes:
       - ../src:/app/src:ro
       - ../services:/app/services:ro
-      - paperbase-app-data:/app/data
+      - arxie-app-data:/app/data
 
-  paperbase-worker:
+  arxie-worker:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: paperbase-worker
+    container_name: arxie-worker
     env_file:
       - env/paperbase.env
     environment:
@@ -70,48 +70,48 @@ services:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       CODEX_HOME: ${CODEX_HOME:-}
     depends_on:
-      paperbase-migrate:
+      arxie-migrate:
         condition: service_completed_successfully
-      postgres:
+      arxie-postgres:
         condition: service_healthy
-      minio:
+      arxie-minio:
         condition: service_started
-      redis:
+      arxie-redis:
         condition: service_started
-    command: ["paperbase-worker"]
+    command: ["arxie-worker"]
     volumes:
       - ../src:/app/src:ro
       - ../services:/app/services:ro
-      - paperbase-app-data:/app/data
+      - arxie-app-data:/app/data
 
-  postgres:
+  arxie-postgres:
     image: postgres:17
-    container_name: paperbase-postgres
+    container_name: arxie-postgres
     env_file:
       - env/postgres.env
     ports:
       - "5432:5432"
     volumes:
-      - paperbase-postgres-data:/var/lib/postgresql/data
+      - arxie-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U paperbase -d paperbase"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  elasticsearch:
+  arxie-elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.6
-    container_name: paperbase-elasticsearch
+    container_name: arxie-elasticsearch
     env_file:
       - env/elasticsearch.env
     ports:
       - "9200:9200"
     volumes:
-      - paperbase-elasticsearch-data:/usr/share/elasticsearch/data
+      - arxie-elasticsearch-data:/usr/share/elasticsearch/data
 
-  minio:
+  arxie-minio:
     image: minio/minio:latest
-    container_name: paperbase-minio
+    container_name: arxie-minio
     command: server /data --console-address ":9001"
     env_file:
       - env/minio.env
@@ -119,21 +119,21 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - paperbase-minio-data:/data
+      - arxie-minio-data:/data
 
-  redis:
+  arxie-redis:
     image: redis:8
-    container_name: paperbase-redis
+    container_name: arxie-redis
     env_file:
       - env/redis.env
     ports:
       - "6379:6379"
     volumes:
-      - paperbase-redis-data:/data
+      - arxie-redis-data:/data
 
 volumes:
-  paperbase-app-data:
-  paperbase-postgres-data:
-  paperbase-elasticsearch-data:
-  paperbase-minio-data:
-  paperbase-redis-data:
+  arxie-app-data:
+  arxie-postgres-data:
+  arxie-elasticsearch-data:
+  arxie-minio-data:
+  arxie-redis-data:

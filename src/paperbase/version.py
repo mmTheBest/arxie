@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-PACKAGE_NAME = "academic-research-assistant"
+PACKAGE_NAME = "arxie"
 DEFAULT_VERSION = "0.2.0"
 
 

@@ -1,4 +1,13 @@
-.PHONY: paperbase-api paperbase-worker paperbase-db-upgrade paperbase-compose-config
+.PHONY: arxie-api arxie-worker arxie-db-upgrade paperbase-api paperbase-worker paperbase-db-upgrade paperbase-compose-config
+
+arxie-api:
+	.venv/bin/arxie-api
+
+arxie-worker:
+	.venv/bin/arxie-worker
+
+arxie-db-upgrade:
+	.venv/bin/arxie-db upgrade
 
 paperbase-api:
 	.venv/bin/paperbase-api

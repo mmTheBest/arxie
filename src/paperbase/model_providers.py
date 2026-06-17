@@ -411,7 +411,7 @@ def describe_worker_model_provider_status(
             if matches_api_provider
             else [
                 (
-                    "Start the API and paperbase-worker with matching "
+                    "Start the Arxie API and worker with matching "
                     "PAPERBASE_MODEL_PROVIDER settings, or update the expected "
                     "worker provider diagnostic after changing worker config."
                 )

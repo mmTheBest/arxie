@@ -1,4 +1,7 @@
-"""FastAPI app for the local-first Paperbase API service."""
+"""FastAPI app for the Arxie API service.
+
+The underlying query/runtime layer is Paperbase.
+"""
 
 from __future__ import annotations
 
@@ -55,7 +58,10 @@ def create_app(
     dependency_checker: object | None = None,
     project_registry: ProjectRegistry | None = None,
 ) -> FastAPI:
-    """Create the Paperbase API application."""
+    """Create the Arxie API application.
+
+The underlying corpus engine is Paperbase.
+"""
 
     configure_logging_from_env()
     config = load_paperbase_config()
@@ -80,10 +86,10 @@ def create_app(
     )
 
     app = FastAPI(
-        title="Paperbase API",
-        summary="Local-first corpus API for papers, fulltext, figures, and comparisons.",
+        title="Arxie API",
+        summary="Local-first research API for papers, fulltext, figures, and comparisons.",
         description=(
-            "Internal platform API for querying the Paperbase corpus. "
+            "Public Arxie API surface backed by the Paperbase corpus. "
             "This service exposes canonical paper records, parsed fulltext, "
             "figures, structured result comparison slices, curated collections, "
             "and user annotations."

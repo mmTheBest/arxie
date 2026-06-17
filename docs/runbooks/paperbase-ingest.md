@@ -1,9 +1,9 @@
-# Paperbase Ingest Runbook
+# Arxie Ingest Runbook
 
 ## Purpose
 
-Use this runbook to turn a local folder of PDFs into a Paperbase collection that
-Arxie can search, inspect, extract from, and use as field-aware Study context.
+Use this runbook to turn a local folder of PDFs into an Arxie collection (backed by the
+Paperbase engine) for Study workflows.
 
 For a normal single-user local workflow, prefer the browser workspace at `/app`
 first: use **Upload PDF Folder**, then **Queue Parse**, then **Queue Extraction**.
@@ -22,8 +22,8 @@ different corpus, use this placeholder source folder:
 Use this as a generic local corpus example for testing Library ingest, parse,
 extraction, Study chat, and research-intelligence behavior. Treat it as a source
 folder, not as parsed state. The parsed database may live elsewhere depending on
-the active Paperbase DB URL or opened project, so verify the runtime database
-before assuming the corpus is already processed.
+the active Arxie DB URL (Paperbase schema) or opened project, so verify the runtime
+database before assuming the corpus is already processed.
 
 Current maintained expectation, as of 2026-05-30:
 
@@ -47,14 +47,13 @@ network or sandbox attempts. Verify latest extraction state per paper before
 deciding whether the corpus needs to be reprocessed.
 
 When this corpus is re-imported, re-parsed, re-extracted, or used as new
-release/test evidence, update this runbook and
-`docs/architecture/03-ingest-and-extraction.md` in the same change.
+release/test evidence, update this runbook in the same change.
 
 ## Prerequisites
 
 - work from the clean dev worktree
 - `.venv` exists
-- the Paperbase DB URL is set or you accept the default `sqlite:///data/paperbase.db`
+- the Arxie DB URL is set or you accept the default `sqlite:///data/paperbase.db`
 - if you plan to run extraction, `OPENAI_API_KEY` must be available in the environment
 
 ## 1. Initialize The Database
@@ -199,7 +198,7 @@ execution should go through the queued API + worker path.
 
 ## 7. Verify The Collection
 
-Run the Paperbase suite:
+Run the Arxie suite:
 
 ```bash
 .venv/bin/python -m pytest tests/paperbase -q

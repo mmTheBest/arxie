@@ -21,4 +21,4 @@ RUN mkdir -p /app/data/chroma /app/data/logs
 
 EXPOSE 8080
 
-CMD ["paperbase-api"]
+CMD ["arxie-api"]

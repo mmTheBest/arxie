@@ -71,11 +71,7 @@ SENSITIVE_PATH_PREFIXES = (
     "services/paperbase_api/path_policy.py",
 )
 SENSITIVE_EXACT_PATHS = {
-    "AGENTS.md",
     ".github/PULL_REQUEST_TEMPLATE.md",
-    "docs/RELEASE_MANIFEST.md",
-    "docs/REPO_MANAGEMENT.md",
-    "scripts/with-env.sh",
     "src/paperbase/db/session.py",
     "src/paperbase/model_providers.py",
 }
@@ -90,10 +86,8 @@ RELEASE_SURFACE_FILES = {
     "pyproject.toml",
     "uv.lock",
     "alembic.ini",
-    "docs/API.md",
-    "docs/MIGRATION.md",
-    "docs/RELEASE_MANIFEST.md",
-    "docs/USAGE_EXAMPLES.md",
+    "docs/runbooks/paperbase-ingest.md",
+    "docs/runbooks/paperbase-reindex.md",
 }
 
 SECRET_PATTERNS = (

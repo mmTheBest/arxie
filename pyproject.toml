@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "academic-research-assistant"
+name = "arxie"
 version = "0.2.0"
-description = "AI research workspace with a persistent paper database, structured evidence extraction, hybrid search, and proposal workflows"
+description = "Arxie is a local-first AI research workspace for structured literature synthesis, evidence extraction, and study planning."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -66,6 +66,9 @@ local-embeddings = [
 [project.scripts]
 ra = "ra.cli:main"
 arxie-local = "paperbase.launcher.cli:main"
+arxie-api = "services.paperbase_api.main:main"
+arxie-worker = "services.paperbase_worker.main:main"
+arxie-db = "paperbase.db.cli:main"
 paperbase-api = "services.paperbase_api.main:main"
 paperbase-worker = "services.paperbase_worker.main:main"
 paperbase-db = "paperbase.db.cli:main"

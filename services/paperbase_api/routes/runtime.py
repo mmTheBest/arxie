@@ -347,7 +347,7 @@ def _worker_start_hint(expected_runtime_scope: str) -> str:
             "Start a worker bound to the active project so queued parse, extraction, "
             "and research jobs can run."
         )
-    return "Start paperbase-worker so queued parse, extraction, and research jobs can run."
+    return "Start the Arxie worker so queued parse, extraction, and research jobs can run."
 
 
 def _utc_now() -> datetime:

@@ -44,9 +44,9 @@ def _workspace_url(base_url: str) -> str:
 
 
 def _core_local_services(*, with_search: bool) -> list[str]:
-    services = ["postgres", "minio", "redis"]
+    services = ["arxie-postgres", "arxie-minio", "arxie-redis"]
     if with_search:
-        services.append("elasticsearch")
+        services.append("arxie-elasticsearch")
     return services
 
 
@@ -259,10 +259,10 @@ def run(
     _ensure_container_runtime()
     _run_compose(["up", "-d", *_core_local_services(with_search=with_search)], env=compose_env)
     if rebuild:
-        _run_compose(["build", "paperbase-migrate", "paperbase-api", "paperbase-worker"], env=compose_env)
-    _run_compose(["run", "--rm", "paperbase-migrate"], env=compose_env)
-    _run_compose(["up", "-d", "--force-recreate", "paperbase-api", "paperbase-worker"], env=compose_env)
-    _ensure_runtime_services_running(["paperbase-api", "paperbase-worker"], env=compose_env)
+        _run_compose(["build", "arxie-migrate", "arxie-api", "arxie-worker"], env=compose_env)
+    _run_compose(["run", "--rm", "arxie-migrate"], env=compose_env)
+    _run_compose(["up", "-d", "--force-recreate", "arxie-api", "arxie-worker"], env=compose_env)
+    _ensure_runtime_services_running(["arxie-api", "arxie-worker"], env=compose_env)
     _wait_until_ready(base_url, timeout_seconds)
 
     workspace_url = _workspace_url(base_url)

@@ -1,4 +1,4 @@
-"""Request and response models for the Paperbase API service."""
+"""Request and response models for the Arxie API service."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
-    service: str = "paperbase-api"
+    service: str = "arxie-api"
     version: str = Field(default_factory=get_version)
 
 
@@ -30,7 +30,7 @@ class DependencyStatusResponse(BaseModel):
 
 class ReadinessResponse(BaseModel):
     status: Literal["ready", "not_ready"]
-    service: str = "paperbase-api"
+    service: str = "arxie-api"
     version: str = Field(default_factory=get_version)
     dependencies: list[DependencyStatusResponse] = Field(default_factory=list)
 
@@ -90,7 +90,7 @@ class ProjectDataPathStatusResponse(BaseModel):
 
 
 class RuntimeStatusResponseData(BaseModel):
-    service: str = "paperbase-api"
+    service: str = "arxie-api"
     version: str = Field(default_factory=get_version)
     model_provider: ModelProviderStatusResponse
     worker_model_provider: WorkerModelProviderStatusResponse

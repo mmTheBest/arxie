@@ -28,11 +28,11 @@
 
 ## Release/Main Impact
 
-<!-- State whether this touches public main release contents. Read docs/RELEASE_MANIFEST.md and docs/REPO_MANAGEMENT.md before answering. -->
+<!-- State whether this touches public main release contents. -->
 
 ## Checklist
 
 - [ ] Architecture/API/runtime/model behavior changes update docs
 - [ ] Tests or explicit verification cover behavior changes
 - [ ] No `.env`, local database, cache, generated result, or secret material is included
-- [ ] Release-surface changes follow `docs/RELEASE_MANIFEST.md`
+- [ ] Release-surface changes are reviewed against the public runtime surface
