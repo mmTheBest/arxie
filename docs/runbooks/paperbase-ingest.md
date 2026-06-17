@@ -13,17 +13,17 @@ automation.
 ## Canonical Local Test Corpus
 
 When the user asks to open Arxie for local product testing without naming a
-different corpus, use this source folder:
+different corpus, use this placeholder source folder:
 
 ```text
-/Users/mm/school/scRegNet/SamplePapers
+/path/to/example-paper-folder
 ```
 
-This is the recurring scRegNet knowledge source for testing Library ingest,
-parse, extraction, Study chat, and research-intelligence behavior. Treat it as a
-source folder, not as parsed state. The parsed database may live elsewhere
-depending on the active Paperbase DB URL or opened project, so verify the
-runtime database before assuming the corpus is already processed.
+Use this as a generic local corpus example for testing Library ingest, parse,
+extraction, Study chat, and research-intelligence behavior. Treat it as a source
+folder, not as parsed state. The parsed database may live elsewhere depending on
+the active Paperbase DB URL or opened project, so verify the runtime database
+before assuming the corpus is already processed.
 
 Current maintained expectation, as of 2026-05-30:
 
